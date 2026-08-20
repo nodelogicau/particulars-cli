@@ -6,7 +6,7 @@ are the points where implementing the format forced a decision the spec does not
 make, or where this implementation deliberately diverges. Each is phrased as a
 proposal; "we" below means this implementation.
 
-## 1. Identifier format: `<prefix>_<uuidv7>`
+## 1. Identifier format: `<prefix>_<uuidv7>` ([#1](https://github.com/nodelogicau/particulars/issues/1))
 
 **Spec today:** examples like `par_01j9xk2p3q4r5s6t` (a truncated ULID); "ID
 formats … subject to change."
@@ -26,7 +26,7 @@ document). Consumers must not require them to agree.
 We accept any `^(par|clm|syn)_[A-Za-z0-9-]+$` on read, so workspaces written
 with other schemes remain readable.
 
-## 2. Retraction representation
+## 2. Retraction representation ([#2](https://github.com/nodelogicau/particulars/issues/2))
 
 **Spec today:** "Retraction is recorded, not deletion"; `claim_retract(claim_id,
 reason, source)` "marks a claim retracted". No field or object is shown.
@@ -57,14 +57,14 @@ Consequence for the reserved signing field: define the signed payload as the
 object *minus* `retracted` and `signature`, so a retraction does not invalidate
 the original signature.
 
-## 3. `superseded-by` on retraction
+## 3. `superseded-by` on retraction ([#3](https://github.com/nodelogicau/particulars/issues/3))
 
 A lightweight correction pointer for typo-grade errors, where a full
 thesis/antithesis synthesis is ceremony. Optional; must reference an existing
 claim or synthesis. The spec should either bless it or say that correction is
 *only* by synthesis.
 
-## 4. URIs for unpublished particulars
+## 4. URIs for unpublished particulars ([#4](https://github.com/nodelogicau/particulars/issues/4))
 
 **Spec today:** `uri` is "canonical, globally resolvable".
 
@@ -86,7 +86,7 @@ convention, which needs a DNS or email authority, i.e. configuration.
 A URI should be changeable only while the particular has never been published;
 afterwards `particular_merge` is the only path.
 
-## 5. Workspace configuration: `dkf.yaml`
+## 5. Workspace configuration: `dkf.yaml` ([#5](https://github.com/nodelogicau/particulars/issues/5))
 
 The spec defines the file layout but no configuration or marker file. Minting
 URIs needs a stable workspace identity and optional base URI; agents need a
@@ -107,7 +107,7 @@ defaults:
 placed at the workspace root and used as the discovery marker (walk up from the
 working directory).
 
-## 6. `index.yaml` is derived
+## 6. `index.yaml` is derived ([#6](https://github.com/nodelogicau/particulars/issues/6))
 
 **Spec today:** "a lightweight manifest … enables recall and conflict detection
 without parsing every file."
@@ -119,14 +119,14 @@ touch `index.yaml`; if it is authoritative every merge conflicts and a human mus
 hand-merge YAML. If it is derived, conflicts are resolved by rebuild. It stays
 committed so public consumers can fetch it over HTTP.
 
-## 7. The undefined merge record
+## 7. The undefined merge record ([#7](https://github.com/nodelogicau/particulars/issues/7))
 
 `particular_merge` "produces a merge record without rewriting claims" — a fourth
 object type the spec does not define. It needs an id prefix, a file location,
 fields (the two URIs, `source`, `timestamp`), and a rule for how `recall` treats
 claims on either side.
 
-## 8. Conflict semantics
+## 8. Conflict semantics ([#8](https://github.com/nodelogicau/particulars/issues/8))
 
 `conflict_detect` "surfaces unresolved contradictions". Without an LLM in the
 loop, "contradiction" is not computable; what *is* computable is **what has not
@@ -142,14 +142,14 @@ rely on —
 precise meaning to "the current belief about any particular is the most recent
 synthesis" when some claims post-date it.
 
-## 9. Which `source` fields are required
+## 9. Which `source` fields are required ([#9](https://github.com/nodelogicau/particulars/issues/9))
 
 The spec shows `author`, `harness`, `model`, `document` but does not say which
 are mandatory. We require `author` on claims and on retractions, and
 `produced-by.harness` on syntheses. Worth pinning down, since it determines what
 a minimal valid claim looks like.
 
-## 10. Smaller notes
+## 10. Smaller notes ([#10](https://github.com/nodelogicau/particulars/issues/10))
 
 - `DSYNTHESIS` "extends `DCLAIM`" but the example carries `produced-by` and no
   `source`. Consumers that treat a synthesis as a claim therefore find no
