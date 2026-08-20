@@ -66,6 +66,7 @@ export DKF_HARNESS=claude DKF_MODEL=<your model id>
 | Reconcile | `particulars synthesis create --subject "<thing>" --input <id>:thesis --input <id>:antithesis [--input <id>:thesis:qualifying] --unresolved "<what remains open>" --content "<resolution with reasoning>" --json` |
 | What is believed | `particulars recall "<thing>" [--topic <t>]... [--scope <s>] [--limit <n>] --json` → `{entries: [...]}`, oldest first, `current: true` on the live synthesis |
 | Across things | `particulars recall --topic <t> --json` |
+| Which tags exist | `particulars topics ["<thing>"] --json` → `{topics: [{topic, assertions, particulars}]}`; check before inventing a new tag |
 | Why is it believed | `particulars lineage <id> [--depth <n>] --json` → nested tree of inputs with roles |
 | What needs work | `particulars conflicts ["<thing>"] --json` → `{reports: [{particular, current, unsynthesised, stale, priority}]}` |
 | Withdraw a claim | `particulars claim retract <id> --reason "<why>" [--superseded-by <id>] --json` (append-only; never deletes) |

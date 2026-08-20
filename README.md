@@ -120,6 +120,7 @@ in the repository that holds the workspace.
 | `claim retract <id> --reason R [--superseded-by id]` | Append a retraction block to a claim or synthesis |
 | `synthesis create --subject P --input id:role[:weight]… --unresolved U […]` | Record a synthesis the agent has reasoned |
 | `recall [P] [--topic T]… [--scope S] [--include-retracted] [--limit N]` | Claims and syntheses in lineage order; current synthesis marked |
+| `topics [P] [--scope S] [--include-retracted]` | Topics in use, with assertion and particular counts |
 | `lineage <id> [--depth N]` | Provenance tree of a claim or synthesis |
 | `conflicts [P] [--fail-on-conflicts]` | Unsynthesised claims and stale syntheses per particular |
 | `index [--check]` | Rebuild `index.yaml`, or verify it (exit 4 on drift) |

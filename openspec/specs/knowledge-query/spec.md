@@ -49,3 +49,18 @@ Recalling claims and syntheses in lineage order with filters, and tracing the pr
 #### Scenario: Claim has no lineage
 - **WHEN** `lineage clm_A` is run for a plain claim
 - **THEN** the result is the claim alone with an empty `inputs` list
+
+### Requirement: Topic listing
+`particulars topics [<particular>] [--scope <s>] [--include-retracted]` SHALL list every topic carried by claims and syntheses in the workspace (or about the resolved particular), with the number of assertions carrying it and the number of distinct particulars among them, sorted by topic name. Retracted assertions SHALL be excluded unless `--include-retracted` is given.
+
+#### Scenario: Topics across particulars
+- **WHEN** a claim about Project X carries topics `architecture` and `db`, a claim about Project Y carries `architecture`, and `topics` is run
+- **THEN** the result lists `architecture` (2 assertions, 2 particulars) and `db` (1 assertion, 1 particular)
+
+#### Scenario: Retracted excluded
+- **WHEN** the only claim carrying `db` is retracted and `topics` is run
+- **THEN** `db` is absent; with `--include-retracted` it is present
+
+#### Scenario: Per particular
+- **WHEN** `topics "Project Y"` is run
+- **THEN** only topics carried by assertions about Project Y are listed

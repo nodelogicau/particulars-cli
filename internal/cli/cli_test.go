@@ -492,3 +492,38 @@ func TestJSONContract(t *testing.T) {
 		t.Errorf("json failure must write only stderr: %+v", r)
 	}
 }
+
+func TestTopics(t *testing.T) {
+	initWS(t)
+	define(t, "Project X")
+	define(t, "Project Y")
+	a := assert(t, "Project X", "A", "--topic", "architecture", "--topic", "db")
+	assert(t, "Project Y", "B", "--topic", "architecture")
+	r := run(t, "", "topics", "--json")
+	if r.code != 0 || r.js["count"].(float64) != 2 {
+		t.Fatalf("topics: %+v", r)
+	}
+	first := r.js["topics"].([]any)[0].(map[string]any)
+	if first["topic"] != "architecture" || first["assertions"].(float64) != 2 || first["particulars"].(float64) != 2 {
+		t.Errorf("first row: %+v", first)
+	}
+	r = run(t, "", "topics", "Project Y", "--json")
+	if r.js["count"].(float64) != 1 {
+		t.Errorf("per-particular: %+v", r.js)
+	}
+	run(t, "", "claim", "retract", a, "--reason", "r", "--json")
+	r = run(t, "", "topics", "--json")
+	if r.js["count"].(float64) != 1 {
+		t.Errorf("retracted should drop db: %+v", r.js)
+	}
+	if r := run(t, "", "topics", "--include-retracted", "--json"); r.js["count"].(float64) != 2 {
+		t.Errorf("include-retracted: %+v", r.js)
+	}
+	if r := run(t, "", "topics", "Nobody", "--json"); r.code != 3 {
+		t.Errorf("unknown particular should exit 3, got %d", r.code)
+	}
+	text := run(t, "", "topics")
+	if !strings.Contains(text.stdout, "architecture") || !strings.Contains(text.stdout, "particulars") {
+		t.Errorf("text output:\n%s", text.stdout)
+	}
+}

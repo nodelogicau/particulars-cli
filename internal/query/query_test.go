@@ -341,3 +341,30 @@ func TestValidateFindings(t *testing.T) {
 		t.Errorf("missing index: %+v", fs)
 	}
 }
+
+func TestTopics(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	q := f.particular("Project Y")
+	a := f.claim(p.ID, "A", "architecture", "db")
+	f.claim(q.ID, "B", "architecture")
+	f.claim(p.ID, "C")
+	f.retract(a.ID)
+	g := f.graph()
+
+	got := Topics(g, RecallOptions{})
+	if len(got) != 1 || got[0].Topic != "architecture" || got[0].Assertions != 1 || got[0].Particulars != 1 {
+		t.Errorf("retracted excluded: %+v", got)
+	}
+	got = Topics(g, RecallOptions{IncludeRetracted: true})
+	if len(got) != 2 || got[0].Topic != "architecture" || got[0].Assertions != 2 || got[0].Particulars != 2 || got[1].Topic != "db" {
+		t.Errorf("include retracted: %+v", got)
+	}
+	got = Topics(g, RecallOptions{Subject: q.ID})
+	if len(got) != 1 || got[0].Particulars != 1 {
+		t.Errorf("subject filter: %+v", got)
+	}
+	if got := Topics(g, RecallOptions{Scope: dkf.ScopePublic}); len(got) != 0 {
+		t.Errorf("scope filter: %+v", got)
+	}
+}
