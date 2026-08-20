@@ -101,6 +101,14 @@ cite them as **stale** so they can be re-synthesised.
 See [docs/review-workflow.md](docs/review-workflow.md) for the full flow and a
 GitHub Action that runs `validate` and `index --check` on every PR.
 
+## Teaching an agent the verbs
+
+[`skills/particulars/SKILL.md`](skills/particulars/SKILL.md) is an agent-facing
+skill: the recall-before-assert loop, a verb cheat-sheet, and rules for good
+claims, particulars, syntheses, and retractions. Install it wherever your harness
+loads skills — for Claude Code, copy it to `.claude/skills/particulars/SKILL.md`
+in the repository that holds the workspace.
+
 ## Verbs
 
 | Verb | Purpose |
