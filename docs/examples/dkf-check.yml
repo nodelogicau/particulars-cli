@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DKF_WORKSPACE: ${{ github.workspace }}/knowledge
-      PARTICULARS_VERSION: v0.1.0
+      PARTICULARS_VERSION: v0.1.1
     steps:
       - uses: actions/checkout@v4
 
