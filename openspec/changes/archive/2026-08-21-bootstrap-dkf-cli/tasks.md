@@ -55,4 +55,4 @@
 - [x] 6.1 README: install, quick start (init → define → assert → synthesis → recall → conflicts), verb reference, exit codes, env vars, relationship to the DKF spec
 - [x] 6.2 Document the PR-review workflow (agent branch → PR → merge; post-merge retraction) and a sample GitHub Action running `validate` and `index --check`
 - [x] 6.3 Write `SPEC-FEEDBACK.md` (or issues on nodelogicau/particulars) from the design's Spec Feedback list
-- [ ] 6.4 Tag `v0.1.0` and verify GoReleaser artifacts run on macOS arm64 and Linux amd64
+- [x] 6.4 Tag `v0.1.0` and verify GoReleaser artifacts run on macOS arm64 and Linux amd64
