@@ -17,7 +17,7 @@
 
 - [x] 3.1 `.goreleaser.yaml`: `homebrew_casks` entry per design D4 (quarantine hook, `skip_upload: auto`); `release.yml` passes `HOMEBREW_TAP_GITHUB_TOKEN`
 - [x] 3.2 Create `nodelogicau/homebrew-tap` (repo with `Casks/` and a README) — user-side or with confirmation
-- [ ] 3.3 Add the `HOMEBREW_TAP_GITHUB_TOKEN` secret (fine-grained PAT, contents:write on the tap repo) — user-side
+- [x] 3.3 Add the `HOMEBREW_TAP_GITHUB_TOKEN` secret (fine-grained PAT, contents:write on the tap repo) — user-side
 - [x] 3.4 `goreleaser check` passes locally
 
 ## 4. Documentation, Feedback, Release
@@ -26,5 +26,5 @@
 - [x] 4.2 `docs/examples/claude-settings.json`: live hook (installer + `skill install`), caveat removed; `docs/review-workflow.md` setup line mentions `.dkf`
 - [x] 4.3 `SPEC-FEEDBACK.md` item 12: the `.dkf` pointer as a proposed discovery extension
 - [x] 4.4 `CHANGELOG.md` v0.3.0 entry
-- [ ] 4.5 Tag `v0.3.0`; verify release assets, `brew install nodelogicau/tap/particulars` on this Mac, and `install.sh` from the raw URL in a clean temp dir
-- [ ] 4.6 Record in `~/IdeaProjects/particulars-knowledge` (on a branch) that v0.3.0 shipped the installer, the tap, the `.dkf` pointer, and the `workspace` verb
+- [x] 4.5 Tag `v0.3.0`; verify release assets, `brew install nodelogicau/tap/particulars` on this Mac, and `install.sh` from the raw URL in a clean temp dir
+- [x] 4.6 Record in `~/IdeaProjects/particulars-knowledge` (on a branch) that v0.3.0 shipped the installer, the tap, the `.dkf` pointer, and the `workspace` verb
