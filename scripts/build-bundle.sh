@@ -17,10 +17,11 @@ mkdir -p "$DIST"
 # Absolute, so the zip step works from any working directory.
 OUT="$(cd "$DIST" && pwd)/particulars-${VERSION}.mcpb"
 
-find_bin() { # glob words -> first existing match, or empty
+find_bin() { # glob words -> first existing match, or empty (never fails)
   for c in "$@"; do
-    [ -e "$c" ] && { printf '%s' "$c"; return; }
+    if [ -e "$c" ]; then printf '%s' "$c"; return 0; fi
   done
+  return 0
 }
 
 # GoReleaser writes its universal binary to dist/<id>_darwin_all/particulars
