@@ -24,4 +24,4 @@
 - [x] 4.1 README "Teaching an agent the verbs": `particulars skill install` (project/user/dir), `--force` for previously hand-copied files, `skill show` for other harnesses
 - [x] 4.2 `docs/examples/claude-settings.json` with the SessionStart hook shape; README note that the installer it references is a follow-up and the supported path today is download + `skill install`
 - [x] 4.3 `docs/review-workflow.md` agent-side setup line: `particulars skill install`
-- [ ] 4.4 `CHANGELOG.md` v0.2.1 entry; tag `v0.2.1`; verify the published binary's `skill show` carries `version: "0.2.1"`
+- [x] 4.4 `CHANGELOG.md` v0.2.1 entry; tag `v0.2.1`; verify the published binary's `skill show` carries `version: "0.2.1"`

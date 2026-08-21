@@ -57,3 +57,20 @@ func TestRenderIdempotent(t *testing.T) {
 		t.Errorf("not idempotent:\n%s\n---\n%s", once[:300], twice[:300])
 	}
 }
+
+func TestCRLFInputIsNormalised(t *testing.T) {
+	crlf := bytes.ReplaceAll(Render("1.0.0"), []byte("\n"), []byte("\r\n"))
+	if !HasMarker(crlf) {
+		t.Error("HasMarker should tolerate CRLF")
+	}
+	if !BodyEqual(crlf, Render("2.0.0")) {
+		t.Error("BodyEqual should tolerate CRLF")
+	}
+	saved := raw
+	raw = crlf
+	defer func() { raw = saved }()
+	out := Render("3.0.0")
+	if bytes.Contains(out, []byte("\r")) || !bytes.Contains(out, []byte("version: \"3.0.0\"")) {
+		t.Errorf("CRLF embed should render as LF with stamp:\n%s", out[:200])
+	}
+}

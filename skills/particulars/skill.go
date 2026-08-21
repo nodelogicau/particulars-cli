@@ -18,8 +18,13 @@ var (
 	markerLine  = regexp.MustCompile(`(?m)^<!-- installed by particulars [^;\n]*; regenerate with: particulars skill install -->\n?`)
 )
 
-// Raw returns the embedded skill exactly as committed.
-func Raw() []byte { return append([]byte(nil), raw...) }
+// Raw returns the embedded skill as committed, with line endings normalised
+// to LF (a Windows checkout with autocrlf would otherwise embed CRLF).
+func Raw() []byte { return normalise(raw) }
+
+func normalise(data []byte) []byte {
+	return bytes.ReplaceAll(append([]byte(nil), data...), []byte("\r\n"), []byte("\n"))
+}
 
 // NormaliseVersion strips a leading "v" and maps empty to "dev".
 func NormaliseVersion(v string) string {
@@ -39,7 +44,7 @@ func Marker(version string) string {
 // inserted immediately after the frontmatter's closing ---.
 func Render(version string) []byte {
 	v := NormaliseVersion(version)
-	out := markerLine.ReplaceAll(raw, nil)
+	out := markerLine.ReplaceAll(Raw(), nil)
 	head, body, ok := splitFrontmatter(out)
 	if !ok {
 		return out
@@ -68,13 +73,13 @@ func splitFrontmatter(data []byte) (head, body []byte, ok bool) {
 }
 
 // HasMarker reports whether data was written by `skill install`.
-func HasMarker(data []byte) bool { return markerLine.Match(data) }
+func HasMarker(data []byte) bool { return markerLine.Match(normalise(data)) }
 
 // Mask replaces the stamped frontmatter version with a placeholder and drops
 // the marker line, so renders from different binaries — and the committed
 // file itself — compare equal. Ownership is checked separately via HasMarker.
 func Mask(data []byte) []byte {
-	out := versionLine.ReplaceAll(data, []byte(`${1}"X"`))
+	out := versionLine.ReplaceAll(normalise(data), []byte(`${1}"X"`))
 	return markerLine.ReplaceAll(out, nil)
 }
 
