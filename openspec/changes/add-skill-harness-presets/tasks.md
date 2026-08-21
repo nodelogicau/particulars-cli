@@ -18,5 +18,5 @@
 
 - [x] 3.1 README: harness table (which preset for which tool, which locations Copilot reads, "pick one"), `show --harness` for unlisted harnesses, note that `--dir` into `.cursor/rules` does not work
 - [x] 3.2 Skill "Setup" paragraph mentions presets so an agent can install for its own harness; regenerate the repo's installed copy (`make skill`) and keep `skill install --check` green
-- [ ] 3.3 `CHANGELOG.md` v0.3.1; tag `v0.3.1`; verify `brew upgrade` picks it up and `skill show --harness cursor` / `agents-md` render from the published binary
-- [ ] 3.4 Record v0.3.1 in the knowledge workspace (branch), including the verified harness conventions as claims with the docs URLs as evidence
+- [x] 3.3 `CHANGELOG.md` v0.3.1; tag `v0.3.1`; verify `brew upgrade` picks it up and `skill show --harness cursor` / `agents-md` render from the published binary
+- [x] 3.4 Record v0.3.1 in the knowledge workspace (branch), including the verified harness conventions as claims with the docs URLs as evidence
