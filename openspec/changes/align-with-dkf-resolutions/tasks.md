@@ -47,4 +47,4 @@
 - [x] 5.4 `SPEC-FEEDBACK.md`: mark each item resolved with the spec decision; add the merge field-order discrepancy as a new item and raise it upstream
 - [x] 5.5 Add `CHANGELOG.md` with a v0.2.0 entry naming the synthesis `source` rename and new verbs; bump `PARTICULARS_VERSION` to v0.2.0 in `docs/examples/dkf-check.yml` and `docs/review-workflow.md`
 - [x] 5.6 Run `validate` against `~/IdeaProjects/particulars-knowledge` with the new binary: expect 0 errors and four `legacy_produced_by` warnings; record the result in the knowledge workspace as a claim
-- [ ] 5.7 Tag `v0.2.0`, verify the release assets, and confirm the published binary reads a v0.1.1 workspace
+- [x] 5.7 Tag `v0.2.0`, verify the release assets, and confirm the published binary reads a v0.1.1 workspace
