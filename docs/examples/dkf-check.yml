@@ -23,8 +23,9 @@ jobs:
         run: |
           curl -sSL -o particulars.tgz \
             "https://github.com/nodelogicau/particulars-cli/releases/download/${PARTICULARS_VERSION}/particulars_${PARTICULARS_VERSION#v}_linux_amd64.tar.gz"
-          tar -xzf particulars.tgz particulars
-          sudo install particulars /usr/local/bin/particulars
+          # extract to a temp dir: a workspace at the repo root has a particulars/ directory
+          tar -xzf particulars.tgz -C "${RUNNER_TEMP}" particulars
+          sudo install "${RUNNER_TEMP}/particulars" /usr/local/bin/particulars
           particulars version
 
       - name: Validate workspace
