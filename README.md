@@ -24,15 +24,21 @@ and how each point was decided. v0.2.0 aligns the CLI with those decisions; see
 
 ## Install
 
-Download a binary for your platform from the
-[releases page](https://github.com/nodelogicau/particulars-cli/releases), or build
-from source (Go 1.26+):
-
 ```sh
-git clone https://github.com/nodelogicau/particulars-cli
-cd particulars-cli
-make build          # → dist/particulars
+# macOS — Homebrew cask
+brew install nodelogicau/tap/particulars
+
+# Linux or macOS, including CI and agent sandboxes — verifies the release checksum
+curl -sSL https://raw.githubusercontent.com/nodelogicau/particulars-cli/main/install.sh | sh
 ```
+
+The script never prompts. It installs to `/usr/local/bin` when it can (directly, or
+via passwordless `sudo`), otherwise to `~/.local/bin`, and says where. Knobs:
+`PARTICULARS_VERSION=v0.2.1` pins a release, `PARTICULARS_INSTALL_DIR=…` picks the
+directory. Windows: download the `.zip` from the
+[releases page](https://github.com/nodelogicau/particulars-cli/releases).
+
+From source (Go 1.26+): `git clone … && make build` → `dist/particulars`.
 
 ## Quick start
 
@@ -123,15 +129,17 @@ particulars skill show             # print it; pipe wherever you like
 drift) — handy in CI. The canonical text lives at
 [`skills/particulars/SKILL.md`](skills/particulars/SKILL.md).
 
-For a zero-setup remote session, a Claude Code `SessionStart` hook can run the
-install on every start — see
-[`docs/examples/claude-settings.json`](docs/examples/claude-settings.json).
+For a zero-setup remote session, commit a `.dkf` pointer and add the Claude Code
+`SessionStart` hook from
+[`docs/examples/claude-settings.json`](docs/examples/claude-settings.json): it
+installs the binary if missing and installs the skill, on every session start.
 
 ## Verbs
 
 | Verb | Purpose |
 |---|---|
-| `init [dir]` | Create a workspace: `dkf.yaml`, type directories, empty index |
+| `init [dir] [--pointer]` | Create a workspace; `--pointer` also writes `./.dkf` pointing at it |
+| `workspace` | Show the resolved workspace root and how it was found (`flag`/`env`/`dkf.yaml`/`pointer`) |
 | `particular define --label L [--uri U] [--alias A]…` | Create or update a particular; idempotent on URI |
 | `particular resolve <id\|uri\|label\|alias>` | Find particulars (label/alias case-insensitive) |
 | `claim assert --subject P (--content T \| --content-file F\|-) […]` | Record a claim |
@@ -211,7 +219,19 @@ write their report to stdout *and* the error envelope to stderr on exit 4.
 ## Configuration
 
 **Workspace selection:** `--workspace <dir>`, else `$DKF_WORKSPACE`, else the nearest
-ancestor directory containing `dkf.yaml`. `workspace.base-uri`, if set, must end in
+ancestor directory containing `dkf.yaml` — or a `.dkf` pointer file whose first line
+is the path to the workspace. `particulars workspace` shows what was resolved and how.
+
+A workspace kept in a subdirectory of a repository (the `knowledge/` convention) is
+invisible to upward discovery from the repo root; a pointer fixes that:
+
+```sh
+particulars init ./knowledge --pointer     # writes ./.dkf containing "knowledge"
+particulars workspace                      # → …/knowledge  via: pointer
+```
+
+`.dkf` is an implementation extension; spec-conformant readers still find the
+workspace by walking up from inside it. `workspace.base-uri`, if set, must end in
 `/` (`init` adds it if missing).
 
 **Provenance defaults** for `source.author`, `harness`, `model`: explicit flag, then

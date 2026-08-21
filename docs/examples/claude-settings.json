@@ -1,5 +1,5 @@
 {
-  "_comment": "Claude Code project settings (.claude/settings.json). On every session start: install particulars if missing, then install the agent skill. The install.sh referenced here is a follow-up to the v0.2.1 release; until it exists, download a release archive instead (see README). Requires outbound access to github.com in remote sessions.",
+  "_comment": "Claude Code project settings (.claude/settings.json). On every session start: install particulars if it is missing (checksum-verified, no prompts), then install the agent skill into .claude/skills/. Commit a .dkf pointer at the repo root if the workspace lives in a subdirectory. Remote sessions need outbound access to github.com.",
   "hooks": {
     "SessionStart": [
       {

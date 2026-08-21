@@ -386,3 +386,69 @@ func TestMergesAndClasses(t *testing.T) {
 		t.Errorf("index should be clean: %+v", d)
 	}
 }
+
+func TestPointerDiscovery(t *testing.T) {
+	repo := t.TempDir()
+	ws, err := Init(filepath.Join(repo, "knowledge"), NewConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WritePointer(repo, "knowledge"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WritePointer(repo, "knowledge"); err != nil {
+		t.Errorf("identical rewrite should succeed: %v", err)
+	}
+	if _, err := WritePointer(repo, "elsewhere"); !errors.Is(err, ErrAlreadyExists) {
+		t.Errorf("differing pointer should be refused: %v", err)
+	}
+	sub := filepath.Join(repo, "src", "deep")
+	_ = os.MkdirAll(sub, 0o755)
+	wd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(wd) }()
+	t.Setenv(EnvWorkspace, "")
+	_ = os.Chdir(sub)
+	w, res, err := DiscoverWith("")
+	if err != nil || realpath(w.Root) != realpath(ws.Root) || res.Via != "pointer" || realpath(res.Pointer) != realpath(filepath.Join(repo, PointerFile)) {
+		t.Errorf("pointer discovery: %v %+v", err, res)
+	}
+	// dkf.yaml beats a pointer in the same directory.
+	both := t.TempDir()
+	_, _ = Init(both, NewConfig())
+	_, _ = WritePointer(both, "nowhere")
+	_ = os.Chdir(both)
+	if _, res, err := DiscoverWith(""); err != nil || res.Via != "dkf.yaml" {
+		t.Errorf("dkf.yaml should win: %v %+v", err, res)
+	}
+	// Dangling pointer names both paths; comments and blank lines are skipped; absolute targets work.
+	dangling := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dangling, PointerFile), []byte("# comment\n\nmissing\n"), 0o644)
+	_ = os.Chdir(dangling)
+	_, _, err = DiscoverWith("")
+	if !errors.Is(err, ErrNoWorkspace) || !strings.Contains(err.Error(), PointerFile) || !strings.Contains(err.Error(), "missing") {
+		t.Errorf("dangling: %v", err)
+	}
+	absrepo := t.TempDir()
+	_ = os.WriteFile(filepath.Join(absrepo, PointerFile), []byte("# abs\n"+ws.Root+"\n"), 0o644)
+	_ = os.Chdir(absrepo)
+	if w, res, err := DiscoverWith(""); err != nil || realpath(w.Root) != realpath(ws.Root) || res.Via != "pointer" {
+		t.Errorf("absolute pointer: %v %+v", err, res)
+	}
+	// No chaining: a pointer to a directory that only has another pointer is dangling.
+	chain := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(chain, "mid"), 0o755)
+	_ = os.WriteFile(filepath.Join(chain, PointerFile), []byte("mid\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(chain, "mid", PointerFile), []byte(ws.Root+"\n"), 0o644)
+	_ = os.Chdir(chain)
+	if _, _, err := DiscoverWith(""); !errors.Is(err, ErrNoWorkspace) {
+		t.Errorf("chained pointer should not resolve: %v", err)
+	}
+	// Env and flag still win.
+	t.Setenv(EnvWorkspace, ws.Root)
+	if _, res, _ := DiscoverWith(""); res.Via != "env" {
+		t.Errorf("env: %+v", res)
+	}
+	if _, res, _ := DiscoverWith(ws.Root); res.Via != "flag" {
+		t.Errorf("flag: %+v", res)
+	}
+}

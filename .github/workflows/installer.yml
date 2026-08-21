@@ -1,0 +1,64 @@
+name: Installer
+
+on:
+  pull_request:
+    paths: ["install.sh", ".github/workflows/installer.yml"]
+  push:
+    branches: [main]
+    paths: ["install.sh", ".github/workflows/installer.yml"]
+  schedule:
+    - cron: "17 6 * * 1"   # weekly: catch release-page or runner changes
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck
+      - run: shellcheck install.sh
+
+  install:
+    name: Install (${{ matrix.os }}, ${{ matrix.version }})
+    needs: shellcheck
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        version: [latest, v0.2.1]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run installer
+        env:
+          PARTICULARS_INSTALL_DIR: ${{ runner.temp }}/bin
+          PARTICULARS_VERSION: ${{ matrix.version == 'latest' && '' || matrix.version }}
+        run: sh install.sh
+      - name: Installed binary works
+        run: |
+          "${{ runner.temp }}/bin/particulars" version
+          if [ "${{ matrix.version }}" != latest ]; then
+            "${{ runner.temp }}/bin/particulars" version | grep -q "particulars ${{ matrix.version }}" \
+              || { "${{ runner.temp }}/bin/particulars" version | grep -q " $(echo ${{ matrix.version }} | sed 's/^v//') "; }
+          fi
+      - name: Checksum mismatch is refused
+        env:
+          PARTICULARS_INSTALL_DIR: ${{ runner.temp }}/bin2
+          PARTICULARS_VERSION: v0.2.1
+          PARTICULARS_REPO: nodelogicau/particulars-cli
+        run: |
+          # Simulate corruption by pointing the script at a tampered checksums file via a local mirror.
+          mkdir -p "${{ runner.temp }}/mirror/releases/download/v0.2.1"
+          cd "${{ runner.temp }}/mirror/releases/download/v0.2.1"
+          os=$(uname -s | tr '[:upper:]' '[:lower:]'); arch=$(uname -m); case "$arch" in x86_64) arch=amd64;; aarch64|arm64) arch=arm64;; esac
+          curl -fsSLO "https://github.com/nodelogicau/particulars-cli/releases/download/v0.2.1/particulars_0.2.1_${os}_${arch}.tar.gz"
+          printf '%s  %s\n' "0000000000000000000000000000000000000000000000000000000000000000" "particulars_0.2.1_${os}_${arch}.tar.gz" > checksums.txt
+          cd "${{ runner.temp }}/mirror" && (python3 -m http.server 8765 >/dev/null 2>&1 &) && sleep 1
+          cd "$GITHUB_WORKSPACE"
+          if sed 's#https://github.com/${REPO}#http://127.0.0.1:8765#' install.sh | sh; then
+            echo "installer accepted a bad checksum"; exit 1
+          fi
+          test ! -e "${{ runner.temp }}/bin2/particulars"

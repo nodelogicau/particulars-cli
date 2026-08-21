@@ -183,12 +183,13 @@ source needs at least one of author or harness; syntheses always need harness.`,
 		SilenceErrors: true,
 	}
 	root.PersistentFlags().BoolVar(&a.jsonOut, "json", false, "emit a single JSON object on stdout (errors as JSON on stderr)")
-	root.PersistentFlags().StringVar(&a.workspace, "workspace", "", "workspace directory (default: $DKF_WORKSPACE, else nearest ancestor with dkf.yaml)")
+	root.PersistentFlags().StringVar(&a.workspace, "workspace", "", "workspace directory (default: $DKF_WORKSPACE, else nearest ancestor with dkf.yaml or a .dkf pointer)")
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error { return usageErr("%v", err) })
 	root.CompletionOptions.DisableDefaultCmd = true
 
 	root.AddCommand(
 		a.initCmd(),
+		a.workspaceCmd(),
 		a.particularCmd(),
 		a.claimCmd(),
 		a.synthesisCmd(),

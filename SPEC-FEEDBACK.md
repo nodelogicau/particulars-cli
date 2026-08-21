@@ -174,6 +174,21 @@ The `merge-records` spec prose lists fields as "`id`, `type: merge`, `uris`,
 concrete artifact). The prose should be brought into line, or the example
 changed, before v0.1 is declared.
 
+## 12. Workspace pointer file (`.dkf`) for discovery from above (new)
+
+`workspace-config` mandates discovery by walking up for `dkf.yaml`. That fails
+when a tool runs from *above* the workspace — the common "knowledge/ inside a
+repository" layout, and the default cwd of a remote agent session. v0.3.0 adds an
+implementation extension: a `.dkf` file whose first non-comment line is the path
+(relative to the file, or absolute) of the workspace root. At each ancestor,
+`dkf.yaml` wins; otherwise a `.dkf` redirects; pointers do not chain.
+
+It is deliberately *not* a `dkf.yaml` with a `root:` key, because a `dkf.yaml`
+at the repository root would itself be a workspace marker to every conformant
+reader. Conformant readers ignore `.dkf` and still work from inside the
+workspace. Proposal: bless the pointer as an optional convention in
+`workspace-config`, or state that tools MAY offer equivalent redirection.
+
 ## 10. Smaller notes ([#10](https://github.com/nodelogicau/particulars/issues/10))
 
 - `DSYNTHESIS` "extends `DCLAIM`" but the example carries `produced-by` and no

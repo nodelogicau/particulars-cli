@@ -15,6 +15,18 @@ import (
 // EnvWorkspace is the environment variable consulted when no --workspace flag is given.
 const EnvWorkspace = "DKF_WORKSPACE"
 
+// PointerFile is the optional redirect file honoured during discovery: its
+// first non-blank, non-comment line is a path (relative to the file's
+// directory, or absolute) to a directory containing dkf.yaml.
+const PointerFile = ".dkf"
+
+// Resolution records how a workspace was found.
+type Resolution struct {
+	Root    string `json:"root"`
+	Via     string `json:"via"`               // flag | env | dkf.yaml | pointer
+	Pointer string `json:"pointer,omitempty"` // absolute path of the .dkf file, when via=pointer
+}
+
 // Sentinel errors callers map to exit codes.
 var (
 	ErrNoWorkspace      = errors.New("no workspace found: run `particulars init` or set --workspace / DKF_WORKSPACE")
@@ -31,29 +43,96 @@ type Workspace struct {
 }
 
 // Discover locates a workspace: explicit dir, then $DKF_WORKSPACE, then an
-// upward search from the working directory for dkf.yaml.
+// upward search from the working directory for dkf.yaml or a .dkf pointer.
 func Discover(explicit string) (*Workspace, error) {
+	w, _, err := DiscoverWith(explicit)
+	return w, err
+}
+
+// DiscoverWith is Discover plus a record of how the workspace was resolved.
+func DiscoverWith(explicit string) (*Workspace, *Resolution, error) {
 	if explicit != "" {
-		return Open(explicit)
+		w, err := Open(explicit)
+		if err != nil {
+			return nil, nil, err
+		}
+		return w, &Resolution{Root: w.Root, Via: "flag"}, nil
 	}
 	if env := os.Getenv(EnvWorkspace); env != "" {
-		return Open(env)
+		w, err := Open(env)
+		if err != nil {
+			return nil, nil, err
+		}
+		return w, &Resolution{Root: w.Root, Via: "env"}, nil
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	dir := cwd
 	for {
 		if _, err := os.Stat(filepath.Join(dir, ConfigFile)); err == nil {
-			return Open(dir)
+			w, err := Open(dir)
+			if err != nil {
+				return nil, nil, err
+			}
+			return w, &Resolution{Root: w.Root, Via: "dkf.yaml"}, nil
+		}
+		pointer := filepath.Join(dir, PointerFile)
+		if target, ok, perr := readPointer(pointer); perr != nil {
+			return nil, nil, perr
+		} else if ok {
+			if _, err := os.Stat(filepath.Join(target, ConfigFile)); err != nil {
+				return nil, nil, fmt.Errorf("%w: %s points at %s, which has no %s", ErrNoWorkspace, pointer, target, ConfigFile)
+			}
+			w, err := Open(target)
+			if err != nil {
+				return nil, nil, err
+			}
+			return w, &Resolution{Root: w.Root, Via: "pointer", Pointer: pointer}, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return nil, ErrNoWorkspace
+			return nil, nil, ErrNoWorkspace
 		}
 		dir = parent
 	}
+}
+
+// readPointer parses a .dkf file. ok is false when the file does not exist.
+func readPointer(path string) (target string, ok bool, err error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !filepath.IsAbs(line) {
+			line = filepath.Join(filepath.Dir(path), line)
+		}
+		return filepath.Clean(line), true, nil
+	}
+	return "", false, fmt.Errorf("%w: %s is empty", ErrNoWorkspace, path)
+}
+
+// WritePointer writes <dir>/.dkf containing target (as given). It refuses,
+// with ErrAlreadyExists, to replace a pointer with different content.
+func WritePointer(dir, target string) (string, error) {
+	path := filepath.Join(dir, PointerFile)
+	content := target + "\n"
+	if existing, err := os.ReadFile(path); err == nil {
+		if string(existing) == content {
+			return path, nil
+		}
+		return path, fmt.Errorf("%s %w with different content (%q)", path, ErrAlreadyExists, strings.TrimSpace(string(existing)))
+	}
+	return path, writeAtomic(path, []byte(content))
 }
 
 // Open loads the workspace rooted at dir.

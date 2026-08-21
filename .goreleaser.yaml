@@ -39,6 +39,34 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# Homebrew cask (macOS). `brews` was removed in GoReleaser 2.16; casks are the
+# supported way to ship a pre-built binary. Linux users have install.sh.
+homebrew_casks:
+  - name: particulars
+    repository:
+      owner: nodelogicau
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/nodelogicau/particulars-cli
+    description: Capture and recall dialectical knowledge (DKF) from the command line
+    license: MIT
+    skip_upload: auto
+    commit_author:
+      name: particulars-release
+      email: noreply@nodelogic.au
+    url:
+      verified: github.com/nodelogicau/particulars-cli/
+    binaries:
+      - particulars
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/particulars"]
+          end
+
 changelog:
   use: github
   sort: asc

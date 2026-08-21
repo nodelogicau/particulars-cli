@@ -38,12 +38,12 @@ A GitHub Actions job SHALL run `shellcheck` on `install.sh` and SHALL execute it
 - **THEN** the installer job fails on that pull request
 
 ### Requirement: Homebrew tap
-Each tagged release SHALL publish a `particulars` formula to `nodelogicau/homebrew-tap` (`Formula/particulars.rb`) via GoReleaser, using `HOMEBREW_TAP_GITHUB_TOKEN`, so that `brew install nodelogicau/tap/particulars` installs the released binary. Pre-release tags SHALL NOT update the formula. A missing token SHALL fail only the formula step, not the binary release.
+Each tagged release SHALL publish a `particulars` cask to `nodelogicau/homebrew-tap` (`Casks/particulars.rb`) via GoReleaser's `homebrew_casks`, using `HOMEBREW_TAP_GITHUB_TOKEN`, so that `brew install nodelogicau/tap/particulars` installs the released binary on macOS (casks are macOS-only; Linux uses `install.sh`). The cask SHALL clear the macOS quarantine attribute on install because the binary is not notarised. Pre-release tags SHALL NOT update the cask. A missing token SHALL fail only the cask step, not the binary release.
 
 #### Scenario: Brew install
-- **WHEN** `brew install nodelogicau/tap/particulars` is run after a release
+- **WHEN** `brew install nodelogicau/tap/particulars` is run on macOS after a release
 - **THEN** `particulars version` reports that release's version
 
 #### Scenario: Missing token
 - **WHEN** the release workflow runs without `HOMEBREW_TAP_GITHUB_TOKEN`
-- **THEN** the release archives are still published and the formula step reports the missing secret
+- **THEN** the release archives are still published and the cask step reports the missing secret

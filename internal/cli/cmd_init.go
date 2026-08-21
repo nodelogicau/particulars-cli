@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -14,14 +15,29 @@ import (
 
 func (a *app) initCmd() *cobra.Command {
 	var baseURI, author, harness, scope string
+	var pointer bool
 	cmd := &cobra.Command{
-		Use:   "init [dir]",
-		Short: "Create a new DKF workspace (dkf.yaml, particulars/, claims/, syntheses/, index.yaml)",
-		Args:  cobra.MaximumNArgs(1),
+		Use:   "init [dir] [--pointer]",
+		Short: "Create a new DKF workspace (dkf.yaml, particulars/, claims/, syntheses/, merges/, index.yaml)",
+		Long: `Creates a workspace in dir (default: the current directory). With --pointer
+and a subdirectory dir, also writes ./.dkf pointing at it, so verbs run from
+anywhere under the current directory find the workspace without DKF_WORKSPACE.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: a.run(func(cmd *cobra.Command, args []string) error {
 			dir := "."
 			if len(args) == 1 {
 				dir = args[0]
+			}
+			cwd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			absDir, err := filepath.Abs(dir)
+			if err != nil {
+				return err
+			}
+			if pointer && (len(args) == 0 || absDir == cwd) {
+				return usageErr("--pointer needs a workspace directory other than the current directory, e.g. `particulars init ./knowledge --pointer`")
 			}
 			cfg := store.NewConfig()
 			normalised := dkf.NormaliseBaseURI(baseURI)
@@ -47,6 +63,18 @@ func (a *app) initCmd() *cobra.Command {
 			if wasNormalised {
 				out["normalised"] = true
 			}
+			var pointerPath string
+			if pointer {
+				rel, err := filepath.Rel(cwd, ws.Root)
+				if err != nil {
+					return err
+				}
+				pointerPath, err = store.WritePointer(cwd, filepath.ToSlash(rel))
+				if err != nil {
+					return err
+				}
+				out["pointer"] = pointerPath
+			}
 			return a.emit(out, func(w io.Writer) {
 				fmt.Fprintf(w, "Initialised DKF workspace at %s (id %s)\n", ws.Root, ws.Config.Workspace.ID)
 				for _, c := range created {
@@ -55,6 +83,9 @@ func (a *app) initCmd() *cobra.Command {
 				if wasNormalised {
 					fmt.Fprintf(w, "  base-uri normalised to %s (must end in /)\n", ws.Config.Workspace.BaseURI)
 				}
+				if pointerPath != "" {
+					fmt.Fprintf(w, "Wrote %s pointing at the workspace\n", pointerPath)
+				}
 			})
 		}),
 	}
@@ -62,5 +93,6 @@ func (a *app) initCmd() *cobra.Command {
 	cmd.Flags().StringVar(&author, "author", "", "default source.author for claims")
 	cmd.Flags().StringVar(&harness, "harness", "", "default harness for claims and syntheses")
 	cmd.Flags().StringVar(&scope, "scope", "", "default scope: personal|organisation|public (default personal)")
+	cmd.Flags().BoolVar(&pointer, "pointer", false, "also write ./.dkf pointing at dir")
 	return cmd
 }

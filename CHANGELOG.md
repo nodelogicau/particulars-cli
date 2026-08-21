@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.0 — one-command install, workspace pointer
+
+- `install.sh` (Linux/macOS, POSIX sh): resolves the latest release or
+  `PARTICULARS_VERSION`, verifies the published SHA-256, installs to
+  `PARTICULARS_INSTALL_DIR` / `/usr/local/bin` / `~/.local/bin` without prompting.
+  Exercised in CI weekly and on change.
+- Homebrew (macOS): `brew install nodelogicau/tap/particulars` — a cask published
+  by the release pipeline to `nodelogicau/homebrew-tap`.
+- `.dkf` workspace pointer: a file whose first line is the workspace path lets
+  verbs run from a repository root (or anywhere above the workspace) find it.
+  `init <dir> --pointer` writes it. `dkf.yaml` always wins over a pointer in the
+  same directory; pointers do not chain.
+- New `workspace` verb: prints the resolved root and how it was found
+  (`flag`, `env`, `dkf.yaml`, `pointer`); exit 5 when nothing resolves.
+- The documented Claude Code `SessionStart` hook is now live: installer + skill.
+
 ## v0.2.1 — the skill ships in the binary
 
 - New `skill` verb: `skill show` prints the embedded agent skill; `skill install`

@@ -799,3 +799,55 @@ func TestSkillShowAndInstall(t *testing.T) {
 		t.Errorf("check missing: %+v", r)
 	}
 }
+
+func TestPointerAndWorkspaceVerb(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+	t.Setenv("DKF_WORKSPACE", "")
+	if r := run(t, "", "init", "--pointer", "--json"); r.code != 2 {
+		t.Errorf("--pointer without dir should exit 2, got %d", r.code)
+	}
+	if r := run(t, "", "workspace", "--json"); r.code != 5 {
+		t.Errorf("nothing resolves: %d", r.code)
+	}
+	r := run(t, "", "init", "./knowledge", "--pointer", "--author", "ben", "--json")
+	if r.code != 0 || r.js["pointer"] != filepath.Join(repo, ".dkf") {
+		t.Fatalf("init --pointer: %+v", r)
+	}
+	if data, _ := os.ReadFile(filepath.Join(repo, ".dkf")); string(data) != "knowledge\n" {
+		t.Errorf(".dkf content: %q", data)
+	}
+	_ = os.MkdirAll(filepath.Join(repo, "src", "pkg"), 0o755)
+	t.Chdir(filepath.Join(repo, "src", "pkg"))
+	w := run(t, "", "workspace", "--json")
+	if w.code != 0 || w.js["via"] != "pointer" || w.js["pointer"] != filepath.Join(repo, ".dkf") || filepath.Base(w.js["root"].(string)) != "knowledge" {
+		t.Errorf("workspace via pointer: %+v", w.js)
+	}
+	// A verb works from here too.
+	if r := run(t, "", "particular", "define", "--label", "Thing", "--json"); r.code != 0 {
+		t.Errorf("define via pointer: %+v", r)
+	}
+	text := run(t, "", "workspace")
+	if !strings.Contains(text.stdout, "via: pointer") {
+		t.Errorf("text: %s", text.stdout)
+	}
+	// Env wins over the pointer.
+	other := filepath.Join(t.TempDir(), "kb")
+	run(t, "", "init", other, "--json")
+	t.Setenv("DKF_WORKSPACE", other)
+	if w := run(t, "", "workspace", "--json"); w.js["via"] != "env" {
+		t.Errorf("env: %+v", w.js)
+	}
+	t.Setenv("DKF_WORKSPACE", "")
+	// Dangling pointer → 5 naming both.
+	_ = os.RemoveAll(filepath.Join(repo, "knowledge"))
+	w = run(t, "", "workspace", "--json")
+	if w.code != 5 || !strings.Contains(w.stderr, ".dkf") || !strings.Contains(w.stderr, "knowledge") {
+		t.Errorf("dangling: %+v", w)
+	}
+	// Differing existing pointer refused by init --pointer.
+	t.Chdir(repo)
+	if r := run(t, "", "init", "./other", "--pointer", "--json"); r.code != 1 {
+		t.Errorf("differing pointer should exit 1, got %d: %s", r.code, r.stderr)
+	}
+}

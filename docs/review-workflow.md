@@ -21,8 +21,11 @@ every DKF workspace version history, authorship, diffs, and a review UI.
 
 ## The agent's side
 
-0. Once per repo (or per remote session): `particulars skill install`, so the
-   agent has the verbs and the discipline below in its context.
+0. Once per repo: `particulars skill install`, so the agent has the verbs and
+   the discipline below in its context; if the workspace lives in a
+   subdirectory, `particulars init ./knowledge --pointer` (or a hand-written
+   `.dkf`) so every verb finds it from the repo root. Per remote session, the
+   `SessionStart` hook in `docs/examples/claude-settings.json` does both.
 1. Work on a branch. Everything the agent learns goes through the CLI:
    `particular define`, `claim assert`, `synthesis create`.
 2. Before asserting, the agent checks what it already knows —

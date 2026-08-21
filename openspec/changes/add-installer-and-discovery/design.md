@@ -41,26 +41,29 @@ Order: `PARTICULARS_INSTALL_DIR` if set → `/usr/local/bin` if writable → `/u
 
 A workflow job on `ubuntu-latest` and `macos-latest` runs `shellcheck install.sh`, then `PARTICULARS_INSTALL_DIR=$RUNNER_TEMP/bin sh install.sh` and asserts `particulars version` succeeds; a second run with `PARTICULARS_VERSION=v0.2.1` pins a known tag. It runs on PRs that touch `install.sh` and on a weekly schedule (so a release-page change breaks loudly rather than for the next user).
 
-### D4. Homebrew tap via GoReleaser
+### D4. Homebrew tap via GoReleaser — as a cask
+
+GoReleaser removed `brews` in v2.16 (our workflow pins `~> v2`), so the tap entry is a **cask**:
 
 ```yaml
-brews:
+homebrew_casks:
   - name: particulars
-    repository:
-      owner: nodelogicau
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Formula
-    homepage: https://github.com/nodelogicau/particulars-cli
-    description: Capture and recall dialectical knowledge (DKF) from the command line
-    license: MIT
-    install: bin.install "particulars"
-    test: system "#{bin}/particulars", "version"
+    repository: {owner: nodelogicau, name: homebrew-tap, branch: main, token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"}
+    directory: Casks
+    url: {verified: github.com/nodelogicau/particulars-cli/}
+    binaries: [particulars]
+    skip_upload: auto
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/particulars"]
+          end
 ```
 
-`release.yml` passes `HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}`. The formula is skipped (`skip_upload: auto`) for pre-release tags. The default `GITHUB_TOKEN` cannot push to another repository, so the PAT is a hard prerequisite; the release task checks the secret exists before tagging.
+Consequences: casks are macOS-only, so `brew install` is a macOS path and Linux uses `install.sh`; the binary is not notarised, so the post-install hook strips the quarantine attribute (standard for GoReleaser casks). `release.yml` passes `HOMEBREW_TAP_GITHUB_TOKEN`; the default `GITHUB_TOKEN` cannot push to another repository, so the PAT is a hard prerequisite and the release task checks it exists before tagging.
 
-**Why a tap, not homebrew-core:** core has notability requirements and a review queue; a tap is immediate and ours.
+**Why a tap, not homebrew-core:** core has notability requirements and a review queue; a tap is immediate and ours. **Why not keep a formula by pinning an old GoReleaser:** pinning a release tool to a removed feature is debt on day one.
 
 ### D5. Workspace pointer: `.dkf`
 
@@ -89,7 +92,7 @@ With a `.dkf` committed at the repo root, a remote session needs nothing else.
 
 - [`curl | sh` is a trust decision] → the script verifies checksums published by the same release pipeline; the README also shows manual and brew paths. We do not sign artifacts yet.
 - [GitHub changes the `releases/latest` redirect] → the CI schedule catches it; `PARTICULARS_VERSION` bypasses it.
-- [Tap publication fails if the PAT is missing/expired] → the release still ships binaries; only the formula step fails. The task list makes the secret a precondition and `release.yml` names the secret in the error.
+- [Tap publication fails if the PAT is missing/expired] → the release still ships binaries; only the cask step fails. The task list makes the secret a precondition and `release.yml` names the secret in the error.
 - [`.dkf` pointer diverges from spec discovery] → readers that ignore it still work from inside the workspace; the pointer only helps tools run from above it. Raised upstream.
 - [Pointer to a missing target confuses users] → exit 5 names both paths; `particulars workspace` shows resolution.
 
