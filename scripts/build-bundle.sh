@@ -13,18 +13,29 @@ set -eu
 VERSION="${1:?version}"; DIST="${2:?dist dir}"
 VERSION="${VERSION#v}"
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="${DIST}/particulars-${VERSION}.mcpb"
+mkdir -p "$DIST"
+# Absolute, so the zip step works from any working directory.
+OUT="$(cd "$DIST" && pwd)/particulars-${VERSION}.mcpb"
 
-find_bin() { # pattern -> first match or empty
-  # shellcheck disable=SC2086
-  set -- $1; [ -e "$1" ] && printf '%s' "$1" || true
+find_bin() { # glob words -> first existing match, or empty
+  for c in "$@"; do
+    [ -e "$c" ] && { printf '%s' "$c"; return; }
+  done
 }
 
-DARWIN="$(find_bin "${DIST}/particulars_darwin_all*/particulars")"
+# GoReleaser writes its universal binary to dist/<id>_darwin_all/particulars
+# (the id is prefixed, e.g. particulars-universal_darwin_all), so match any
+# *_darwin_all directory first. `make cross` produces flat per-arch files, so
+# fall back to building the universal binary here with lipo.
+DARWIN="$(find_bin "${DIST}"/*_darwin_all/particulars)"
 if [ -z "$DARWIN" ]; then
-  ARM="$(find_bin "${DIST}/particulars_darwin_arm64*/particulars")"; [ -n "$ARM" ] || ARM="$(find_bin "${DIST}/particulars_darwin_arm64")"
-  AMD="$(find_bin "${DIST}/particulars_darwin_amd64*/particulars")"; [ -n "$AMD" ] || AMD="$(find_bin "${DIST}/particulars_darwin_amd64")"
-  if [ -n "$ARM" ] && [ -n "$AMD" ] && command -v lipo >/dev/null 2>&1; then
+  ARM="$(find_bin "${DIST}"/particulars_darwin_arm64*/particulars)"; [ -n "$ARM" ] || ARM="$(find_bin "${DIST}/particulars_darwin_arm64")"
+  AMD="$(find_bin "${DIST}"/particulars_darwin_amd64*/particulars)"; [ -n "$AMD" ] || AMD="$(find_bin "${DIST}/particulars_darwin_amd64")"
+  if [ -n "$ARM" ] && [ -n "$AMD" ]; then
+    command -v lipo >/dev/null 2>&1 || {
+      echo "build-bundle: both darwin arches present but lipo is unavailable; refusing to ship a single-architecture bundle" >&2
+      exit 1
+    }
     mkdir -p "${DIST}/particulars_darwin_all"
     lipo -create -output "${DIST}/particulars_darwin_all/particulars" "$ARM" "$AMD"
     DARWIN="${DIST}/particulars_darwin_all/particulars"
@@ -32,11 +43,17 @@ if [ -z "$DARWIN" ]; then
     DARWIN="${ARM:-$AMD}"
   fi
 fi
-WIN="$(find_bin "${DIST}/particulars_windows_amd64*/particulars.exe")"; [ -n "$WIN" ] || WIN="$(find_bin "${DIST}/particulars_windows_amd64.exe")"
+WIN="$(find_bin "${DIST}"/particulars_windows_amd64*/particulars.exe)"; [ -n "$WIN" ] || WIN="$(find_bin "${DIST}/particulars_windows_amd64.exe")"
 
 if [ -z "$DARWIN" ] || [ -z "$WIN" ]; then
   echo "build-bundle: waiting for binaries (darwin=${DARWIN:-none} win=${WIN:-none})" >&2
   exit 0
+fi
+
+# A macOS bundle that is not universal breaks Intel Macs; say so rather than ship it.
+if command -v file >/dev/null 2>&1 && ! file "$DARWIN" | grep -q "universal binary"; then
+  echo "build-bundle: ${DARWIN} is not a universal binary; the bundle would break on Intel Macs" >&2
+  exit 1
 fi
 
 STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
@@ -59,5 +76,5 @@ assert m["user_config"]["workspace"]["type"] == "directory" and m["user_config"]
 EOF
 
 rm -f "$OUT"
-( cd "$STAGE" && zip -q -r -X "$OLDPWD/$OUT" manifest.json icon.png server )
+( cd "$STAGE" && zip -q -r -X "$OUT" manifest.json icon.png server )
 echo "build-bundle: wrote $OUT" >&2

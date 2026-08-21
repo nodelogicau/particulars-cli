@@ -44,6 +44,25 @@ jobs:
         with:
           version: latest
 
+  bundle:
+    name: Desktop bundle (macos)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # build-bundle.sh refuses to write a bundle whose macOS binary is not
+      # universal, so a green job is the assertion.
+      - run: make bundle
+      - name: Bundle is universal and complete
+        run: |
+          mkdir -p /tmp/mcpb && unzip -q dist/particulars-*.mcpb -d /tmp/mcpb
+          file /tmp/mcpb/server/darwin/particulars | grep -q "universal binary"
+          test -x /tmp/mcpb/server/darwin/particulars && test -s /tmp/mcpb/server/win32/particulars.exe
+          python3 -c "import json;json.load(open('/tmp/mcpb/manifest.json'))"
+
   cross:
     name: Cross-compile
     runs-on: ubuntu-latest
