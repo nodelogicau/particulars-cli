@@ -26,7 +26,7 @@
 - [x] 4.1 `bundle/manifest.json` template (verify `platform_overrides` keys against the MCPB spec; fall back to a darwin universal binary if per-arch overrides are not expressible), `bundle/icon.png`
 - [x] 4.2 `make bundle`: assemble `dist/particulars-<ver>.mcpb` from cross-compiled binaries; validate the manifest (JSON + referenced files exist); unit test for the assembly script
 - [x] 4.3 GoReleaser: build the bundle after archives and attach it to the release with its checksum
-- [ ] 4.4 Install the bundle in Claude Desktop on this Mac: pick the knowledge workspace, confirm tools appear, run `workspace_status` and a `knowledge_recall` from a Desktop chat
+- [x] 4.4 Install the bundle in Claude Desktop on this Mac: pick the knowledge workspace, confirm tools appear, run `workspace_status` and a `knowledge_recall` from a Desktop chat
 
 ## 5. Docs, Feedback, Release
 

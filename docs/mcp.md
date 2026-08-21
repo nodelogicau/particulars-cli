@@ -21,6 +21,13 @@ it; Claude Desktop asks for:
 The bundle contains the server binary (macOS universal, Windows x64); nothing else
 needs installing. The server starts when a conversation uses its tools.
 
+**Enable the extension after installing it.** Claude Desktop installs extensions
+switched off; until you toggle `particulars` on in Settings → Extensions, no
+particulars tools appear and no server is launched — so there is nothing in
+`~/Library/Logs/Claude/` to explain the absence either. If tools are still
+missing once it is enabled, `~/Library/Logs/Claude/mcp-server-particulars.log`
+will exist and say why.
+
 ### Claude Desktop — manual configuration
 
 If you already have `particulars` installed:
