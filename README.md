@@ -114,18 +114,34 @@ GitHub Action that runs `validate` and `index --check` on every PR.
 
 The binary carries an agent-facing skill — the recall-before-assert loop, a verb
 cheat-sheet, and rules for good claims, syntheses, and retractions — stamped with
-its own version so skill and verbs cannot drift:
+its own version so skill and verbs cannot drift. Install it for your harness:
+
+| `--harness` | Writes | Read by |
+|---|---|---|
+| `claude` (default) | `.claude/skills/particulars/SKILL.md` | Claude Code, GitHub Copilot |
+| `copilot` | `.github/skills/particulars/SKILL.md` | GitHub Copilot |
+| `agents` | `.agents/skills/particulars/SKILL.md` | GitHub Copilot; the vendor-neutral Agent Skills location |
+| `cursor` | `.cursor/rules/particulars.mdc` | Cursor |
+| `agents-md` | a marker-bounded section in `AGENTS.md` (`--file` to retarget, e.g. `GEMINI.md`) | Codex, Jules, Gemini CLI, Windsurf, Zed, Cursor, Copilot, … |
 
 ```sh
-particulars skill install          # → ./.claude/skills/particulars/SKILL.md (Claude Code, this repo)
-particulars skill install --user   # → ~/.claude/skills/particulars/SKILL.md
-particulars skill install --dir p  # → p/SKILL.md, for any other harness
-particulars skill show             # print it; pipe wherever you like
+particulars skill install                      # Claude Code (and Copilot)
+particulars skill install --harness cursor     # Cursor rule
+particulars skill install --harness agents-md  # section in AGENTS.md; the rest of the file is untouched
+particulars skill install --user               # personal location (claude/copilot/agents presets)
+particulars skill show --harness agents-md     # print any variant to pipe elsewhere
 ```
 
-`install` never overwrites a skill file it did not write; if you copied
-`skills/particulars/SKILL.md` by hand before v0.2.1, pass `--force` once.
-`skill install --check` verifies an installed copy without writing (exit 4 on
+**GitHub Copilot reads all three skills directories** (`.claude/skills`,
+`.github/skills`, `.agents/skills`) — install to exactly one, or it loads the
+skill twice; `install` warns if it sees a second. For a repository serving
+several harnesses, `agents` is the neutral choice. `--dir <path>` writes a plain
+`SKILL.md` anywhere (not useful for Cursor, which ignores `.md` in its rules
+directory).
+
+`install` never overwrites a skill file it did not write (pass `--force` once if
+you copied it by hand before v0.2.1), and in `AGENTS.md` it owns only the region
+between its markers. `skill install --check` verifies without writing (exit 4 on
 drift) — handy in CI. The canonical text lives at
 [`skills/particulars/SKILL.md`](skills/particulars/SKILL.md).
 
@@ -152,7 +168,7 @@ installs the binary if missing and installs the skill, on every session start.
 | `conflicts [P] [--fail-on-conflicts]` | Unsynthesised claims and stale syntheses per particular |
 | `index [--check]` | Rebuild `index.yaml`, or verify it (exit 4 on drift) |
 | `validate` | Structural and referential checks; exit 4 on errors |
-| `skill show` / `skill install [--user\|--dir D] [--force] [--check]` | Print or install the embedded agent skill |
+| `skill show` / `skill install [--harness P]… [--user\|--dir D] [--file F] [--force] [--check]` | Print or install the embedded agent skill for Claude Code, Copilot, Cursor, or AGENTS.md |
 | `version` | Binary version and supported format (`dkf/0.1`) |
 
 Run `particulars <verb> --help` for every flag.

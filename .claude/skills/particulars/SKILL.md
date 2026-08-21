@@ -56,6 +56,9 @@ export DKF_HARNESS=claude DKF_MODEL=<your model id>
 # DKF_AUTHOR defaults to dkf.yaml defaults.source.author — the human you work for
 ```
 
+If this skill is not yet installed for your harness, `particulars skill install`
+does it (`--harness copilot|agents|cursor|agents-md` for others; `skill --help`).
+
 A source needs at least one of `author` or `harness`, so an agent acting alone is
 valid; syntheses always need `harness`. Quote ids and use one `--input` per
 input — in zsh an unquoted `$id:thesis` is mangled by the `:t` modifier.

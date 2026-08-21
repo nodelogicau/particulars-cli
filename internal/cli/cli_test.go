@@ -851,3 +851,110 @@ func TestPointerAndWorkspaceVerb(t *testing.T) {
 		t.Errorf("differing pointer should exit 1, got %d: %s", r.code, r.stderr)
 	}
 }
+
+func TestSkillHarnessPresets(t *testing.T) {
+	work := t.TempDir()
+	t.Chdir(work)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("DKF_WORKSPACE", "")
+
+	// Copilot preset writes the same content as claude.
+	claude := run(t, "", "skill", "show")
+	r := run(t, "", "skill", "install", "--harness", "copilot", "--json")
+	if r.code != 0 || r.js["created"] != true || r.js["harness"] != "copilot" || r.js["path"] != filepath.Join(work, ".github", "skills", "particulars", "SKILL.md") {
+		t.Fatalf("copilot: %+v", r)
+	}
+	if got, _ := os.ReadFile(r.js["path"].(string)); string(got) != claude.stdout {
+		t.Error("copilot content should equal claude's")
+	}
+	// Duplicate-location warning when a second Copilot-readable location is installed.
+	r = run(t, "", "skill", "install", "--harness", "claude", "--json")
+	if r.code != 0 || len(r.js["warnings"].([]any)) != 1 || !strings.Contains(r.js["warnings"].([]any)[0].(string), ".github/skills/particulars/SKILL.md") {
+		t.Errorf("duplicate warning: %+v", r.js["warnings"])
+	}
+	// Neutral location, user scope.
+	r = run(t, "", "skill", "install", "--harness", "agents", "--user", "--json")
+	if r.code != 0 || r.js["path"] != filepath.Join(home, ".agents", "skills", "particulars", "SKILL.md") || len(r.js["warnings"].([]any)) != 0 {
+		t.Errorf("agents --user: %+v", r)
+	}
+	// Cursor rule.
+	r = run(t, "", "skill", "install", "--harness", "cursor", "--json")
+	mdc := filepath.Join(work, ".cursor", "rules", "particulars.mdc")
+	if r.code != 0 || r.js["path"] != mdc {
+		t.Fatalf("cursor: %+v", r)
+	}
+	got, _ := os.ReadFile(mdc)
+	if !strings.HasPrefix(string(got), "---\ndescription: \"") || !strings.Contains(string(got), "\nalwaysApply: false\n---\n<!-- installed by particulars dev; regenerate with: particulars skill install --harness cursor -->\n") {
+		t.Errorf("mdc shape:\n%s", got[:300])
+	}
+	if show := run(t, "", "skill", "show", "--harness", "cursor"); show.stdout != string(got) {
+		t.Error("show --harness cursor should equal the installed file")
+	}
+	// Several presets at once.
+	r = run(t, "", "skill", "install", "--harness", "claude", "--harness", "cursor", "--json")
+	if r.code != 0 || len(r.js["targets"].([]any)) != 2 {
+		t.Errorf("multi: %+v", r.js)
+	}
+	// Flag combinations.
+	for _, args := range [][]string{
+		{"--user", "--dir", "x"},
+		{"--harness", "cursor", "--user"},
+		{"--harness", "agents-md", "--user"},
+		{"--file", "AGENTS.md"},
+		{"--harness", "nope"},
+		{"--dir", "x", "--harness", "claude"},
+	} {
+		if r := run(t, "", append([]string{"skill", "install"}, append(args, "--json")...)...); r.code != 2 {
+			t.Errorf("%v should exit 2, got %d", args, r.code)
+		}
+	}
+
+	// AGENTS.md: fresh, then user content preserved, then broken markers.
+	r = run(t, "", "skill", "install", "--harness", "agents-md", "--json")
+	agents := filepath.Join(work, "AGENTS.md")
+	if r.code != 0 || r.js["created"] != true || r.js["path"] != agents {
+		t.Fatalf("agents-md fresh: %+v", r)
+	}
+	sec := run(t, "", "skill", "show", "--harness", "agents-md").stdout
+	if got, _ := os.ReadFile(agents); string(got) != sec || !strings.HasPrefix(sec, "<!-- particulars:skill:start") || !strings.HasSuffix(sec, "<!-- particulars:skill:end -->\n") {
+		t.Errorf("fresh AGENTS.md content")
+	}
+	if r := run(t, "", "skill", "install", "--harness", "agents-md", "--json"); r.js["unchanged"] != true {
+		t.Errorf("idempotent section: %+v", r.js)
+	}
+	above, below := "# My project\n\nRun make.\n\n", "\n## After\n\nmore\n"
+	older := strings.Replace(sec, "installed by particulars dev;", "installed by particulars 0.1.0;", 1)
+	_ = os.WriteFile(agents, []byte(above+older+below), 0o644)
+	if r := run(t, "", "skill", "install", "--harness", "agents-md", "--check", "--json"); r.code != 0 || r.js["status"] != "ok" {
+		t.Errorf("check masks section version: %+v", r)
+	}
+	r = run(t, "", "skill", "install", "--harness", "agents-md", "--json")
+	got, _ = os.ReadFile(agents)
+	if r.js["updated"] != true || !strings.HasPrefix(string(got), above) || !strings.HasSuffix(string(got), below) || strings.Contains(string(got), "0.1.0") {
+		t.Errorf("replace preserves surroundings:\n%s", got)
+	}
+	// Append to a file without markers; check says missing beforehand.
+	_ = os.WriteFile(agents, []byte("# Only mine\n"), 0o644)
+	if r := run(t, "", "skill", "install", "--harness", "agents-md", "--check", "--json"); r.code != 4 || r.js["status"] != "missing" {
+		t.Errorf("no section → missing: %+v", r)
+	}
+	r = run(t, "", "skill", "install", "--harness", "agents-md", "--json")
+	got, _ = os.ReadFile(agents)
+	if r.js["updated"] != true || !strings.HasPrefix(string(got), "# Only mine\n\n<!-- particulars:skill:start") {
+		t.Errorf("append:\n%s", got[:120])
+	}
+	// Retarget with --file.
+	if r := run(t, "", "skill", "install", "--harness", "agents-md", "--file", "GEMINI.md", "--json"); r.code != 0 || r.js["path"] != filepath.Join(work, "GEMINI.md") {
+		t.Errorf("--file: %+v", r)
+	}
+	// Broken markers refused.
+	_ = os.WriteFile(agents, []byte("<!-- particulars:skill:start — installed by particulars dev; regenerate with: particulars skill install --harness agents-md -->\nhalf\n"), 0o644)
+	if r := run(t, "", "skill", "install", "--harness", "agents-md", "--json"); r.code != 1 {
+		t.Errorf("broken should exit 1, got %d", r.code)
+	}
+	if r := run(t, "", "skill", "install", "--harness", "agents-md", "--check", "--json"); r.code != 4 || r.js["status"] != "foreign" {
+		t.Errorf("broken check: %+v", r)
+	}
+}

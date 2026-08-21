@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.1 — install the skill for any harness
+
+- `skill install --harness <preset>` (repeatable): `claude` (default),
+  `copilot` (`.github/skills/`), `agents` (`.agents/skills/`, vendor-neutral),
+  `cursor` (`.cursor/rules/particulars.mdc` with Cursor frontmatter), and
+  `agents-md` (a marker-bounded section in `AGENTS.md`; `--file` to retarget).
+  `--user` for the presets that have a personal location.
+- `skill show --harness <preset>` prints exactly what `install` would write.
+- `--check` is per target and, for `agents-md`, checks only the owned section.
+- Warns when a second GitHub Copilot-readable skills directory already holds the
+  skill (Copilot loads `.claude/skills`, `.github/skills`, and `.agents/skills`).
+
 ## v0.3.0 — one-command install, workspace pointer
 
 - `install.sh` (Linux/macOS, POSIX sh): resolves the latest release or
