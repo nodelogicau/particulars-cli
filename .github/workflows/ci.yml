@@ -24,6 +24,11 @@ jobs:
           cache: true
       - run: go build ./...
       - run: go test ./... -count=1
+      - name: Installed skill matches the binary
+        if: runner.os != 'Windows'
+        run: |
+          go build -o /tmp/particulars ./cmd/particulars
+          /tmp/particulars skill install --check
 
   lint:
     name: Lint

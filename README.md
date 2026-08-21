@@ -106,11 +106,26 @@ GitHub Action that runs `validate` and `index --check` on every PR.
 
 ## Teaching an agent the verbs
 
-[`skills/particulars/SKILL.md`](skills/particulars/SKILL.md) is an agent-facing
-skill: the recall-before-assert loop, a verb cheat-sheet, and rules for good
-claims, particulars, syntheses, and retractions. Install it wherever your harness
-loads skills — for Claude Code, copy it to `.claude/skills/particulars/SKILL.md`
-in the repository that holds the workspace.
+The binary carries an agent-facing skill — the recall-before-assert loop, a verb
+cheat-sheet, and rules for good claims, syntheses, and retractions — stamped with
+its own version so skill and verbs cannot drift:
+
+```sh
+particulars skill install          # → ./.claude/skills/particulars/SKILL.md (Claude Code, this repo)
+particulars skill install --user   # → ~/.claude/skills/particulars/SKILL.md
+particulars skill install --dir p  # → p/SKILL.md, for any other harness
+particulars skill show             # print it; pipe wherever you like
+```
+
+`install` never overwrites a skill file it did not write; if you copied
+`skills/particulars/SKILL.md` by hand before v0.2.1, pass `--force` once.
+`skill install --check` verifies an installed copy without writing (exit 4 on
+drift) — handy in CI. The canonical text lives at
+[`skills/particulars/SKILL.md`](skills/particulars/SKILL.md).
+
+For a zero-setup remote session, a Claude Code `SessionStart` hook can run the
+install on every start — see
+[`docs/examples/claude-settings.json`](docs/examples/claude-settings.json).
 
 ## Verbs
 
@@ -129,6 +144,7 @@ in the repository that holds the workspace.
 | `conflicts [P] [--fail-on-conflicts]` | Unsynthesised claims and stale syntheses per particular |
 | `index [--check]` | Rebuild `index.yaml`, or verify it (exit 4 on drift) |
 | `validate` | Structural and referential checks; exit 4 on errors |
+| `skill show` / `skill install [--user\|--dir D] [--force] [--check]` | Print or install the embedded agent skill |
 | `version` | Binary version and supported format (`dkf/0.1`) |
 
 Run `particulars <verb> --help` for every flag.

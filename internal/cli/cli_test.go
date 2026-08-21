@@ -712,3 +712,89 @@ func TestLineageSupersededText(t *testing.T) {
 		t.Errorf("text: %s", txt.stdout)
 	}
 }
+
+func TestSkillShowAndInstall(t *testing.T) {
+	work := t.TempDir()
+	t.Chdir(work)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("DKF_WORKSPACE", "") // no workspace needed
+
+	show := run(t, "", "skill", "show")
+	if show.code != 0 || !strings.HasPrefix(show.stdout, "---\n") || !strings.Contains(show.stdout, "name: particulars") || !strings.Contains(show.stdout, "<!-- installed by particulars dev;") {
+		t.Fatalf("show: %+v", show)
+	}
+	sj := run(t, "", "skill", "show", "--json")
+	if sj.js["content"] != show.stdout || sj.js["version"] != "dev" {
+		t.Errorf("show --json: %v", sj.js["version"])
+	}
+
+	// Fresh project install.
+	r := run(t, "", "skill", "install", "--json")
+	target := filepath.Join(work, ".claude", "skills", "particulars", "SKILL.md")
+	if r.code != 0 || r.js["created"] != true || r.js["path"] != target {
+		t.Fatalf("install: %+v", r)
+	}
+	got, _ := os.ReadFile(target)
+	if string(got) != show.stdout {
+		t.Error("installed content should equal show")
+	}
+	if r := run(t, "", "skill", "install", "--json"); r.code != 0 || r.js["unchanged"] != true {
+		t.Errorf("reinstall: %+v", r)
+	}
+	if r := run(t, "", "skill", "install", "--check", "--json"); r.code != 0 || r.js["status"] != "ok" {
+		t.Errorf("check ok: %+v", r)
+	}
+
+	// Own file from an "older version" (different stamp, same body) → check ok, install updates.
+	older := strings.Replace(string(got), "installed by particulars dev;", "installed by particulars 0.1.0;", 1)
+	older = strings.Replace(older, "version: \"dev\"", "version: \"0.1.0\"", 1)
+	_ = os.WriteFile(target, []byte(older), 0o644)
+	if r := run(t, "", "skill", "install", "--check", "--json"); r.code != 0 || r.js["status"] != "ok" {
+		t.Errorf("check should mask versions: %+v", r)
+	}
+	if r := run(t, "", "skill", "install", "--json"); r.code != 0 || r.js["updated"] != true {
+		t.Errorf("update own older file: %+v", r)
+	}
+
+	// Body drift → check 4 differs; nothing written.
+	drift := strings.Replace(string(got), "## The loop", "## The loop (edited)", 1)
+	_ = os.WriteFile(target, []byte(drift), 0o644)
+	r = run(t, "", "skill", "install", "--check", "--json")
+	if r.code != 4 || r.js["status"] != "differs" {
+		t.Errorf("check drift: %+v", r)
+	}
+	if now, _ := os.ReadFile(target); string(now) != drift {
+		t.Error("--check must not write")
+	}
+
+	// Foreign (hand-written) file: refused without --force, check says foreign.
+	_ = os.WriteFile(target, []byte("# my own skill\n"), 0o644)
+	r = run(t, "", "skill", "install", "--json")
+	if r.code != 1 || r.errCode(t) != "conflict" || !strings.Contains(r.stderr, "--force") {
+		t.Errorf("foreign refusal: %+v", r)
+	}
+	if now, _ := os.ReadFile(target); string(now) != "# my own skill\n" {
+		t.Error("foreign file must be untouched")
+	}
+	if r := run(t, "", "skill", "install", "--check", "--json"); r.code != 4 || r.js["status"] != "foreign" {
+		t.Errorf("check foreign: %+v", r)
+	}
+	if r := run(t, "", "skill", "install", "--force", "--json"); r.code != 0 || r.js["updated"] != true {
+		t.Errorf("force: %+v", r)
+	}
+
+	// --user and --dir targets; mutual exclusion; missing check.
+	if r := run(t, "", "skill", "install", "--user", "--json"); r.code != 0 || r.js["path"] != filepath.Join(home, ".claude", "skills", "particulars", "SKILL.md") {
+		t.Errorf("user: %+v", r)
+	}
+	if r := run(t, "", "skill", "install", "--dir", filepath.Join(work, "tmp", "skills"), "--json"); r.code != 0 || r.js["path"] != filepath.Join(work, "tmp", "skills", "SKILL.md") {
+		t.Errorf("dir: %+v", r)
+	}
+	if r := run(t, "", "skill", "install", "--user", "--dir", "x", "--json"); r.code != 2 {
+		t.Errorf("mutual exclusion: %d", r.code)
+	}
+	if r := run(t, "", "skill", "install", "--dir", filepath.Join(work, "nowhere"), "--check", "--json"); r.code != 4 || r.js["status"] != "missing" {
+		t.Errorf("check missing: %+v", r)
+	}
+}

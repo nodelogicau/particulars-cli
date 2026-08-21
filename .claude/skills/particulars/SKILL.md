@@ -5,9 +5,10 @@ license: MIT
 compatibility: Requires the `particulars` binary on PATH and a DKF workspace (a directory containing dkf.yaml). Shell access required.
 metadata:
   author: nodelogicau
-  version: "0.2"
+  version: "dev"
   format: dkf/0.1
 ---
+<!-- installed by particulars dev; regenerate with: particulars skill install -->
 
 You are the author of a knowledge base that humans review through git pull
 requests. `particulars` stores what you learn as YAML files; you do the

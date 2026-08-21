@@ -6,7 +6,7 @@ DIST    := dist
 
 export CGO_ENABLED := 0
 
-.PHONY: all build test lint fmt vet cross clean tidy
+.PHONY: all build test lint fmt vet cross clean tidy skill
 
 all: build
 
@@ -38,6 +38,12 @@ cross:
 		echo "  $$out"; \
 		GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags '$(LDFLAGS)' -o $$out ./cmd/particulars || exit 1; \
 	done
+
+# Regenerate the repo's own installed skill copy from the embedded one. Built
+# as VERSION=dev so the committed stamp never churns.
+skill:
+	$(MAKE) build VERSION=dev
+	$(DIST)/$(BINARY) skill install --force
 
 clean:
 	rm -rf $(DIST)

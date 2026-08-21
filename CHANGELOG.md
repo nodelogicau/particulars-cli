@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.1 — the skill ships in the binary
+
+- New `skill` verb: `skill show` prints the embedded agent skill; `skill install`
+  writes it to `./.claude/skills/particulars/SKILL.md` (default), `~/.claude/…`
+  (`--user`), or `--dir <path>`. The text is stamped with the binary version and
+  an ownership marker; files the tool did not write are refused without `--force`;
+  `--check` verifies without writing (exit 4 on drift), ignoring the stamped version.
+- The repository's own `.claude/skills/particulars/SKILL.md` is now generated
+  (`make skill`) and verified in CI.
+- Docs: one-command agent setup in the README; a sample Claude Code
+  `SessionStart` hook in `docs/examples/claude-settings.json`.
+
 ## v0.2.0 — align with the resolved DKF v0.1 draft
 
 Implements the decisions recorded in

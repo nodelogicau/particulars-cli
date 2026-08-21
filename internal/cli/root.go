@@ -199,6 +199,7 @@ source needs at least one of author or harness; syntheses always need harness.`,
 		a.conflictsCmd(),
 		a.indexCmd(),
 		a.validateCmd(),
+		a.skillCmd(),
 		a.versionCmd(),
 	)
 	return root
