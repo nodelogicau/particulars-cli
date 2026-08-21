@@ -718,6 +718,7 @@ func TestSkillShowAndInstall(t *testing.T) {
 	t.Chdir(work)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
 	t.Setenv("DKF_WORKSPACE", "") // no workspace needed
 
 	show := run(t, "", "skill", "show")
