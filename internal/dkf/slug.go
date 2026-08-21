@@ -40,14 +40,24 @@ func Slugify(label string) string {
 const URNPrefix = "urn:dkf:"
 
 // MintURI builds a particular URI from a slug. With a base URI the result is
-// base + slug (a "/" is inserted if base is hierarchical and lacks a trailing
-// delimiter); without one it is urn:dkf:<workspaceID>:<slug>.
+// base + slug (the base must already end in "/", see ValidBaseURI); without
+// one it is urn:dkf:<workspaceID>:<slug>.
 func MintURI(baseURI, workspaceID, slug string) string {
 	if baseURI == "" {
 		return URNPrefix + workspaceID + ":" + slug
 	}
-	if !strings.HasSuffix(baseURI, "/") && !strings.HasSuffix(baseURI, "#") && !strings.HasSuffix(baseURI, ":") {
-		baseURI += "/"
-	}
 	return baseURI + slug
 }
+
+// NormaliseBaseURI appends a trailing "/" when base is non-empty and lacks one.
+func NormaliseBaseURI(base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" || strings.HasSuffix(base, "/") {
+		return base
+	}
+	return base + "/"
+}
+
+// ValidBaseURI reports whether base is empty or ends in "/", as the format
+// requires of workspace.base-uri.
+func ValidBaseURI(base string) bool { return base == "" || strings.HasSuffix(base, "/") }

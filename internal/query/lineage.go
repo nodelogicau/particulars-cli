@@ -18,11 +18,14 @@ type Node struct {
 	Role       dkf.Role   `json:"role,omitempty"`
 	Weight     dkf.Weight `json:"weight,omitempty"`
 	Retracted  bool       `json:"retracted"`
-	Unresolved string     `json:"unresolved,omitempty"`
-	Inputs     []*Node    `json:"inputs"`
-	Missing    bool       `json:"missing,omitempty"`   // referenced id has no file
-	Truncated  bool       `json:"truncated,omitempty"` // depth limit reached before expanding
-	Cycle      bool       `json:"cycle,omitempty"`     // id already on the current path
+	// SupersededBy is the retracted node's superseded-by pointer, when any.
+	// It is informational and is never expanded as an input.
+	SupersededBy string  `json:"superseded_by,omitempty"`
+	Unresolved   string  `json:"unresolved,omitempty"`
+	Inputs       []*Node `json:"inputs"`
+	Missing      bool    `json:"missing,omitempty"`   // referenced id has no file
+	Truncated    bool    `json:"truncated,omitempty"` // depth limit reached before expanding
+	Cycle        bool    `json:"cycle,omitempty"`     // id already on the current path
 }
 
 // Lineage builds the provenance tree rooted at id. depth <= 0 means
@@ -40,6 +43,9 @@ func expand(g *store.Graph, a dkf.Assertion, role dkf.Role, weight dkf.Weight, d
 		ID: a.ObjectID(), Type: a.ObjectType(), Subject: a.SubjectID(), Content: a.GetContent(),
 		Timestamp: dkf.FormatTime(a.GetTimestamp()), Confidence: a.GetConfidence(),
 		Role: role, Weight: weight, Retracted: a.GetRetracted() != nil, Inputs: []*Node{},
+	}
+	if r := a.GetRetracted(); r != nil {
+		n.SupersededBy = r.SupersededBy
 	}
 	s, ok := a.(*dkf.Synthesis)
 	if !ok {

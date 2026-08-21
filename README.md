@@ -16,9 +16,11 @@ It is built to be driven by an LLM agent and reviewed by humans through git:
 - the binary is static, dependency-free, and does no reasoning of its own. The
   agent reasons; `particulars` stores, indexes, and reports structure.
 
-This is a reference implementation of the DKF v0.1 *draft*. Field names and the
-ID scheme may change before v0.1 is declared; see [SPEC-FEEDBACK.md](SPEC-FEEDBACK.md)
-for what this implementation proposes upstream.
+This is the reference implementation of the DKF v0.1 draft as resolved on
+2026-08-21 ([nodelogicau/particulars@27743db](https://github.com/nodelogicau/particulars/commit/27743db)).
+[SPEC-FEEDBACK.md](SPEC-FEEDBACK.md) records what this implementation proposed
+and how each point was decided. v0.2.0 aligns the CLI with those decisions; see
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 
@@ -79,6 +81,7 @@ knowledge/
   particulars/par_….yaml
   claims/clm_….yaml
   syntheses/syn_….yaml
+  merges/mrg_….yaml        merge records (two URIs declared the same particular)
   index.yaml               derived manifest (regenerate with `particulars index`)
 ```
 
@@ -90,7 +93,7 @@ can only ever be a retraction. Merging is acceptance. If something merged turns 
 to be wrong, retract it — never delete it:
 
 ```sh
-particulars claim retract clm_0191…a --reason "Port is 8443, not 443" \
+particulars retract clm_0191…a --reason "Port is 8443, not 443" \
     --superseded-by clm_0191…c
 ```
 
@@ -117,7 +120,8 @@ in the repository that holds the workspace.
 | `particular define --label L [--uri U] [--alias A]…` | Create or update a particular; idempotent on URI |
 | `particular resolve <id\|uri\|label\|alias>` | Find particulars (label/alias case-insensitive) |
 | `claim assert --subject P (--content T \| --content-file F\|-) […]` | Record a claim |
-| `claim retract <id> --reason R [--superseded-by id]` | Append a retraction block to a claim or synthesis |
+| `retract <id> --reason R [--superseded-by id]` | Append a retraction block to a claim, synthesis, or merge (`claim retract` is an alias) |
+| `particular merge <a> <b> [--reason R]` | Declare two URIs the same particular; writes `merges/mrg_….yaml` |
 | `synthesis create --subject P --input id:role[:weight]… --unresolved U […]` | Record a synthesis the agent has reasoned |
 | `recall [P] [--topic T]… [--scope S] [--include-retracted] [--limit N]` | Claims and syntheses in lineage order; current synthesis marked |
 | `topics [P] [--scope S] [--include-retracted]` | Topics in use, with assertion and particular counts |
@@ -140,17 +144,37 @@ Without `--uri`, `particular define` mints one from the label:
 same particular across sessions. For things that already have a global identifier —
 Wikidata, ORCID, a GitHub URL — pass it with `--uri`.
 
+### Provenance
+
+Every `source` (on claims, syntheses, retractions, and merges) needs at least one of
+`author` or `harness`; an agent acting alone is a valid source. Syntheses additionally
+require `source.harness`. Files written by v0.1.x carried `produced-by` on syntheses;
+they are still read (as `source`) and `validate` marks them `legacy_produced_by`.
+
+### Merges
+
+`particular merge` declares that two URIs denote the same thing and writes a small
+record — nothing is moved or rewritten. Non-retracted merges are symmetric and
+transitive, so merged particulars form an equivalence class that `recall`,
+`conflicts`, and `lineage` operate over; each claim keeps its own `subject`. Either
+side may be a URI with no local particular, which is how a workspace bridges to a
+public identifier. Undo a merge with `retract <mrg_id>`.
+
 ### Conflicts are structural
 
-`conflicts` does not judge whether two statements contradict. For each particular it
-computes:
+`conflicts` does not judge whether two statements contradict. For each particular (or
+merge class) it computes:
 
-- **current** — the most recent non-retracted synthesis
+- **current** — the most recent non-retracted synthesis, by `timestamp` then id
 - **unsynthesised** — non-retracted claims and syntheses not reconciled into it
-- **stale** — syntheses that cite a retracted input
+- **stale** — syntheses that cite a retracted input, directly or transitively
 
 and reports the particular when there is something to reconcile. Deciding whether an
 unsynthesised claim extends or contradicts the current belief is the agent's call.
+`recall` marks the same facts on each entry (`current`, `unsynthesised`).
+
+A synthesis that settles everything still needs `--unresolved`; the conventional value
+is the exact string `None identified`.
 
 ## Exit codes
 
@@ -171,7 +195,8 @@ write their report to stdout *and* the error envelope to stderr on exit 4.
 ## Configuration
 
 **Workspace selection:** `--workspace <dir>`, else `$DKF_WORKSPACE`, else the nearest
-ancestor directory containing `dkf.yaml`.
+ancestor directory containing `dkf.yaml`. `workspace.base-uri`, if set, must end in
+`/` (`init` adds it if missing).
 
 **Provenance defaults** for `source.author`, `harness`, `model`: explicit flag, then
 `$DKF_AUTHOR` / `$DKF_HARNESS` / `$DKF_MODEL`, then `dkf.yaml`:
@@ -191,7 +216,7 @@ defaults:
 
 ## Identifiers and files
 
-Object ids are `<prefix>_<uuidv7>` — `par_`, `clm_`, `syn_` — lowercase and
+Object ids are `<prefix>_<uuidv7>` — `par_`, `clm_`, `syn_`, `mrg_` — lowercase and
 time-ordered, so `ls claims/` is a chronological log and new files cluster at the
 end of a PR diff. Ids written by other implementations are accepted on read.
 
@@ -204,9 +229,9 @@ conflicts on it, run `particulars index` rather than resolving by hand.
 
 ## Scope of this release
 
-Implemented: the eight non-federation tools from the DKF spec (as CLI verbs), plus
-`init`, `index`, `validate`. Not yet: federation (`feed_index`, `particular_merge`,
-`knowledge_publish`), signing, and an MCP transport — the core packages are
+Implemented: the eight non-federation tools from the DKF spec plus `particular_merge`
+(as CLI verbs), and `init`, `index`, `validate`, `topics`. Not yet: `feed_index`,
+`knowledge_publish`, signing, and an MCP transport — the core packages are
 structured so `serve --mcp` can be added without touching the format layer.
 
 ## Development

@@ -18,25 +18,27 @@ type RecallOptions struct {
 
 // Entry is one recalled claim or synthesis, shaped for output.
 type Entry struct {
-	ID         string      `json:"id"`
-	Type       dkf.Type    `json:"type"`
-	Subject    string      `json:"subject"`
-	Content    string      `json:"content"`
-	Timestamp  string      `json:"timestamp"`
-	Confidence *float64    `json:"confidence,omitempty"`
-	Scope      dkf.Scope   `json:"scope"`
-	Topics     []string    `json:"topics,omitempty"`
-	Retracted  bool        `json:"retracted"`
-	Current    bool        `json:"current,omitempty"`
-	Inputs     []dkf.Input `json:"inputs,omitempty"`
-	Unresolved string      `json:"unresolved,omitempty"`
-	Method     string      `json:"method,omitempty"`
+	ID            string      `json:"id"`
+	Type          dkf.Type    `json:"type"`
+	Subject       string      `json:"subject"`
+	Content       string      `json:"content"`
+	Source        dkf.Source  `json:"source"`
+	Timestamp     string      `json:"timestamp"`
+	Confidence    *float64    `json:"confidence,omitempty"`
+	Scope         dkf.Scope   `json:"scope"`
+	Topics        []string    `json:"topics,omitempty"`
+	Retracted     bool        `json:"retracted"`
+	Current       bool        `json:"current,omitempty"`
+	Unsynthesised bool        `json:"unsynthesised,omitempty"`
+	Inputs        []dkf.Input `json:"inputs,omitempty"`
+	Unresolved    string      `json:"unresolved,omitempty"`
+	Method        string      `json:"method,omitempty"`
 }
 
 func entryFor(a dkf.Assertion) Entry {
 	ctx := a.GetContext()
 	e := Entry{
-		ID: a.ObjectID(), Type: a.ObjectType(), Subject: a.SubjectID(), Content: a.GetContent(),
+		ID: a.ObjectID(), Type: a.ObjectType(), Subject: a.SubjectID(), Content: a.GetContent(), Source: a.GetSource(),
 		Timestamp: dkf.FormatTime(a.GetTimestamp()), Confidence: a.GetConfidence(),
 		Scope: ctx.Scope, Topics: ctx.Topics, Retracted: a.GetRetracted() != nil,
 	}
@@ -48,28 +50,59 @@ func entryFor(a dkf.Assertion) Entry {
 	return e
 }
 
-// CurrentSynthesis returns the most recent (highest id) non-retracted
-// synthesis about subject, or nil.
-func CurrentSynthesis(g *store.Graph, subject string) *dkf.Synthesis {
+// newer reports whether a should rank after b as "more recent": greater
+// timestamp, ties broken by greater id.
+func newer(a, b *dkf.Synthesis) bool {
+	if !a.Timestamp.Equal(b.Timestamp) {
+		return a.Timestamp.After(b.Timestamp)
+	}
+	return a.ID > b.ID
+}
+
+// CurrentForClass returns the most recent non-retracted synthesis whose
+// subject is any member of the class, ordered by timestamp then id, or nil.
+func CurrentForClass(g *store.Graph, members []string) *dkf.Synthesis {
 	var cur *dkf.Synthesis
-	for _, a := range g.BySubject[subject] {
+	for _, a := range g.ClassAssertions(members) {
 		s, ok := a.(*dkf.Synthesis)
 		if !ok || s.Retracted != nil {
 			continue
 		}
-		if cur == nil || s.ID > cur.ID {
+		if cur == nil || newer(s, cur) {
 			cur = s
 		}
 	}
 	return cur
 }
 
+// CurrentSynthesis returns the current synthesis for the class containing
+// subject, or nil.
+func CurrentSynthesis(g *store.Graph, subject string) *dkf.Synthesis {
+	return CurrentForClass(g, g.ClassOf(subject))
+}
+
+// classState caches current/reconciled per class root.
+type classState struct {
+	current    string
+	reconciled map[string]bool
+}
+
+func stateFor(g *store.Graph, members []string) classState {
+	st := classState{reconciled: map[string]bool{}}
+	if cur := CurrentForClass(g, members); cur != nil {
+		st.current = cur.ID
+		closure(g, cur, st.reconciled)
+	}
+	return st
+}
+
 // Recall returns matching assertions in lineage order: every object precedes
-// any synthesis that cites it, ties broken by ascending id.
+// any synthesis that cites it, ties broken by ascending id. When a subject is
+// given, every member of its merge equivalence class is included.
 func Recall(g *store.Graph, opts RecallOptions) []Entry {
 	var candidates []dkf.Assertion
 	if opts.Subject != "" {
-		candidates = append(candidates, g.BySubject[opts.Subject]...)
+		candidates = g.ClassAssertions(g.ClassOf(opts.Subject))
 	} else {
 		candidates = g.SortedAssertions()
 	}
@@ -89,22 +122,16 @@ func Recall(g *store.Graph, opts RecallOptions) []Entry {
 	}
 	ordered := LineageOrder(filtered)
 
-	currentIDs := map[string]bool{}
-	if opts.Subject != "" {
-		if cur := CurrentSynthesis(g, opts.Subject); cur != nil {
-			currentIDs[cur.ID] = true
+	states := map[string]classState{} // keyed by class root (first member)
+	stateOf := func(subject string) classState {
+		members := g.ClassOf(subject)
+		key := members[0]
+		st, ok := states[key]
+		if !ok {
+			st = stateFor(g, members)
+			states[key] = st
 		}
-	} else {
-		seen := map[string]bool{}
-		for _, a := range ordered {
-			if seen[a.SubjectID()] {
-				continue
-			}
-			seen[a.SubjectID()] = true
-			if cur := CurrentSynthesis(g, a.SubjectID()); cur != nil {
-				currentIDs[cur.ID] = true
-			}
-		}
+		return st
 	}
 
 	if opts.Limit > 0 && len(ordered) > opts.Limit {
@@ -113,7 +140,9 @@ func Recall(g *store.Graph, opts RecallOptions) []Entry {
 	out := make([]Entry, 0, len(ordered))
 	for _, a := range ordered {
 		e := entryFor(a)
-		e.Current = currentIDs[e.ID]
+		st := stateOf(a.SubjectID())
+		e.Current = st.current == e.ID
+		e.Unsynthesised = !e.Retracted && !e.Current && !st.reconciled[e.ID]
 		out = append(out, e)
 	}
 	return out

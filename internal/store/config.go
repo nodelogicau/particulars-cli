@@ -58,6 +58,9 @@ func (c Config) Validate() error {
 	if c.Defaults.Scope != "" && !dkf.ValidScope(c.Defaults.Scope) {
 		return fmt.Errorf("%s: invalid defaults.scope %q", ConfigFile, c.Defaults.Scope)
 	}
+	if !dkf.ValidBaseURI(c.Workspace.BaseURI) {
+		return fmt.Errorf("%w: %s: workspace.base-uri %q must end in \"/\"", ErrInvalidBaseURI, ConfigFile, c.Workspace.BaseURI)
+	}
 	return nil
 }
 

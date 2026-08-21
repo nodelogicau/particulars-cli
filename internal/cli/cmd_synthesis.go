@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
-	"github.com/nodelogicau/particulars-cli/internal/store"
 )
 
 func (a *app) synthesisCmd() *cobra.Command {
@@ -53,8 +52,14 @@ func (a *app) synthesisCreateCmd() *cobra.Command {
 		Use:   "create --subject <particular> (--content <text> | --content-file <path|->) --input <id>:<role>[:<weight>]... --unresolved <text> [flags]",
 		Short: "Record a synthesis the calling agent has already reasoned",
 		Long: `A synthesis is itself a claim: it can be recalled, retracted, and cited as an
-input to later syntheses. --unresolved is mandatory; state what could not be
-reconciled, or say so explicitly (e.g. "None identified").`,
+input to later syntheses. Its source must name the harness that produced it.
+
+--unresolved is mandatory. State what could not be reconciled; when nothing is
+outstanding use the exact conventional value "None identified", so tooling can
+tell "considered and empty" from "forgotten".
+
+The current synthesis for a particular is the most recent by --timestamp (then
+id), so a backdated synthesis does not displace a newer one.`,
 		Args: cobra.NoArgs,
 		RunE: a.run(func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(subject) == "" {
@@ -113,15 +118,15 @@ reconciled, or say so explicitly (e.g. "None identified").`,
 				return err
 			}
 			src := resolveSource(ws, prov)
-			if src.Harness == "" {
-				return usageErr("produced-by.harness is required: pass --harness, set %s, or configure defaults.source.harness in dkf.yaml", EnvHarness)
+			if err := requireProvenance(src, true); err != nil {
+				return err
 			}
 			if method == "" {
 				method = dkf.DefaultMethod
 			}
 			s := &dkf.Synthesis{
 				ID: dkf.NewID(dkf.TypeSynthesis), Subject: p.ID, Content: text, Inputs: parsed, Unresolved: unresolved,
-				ProducedBy: dkf.ProducedBy{Harness: src.Harness, Model: src.Model}, Method: method, Timestamp: ts,
+				Source: src, Method: method, Timestamp: ts,
 				Context: dkf.Context{Scope: sc, Topics: topics}, Confidence: conf,
 			}
 			if err := ws.Create(s); err != nil {
@@ -146,14 +151,15 @@ reconciled, or say so explicitly (e.g. "None identified").`,
 	cmd.Flags().StringVar(&content, "content", "", "synthesis text")
 	cmd.Flags().StringVar(&contentFile, "content-file", "", "read synthesis text from a file, or '-' for piped stdin")
 	cmd.Flags().StringArrayVar(&inputs, "input", nil, "<id>:<thesis|antithesis>[:<primary|qualifying>] (repeatable, required)")
-	cmd.Flags().StringVar(&unresolved, "unresolved", "", "what could not be reconciled (required)")
+	cmd.Flags().StringVar(&unresolved, "unresolved", "", "what could not be reconciled (required; \"None identified\" when nothing)")
 	cmd.Flags().StringVar(&method, "method", "", "synthesis method (default "+dkf.DefaultMethod+")")
-	cmd.Flags().StringVar(&prov.harness, "harness", "", "produced-by.harness (default: $DKF_HARNESS, then dkf.yaml)")
-	cmd.Flags().StringVar(&prov.model, "model", "", "produced-by.model (default: $DKF_MODEL, then dkf.yaml)")
+	cmd.Flags().StringVar(&prov.author, "author", "", "source.author (default: $DKF_AUTHOR, then dkf.yaml)")
+	cmd.Flags().StringVar(&prov.harness, "harness", "", "source.harness, required (default: $DKF_HARNESS, then dkf.yaml)")
+	cmd.Flags().StringVar(&prov.model, "model", "", "source.model (default: $DKF_MODEL, then dkf.yaml)")
+	cmd.Flags().StringVar(&prov.document, "document", "", "source.document: URI or path of the evidence")
 	cmd.Flags().StringVar(&scope, "scope", "", "personal|organisation|public (default: dkf.yaml defaults.scope)")
 	cmd.Flags().StringArrayVar(&topics, "topic", nil, "topic tag (repeatable)")
 	cmd.Flags().StringVar(&confidence, "confidence", "", "confidence in [0, 1]")
 	cmd.Flags().StringVar(&timestamp, "timestamp", "", "RFC 3339 time (default: now)")
-	_ = store.ErrNotFound
 	return cmd
 }

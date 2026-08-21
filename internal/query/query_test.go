@@ -51,8 +51,12 @@ func (f *fixture) claim(subject, content string, topics ...string) *dkf.Claim {
 }
 
 func (f *fixture) synthesis(subject, content string, inputs ...dkf.Input) *dkf.Synthesis {
+	return f.synthesisAt(subject, content, ts, inputs...)
+}
+
+func (f *fixture) synthesisAt(subject, content string, at time.Time, inputs ...dkf.Input) *dkf.Synthesis {
 	f.t.Helper()
-	s := &dkf.Synthesis{ID: dkf.NewID(dkf.TypeSynthesis), Subject: subject, Content: content, Inputs: inputs, Unresolved: "none", ProducedBy: dkf.ProducedBy{Harness: "test"}, Method: dkf.DefaultMethod, Timestamp: ts, Context: dkf.Context{Scope: dkf.ScopePersonal}}
+	s := &dkf.Synthesis{ID: dkf.NewID(dkf.TypeSynthesis), Subject: subject, Content: content, Inputs: inputs, Unresolved: "None identified", Source: dkf.Source{Harness: "test"}, Method: dkf.DefaultMethod, Timestamp: at, Context: dkf.Context{Scope: dkf.ScopePersonal}}
 	if err := f.w.Create(s); err != nil {
 		f.t.Fatal(err)
 	}
@@ -60,6 +64,15 @@ func (f *fixture) synthesis(subject, content string, inputs ...dkf.Input) *dkf.S
 		f.t.Fatal(err)
 	}
 	return s
+}
+
+func (f *fixture) merge(a, b string) *dkf.Merge {
+	f.t.Helper()
+	m, err := f.w.CreateMerge(a, b, "", dkf.Source{Author: "ben"}, ts)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return m
 }
 
 func (f *fixture) retract(id string) {
@@ -297,11 +310,11 @@ func TestValidateFindings(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(f.w.Dir(dkf.TypeClaim), dangling+".yaml"), []byte("type: claim\nid: "+dangling+"\nsubject: par_missing\ncontent: x\nsource:\n  author: ben\ncontext:\n  scope: personal\ntimestamp: 2026-08-20T09:00:00Z\n"), 0o644)
 	// Missing unresolved + invalid role + dangling input.
 	bad := dkf.NewID(dkf.TypeSynthesis)
-	_ = os.WriteFile(filepath.Join(f.w.Dir(dkf.TypeSynthesis), bad+".yaml"), []byte("id: "+bad+"\ntype: synthesis\nsubject: "+p.ID+"\ncontent: x\ninputs:\n  - id: clm_missing\n    role: support\nproduced-by:\n  harness: t\ntimestamp: 2026-08-20T09:00:00Z\ncontext:\n  scope: personal\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(f.w.Dir(dkf.TypeSynthesis), bad+".yaml"), []byte("id: "+bad+"\ntype: synthesis\nsubject: "+p.ID+"\ncontent: x\ninputs:\n  - id: clm_missing\n    role: support\nsource:\n  harness: t\ntimestamp: 2026-08-20T09:00:00Z\ncontext:\n  scope: personal\n"), 0o644)
 	// Cycle: two syntheses citing each other.
 	c1, c2 := dkf.NewID(dkf.TypeSynthesis), dkf.NewID(dkf.TypeSynthesis)
 	for _, pair := range [][2]string{{c1, c2}, {c2, c1}} {
-		_ = os.WriteFile(filepath.Join(f.w.Dir(dkf.TypeSynthesis), pair[0]+".yaml"), []byte("id: "+pair[0]+"\ntype: synthesis\nsubject: "+p.ID+"\ncontent: x\ninputs:\n  - id: "+pair[1]+"\n    role: thesis\nunresolved: n\nproduced-by:\n  harness: t\ntimestamp: 2026-08-20T09:00:00Z\ncontext:\n  scope: personal\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(f.w.Dir(dkf.TypeSynthesis), pair[0]+".yaml"), []byte("id: "+pair[0]+"\ntype: synthesis\nsubject: "+p.ID+"\ncontent: x\ninputs:\n  - id: "+pair[1]+"\n    role: thesis\nunresolved: n\nsource:\n  harness: t\ntimestamp: 2026-08-20T09:00:00Z\ncontext:\n  scope: personal\n"), 0o644)
 	}
 
 	fs, err := Validate(f.w)
@@ -366,5 +379,159 @@ func TestTopics(t *testing.T) {
 	}
 	if got := Topics(g, RecallOptions{Scope: dkf.ScopePublic}); len(got) != 0 {
 		t.Errorf("scope filter: %+v", got)
+	}
+}
+
+func TestCurrentByTimestampAndTransitiveStale(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	a := f.claim(p.ID, "A")
+	s1 := f.synthesisAt(p.ID, "S1", ts.Add(48*time.Hour), in(a.ID, dkf.RoleThesis))
+	s2 := f.synthesisAt(p.ID, "S2 minted later but older", ts, in(a.ID, dkf.RoleThesis))
+	g := f.graph()
+	if cur := CurrentSynthesis(g, p.ID); cur == nil || cur.ID != s1.ID {
+		t.Errorf("current should be s1 by timestamp, got %v", cur)
+	}
+	r := Analyse(g, p)
+	if r.Current != s1.ID || strings.Join(r.Unsynthesised, " ") != s2.ID {
+		t.Errorf("analyse: %+v", r)
+	}
+	// Transitive stale: d cites c cites a; retract a.
+	c := f.synthesisAt(p.ID, "C", ts.Add(72*time.Hour), in(a.ID, dkf.RoleThesis))
+	d := f.synthesisAt(p.ID, "D", ts.Add(96*time.Hour), in(c.ID, dkf.RoleThesis))
+	f.retract(a.ID)
+	g = f.graph()
+	r = Analyse(g, p)
+	stale := strings.Join(r.Stale, " ")
+	for _, id := range []string{s1.ID, s2.ID, c.ID, d.ID} {
+		if !strings.Contains(stale, id) {
+			t.Errorf("%s should be stale: %v", id, r.Stale)
+		}
+	}
+	rec := Recall(g, RecallOptions{Subject: p.ID})
+	for _, e := range rec {
+		switch e.ID {
+		case d.ID:
+			if !e.Current || e.Unsynthesised {
+				t.Errorf("d flags: %+v", e)
+			}
+		case c.ID:
+			if e.Unsynthesised {
+				t.Errorf("c is reconciled into d: %+v", e)
+			}
+		case s1.ID, s2.ID:
+			if !e.Unsynthesised {
+				t.Errorf("%s should be unsynthesised: %+v", e.ID, e)
+			}
+		}
+		if e.Source.Harness != "test" {
+			t.Errorf("source missing on entry: %+v", e)
+		}
+	}
+}
+
+func TestMergeClasses(t *testing.T) {
+	f := newFixture(t)
+	a := f.particular("A")
+	b := f.particular("B")
+	y := f.particular("Library Y")
+	ca := f.claim(a.ID, "about A")
+	cb := f.claim(b.ID, "about B")
+	cy := f.claim(y.ID, "about Y")
+	f.claim(y.ID, "also about Y")
+	sa := f.synthesis(a.ID, "S", in(ca.ID, dkf.RoleThesis), in(cy.ID, dkf.RoleThesis))
+	m := f.merge(a.URI, b.URI)
+	g := f.graph()
+
+	rec := Recall(g, RecallOptions{Subject: a.ID})
+	if ids(rec) != ca.ID+" "+cb.ID+" "+sa.ID {
+		t.Errorf("recall across merge: %s", ids(rec))
+	}
+	if rec[1].Subject != b.ID || !rec[1].Unsynthesised {
+		t.Errorf("B's claim keeps its subject and is unsynthesised: %+v", rec[1])
+	}
+	r := Analyse(g, a)
+	if r.Current != sa.ID || strings.Join(r.Unsynthesised, " ") != cb.ID || len(r.Members) != 2 {
+		t.Errorf("conflicts across merge: %+v", r)
+	}
+	// Cross-particular input does not synthesise Y.
+	ry := Analyse(g, y)
+	if len(ry.Unsynthesised) != 2 || ry.Current != "" {
+		t.Errorf("Y should have two unsynthesised: %+v", ry)
+	}
+	// Sweep reports the class once.
+	all := Conflicts(g, "")
+	seen := 0
+	for _, rep := range all {
+		if rep.Particular == a.ID || rep.Particular == b.ID {
+			seen++
+			if rep.Particular != a.ID {
+				t.Errorf("class should be keyed by lowest id: %s", rep.Particular)
+			}
+		}
+	}
+	if seen != 1 {
+		t.Errorf("class reported %d times", seen)
+	}
+	// Retract the merge → classes split.
+	f.retract(m.ID)
+	g = f.graph()
+	if got := Recall(g, RecallOptions{Subject: a.ID}); ids(got) != ca.ID+" "+sa.ID {
+		t.Errorf("after merge retraction: %s", ids(got))
+	}
+}
+
+func TestLineageSupersededBy(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	a := f.claim(p.ID, "A")
+	y := f.claim(p.ID, "Y corrected")
+	s := f.synthesis(p.ID, "S", in(a.ID, dkf.RoleThesis))
+	if _, err := f.w.Retract(a.ID, &dkf.Retracted{Timestamp: ts, Reason: "typo", Source: dkf.Source{Author: "ben"}, SupersededBy: y.ID}); err != nil {
+		t.Fatal(err)
+	}
+	g := f.graph()
+	tree, _ := Lineage(g, s.ID, 0)
+	if n := tree.Inputs[0]; !n.Retracted || n.SupersededBy != y.ID || len(n.Inputs) != 0 {
+		t.Errorf("superseded node: %+v", n)
+	}
+}
+
+func TestValidateNewFindings(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	a := f.claim(p.ID, "A")
+	f.synthesis(p.ID, "S", in(a.ID, dkf.RoleThesis))
+	// Legacy produced-by synthesis and a legacy id, hand-written.
+	legacy := "syn_01a0legacy"
+	_ = os.WriteFile(filepath.Join(f.w.Dir(dkf.TypeSynthesis), legacy+".yaml"), []byte("id: "+legacy+"\ntype: synthesis\nsubject: "+p.ID+"\ncontent: x\ninputs:\n  - id: "+a.ID+"\n    role: thesis\nunresolved: None identified\nproduced-by:\n  harness: claude\ntimestamp: 2026-08-20T09:00:00Z\ncontext:\n  scope: personal\n"), 0o644)
+	both := dkf.NewID(dkf.TypeSynthesis)
+	_ = os.WriteFile(filepath.Join(f.w.Dir(dkf.TypeSynthesis), both+".yaml"), []byte("id: "+both+"\ntype: synthesis\nsubject: "+p.ID+"\ncontent: x\ninputs:\n  - id: "+a.ID+"\n    role: thesis\nunresolved: n\nsource:\n  harness: claude\nproduced-by:\n  harness: claude\ntimestamp: 2026-08-20T09:00:00Z\ncontext:\n  scope: personal\n"), 0o644)
+	// Merge to a foreign uri, twice.
+	f.merge(p.URI, "https://www.wikidata.org/entity/Q1")
+	dup := &dkf.Merge{ID: dkf.NewID(dkf.TypeMerge), URIs: []string{"https://www.wikidata.org/entity/Q1", p.URI}, Source: dkf.Source{Author: "ben"}, Timestamp: ts}
+	if err := f.w.Create(dup); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.w.RebuildIndex()
+	fs, err := Validate(f.w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := codes(fs)
+	want := map[string]int{
+		"warning:legacy_produced_by":   1,
+		"warning:legacy_id":            1,
+		"error:conflicting_provenance": 1,
+		"warning:unknown_merge_uri":    2,
+		"warning:duplicate_merge":      2,
+	}
+	for k, n := range want {
+		if c[k] != n {
+			t.Errorf("%s: got %d want %d\nall: %+v", k, c[k], n, fs)
+		}
+	}
+	if c["warning:non_canonical"] != 1 { // only the `both` file; the legacy one is suppressed
+		t.Errorf("non_canonical: %+v", fs)
 	}
 }

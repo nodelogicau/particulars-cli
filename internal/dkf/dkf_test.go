@@ -36,15 +36,19 @@ func sampleSynthesis() *Synthesis {
 			{ID: "clm_019196a5-8b4c-7def-8abc-0123456789ae", Role: RoleAntithesis, Weight: WeightQualifying},
 		},
 		Unresolved: "Compliance basis unsourced.",
-		ProducedBy: ProducedBy{Harness: "claude", Model: "claude-sonnet-4-6"},
+		Source:     Source{Harness: "claude", Model: "claude-sonnet-4-6"},
 		Method:     DefaultMethod, Timestamp: ts,
 		Context:    Context{Scope: ScopeOrganisation},
 		Confidence: f(0.85),
 	}
 }
 
+func sampleMerge() *Merge {
+	return &Merge{ID: "mrg_019196a5-8b4c-7def-8abc-0123456789b0", URIs: []string{"https://example.com/particulars/project-x", "urn:dkf:w:projectx"}, Reason: "Same project", Source: Source{Author: "ben", Harness: "claude"}, Timestamp: ts}
+}
+
 func TestRoundTripStable(t *testing.T) {
-	for _, obj := range []Object{sampleParticular(), sampleClaim(), sampleSynthesis()} {
+	for _, obj := range []Object{sampleParticular(), sampleClaim(), sampleSynthesis(), sampleMerge()} {
 		first, err := Encode(obj)
 		if err != nil {
 			t.Fatal(err)
@@ -87,7 +91,8 @@ func TestSpecFieldOrder(t *testing.T) {
 	}{
 		{sampleParticular(), []string{"id", "type", "uri", "label", "aliases"}},
 		{sampleClaim(), []string{"id", "type", "subject", "content", "source", "context", "timestamp", "confidence"}},
-		{sampleSynthesis(), []string{"id", "type", "subject", "content", "inputs", "unresolved", "produced-by", "method", "timestamp", "context", "confidence"}},
+		{sampleSynthesis(), []string{"id", "type", "subject", "content", "inputs", "unresolved", "source", "method", "timestamp", "context", "confidence"}},
+		{sampleMerge(), []string{"id", "type", "uris", "reason", "source", "timestamp"}},
 	}
 	for _, c := range cases {
 		out, err := Encode(c.obj)
@@ -219,13 +224,13 @@ func TestValidation(t *testing.T) {
 	c := sampleClaim()
 	c.Confidence = f(1.5)
 	c.Context.Scope = "team"
-	c.Source.Author = ""
+	c.Source = Source{Document: "x"}
 	ps := ValidateClaim(c)
 	codes := map[string]bool{}
 	for _, p := range ps {
 		codes[p.Code+":"+p.Field] = true
 	}
-	for _, want := range []string{"out_of_range:confidence", "invalid_enum:context.scope", "missing_field:source.author"} {
+	for _, want := range []string{"out_of_range:confidence", "invalid_enum:context.scope", "missing_field:source"} {
 		if !codes[want] {
 			t.Errorf("missing problem %s in %v", want, ps)
 		}
@@ -266,8 +271,6 @@ func TestSlugify(t *testing.T) {
 func TestMintURI(t *testing.T) {
 	cases := []struct{ base, ws, slug, want string }{
 		{"https://example.com/particulars/", "W", "billing-service", "https://example.com/particulars/billing-service"},
-		{"https://example.com/particulars", "W", "billing-service", "https://example.com/particulars/billing-service"},
-		{"https://example.com/kb#", "W", "x", "https://example.com/kb#x"},
 		{"", "0191-ws", "auth-sessions", "urn:dkf:0191-ws:auth-sessions"},
 	}
 	for _, c := range cases {
@@ -284,5 +287,104 @@ func TestParseTime(t *testing.T) {
 	}
 	if _, err := ParseTime("yesterday"); err == nil {
 		t.Error("bad timestamp accepted")
+	}
+}
+
+func TestLegacyProducedBy(t *testing.T) {
+	legacy := "id: syn_01a0-legacy\ntype: synthesis\nsubject: par_x\ncontent: c\ninputs:\n  - id: clm_a\n    role: thesis\nunresolved: n\nproduced-by:\n  harness: claude\n  model: m\ntimestamp: 2026-08-20T09:00:00Z\ncontext:\n  scope: personal\n"
+	obj, err := Decode([]byte(legacy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := obj.(*Synthesis)
+	if !s.LegacyProducedBy || s.Source.Harness != "claude" || s.Source.Model != "m" || s.ConflictingProvenance {
+		t.Errorf("legacy mapping: %+v", s)
+	}
+	if ps := ValidateSynthesis(s); len(ps) != 0 {
+		t.Errorf("legacy synthesis should validate field-wise: %v", ps)
+	}
+	out, _ := Encode(s)
+	if strings.Contains(string(out), "produced-by") || !strings.Contains(string(out), "source:\n  harness: claude") {
+		t.Errorf("re-encode must use source:\n%s", out)
+	}
+	both := strings.Replace(legacy, "produced-by:", "source:\n  harness: x\nproduced-by:", 1)
+	obj, _ = Decode([]byte(both))
+	s = obj.(*Synthesis)
+	if !s.ConflictingProvenance || s.Source.Harness != "x" {
+		t.Errorf("both blocks: %+v", s)
+	}
+	found := false
+	for _, p := range ValidateSynthesis(s) {
+		if p.Code == CodeConflictingProvenance {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("conflicting_provenance not reported")
+	}
+	neither := strings.Replace(legacy, "produced-by:\n  harness: claude\n  model: m\n", "", 1)
+	obj, _ = Decode([]byte(neither))
+	if ps := ValidateSynthesis(obj.(*Synthesis)); !strings.Contains(ps.Error(), "source") {
+		t.Errorf("missing provenance should fail: %v", ps)
+	}
+}
+
+func TestSourceMinimum(t *testing.T) {
+	c := sampleClaim()
+	c.Source = Source{Harness: "claude", Model: "m"}
+	if ps := ValidateClaim(c); len(ps) != 0 {
+		t.Errorf("agent-only source should be valid: %v", ps)
+	}
+	c.Source = Source{Author: "ben"}
+	if ps := ValidateClaim(c); len(ps) != 0 {
+		t.Errorf("human-only source should be valid: %v", ps)
+	}
+	c.Source = Source{Document: "https://x"}
+	if ps := ValidateClaim(c); len(ps) != 1 || ps[0].Field != "source" {
+		t.Errorf("document-only source should fail on source: %v", ps)
+	}
+	s := sampleSynthesis()
+	s.Source = Source{Author: "ben"}
+	if ps := ValidateSynthesis(s); len(ps) != 1 || ps[0].Field != "source.harness" {
+		t.Errorf("synthesis without harness: %v", ps)
+	}
+	r := &Retracted{Timestamp: ts, Reason: "r", Source: Source{Harness: "claude"}}
+	if ps := ValidateRetracted(r); len(ps) != 0 {
+		t.Errorf("agent retraction should be valid: %v", ps)
+	}
+}
+
+func TestMergeValidation(t *testing.T) {
+	m := sampleMerge()
+	if ps := ValidateMerge(m); len(ps) != 0 {
+		t.Errorf("sample merge invalid: %v", ps)
+	}
+	m.URIs = append(m.URIs, "urn:x")
+	if ps := ValidateMerge(m); len(ps) != 1 || ps[0].Code != CodeInvalidMerge {
+		t.Errorf("three uris: %v", ps)
+	}
+	m.URIs = []string{"urn:a", "urn:a"}
+	if ps := ValidateMerge(m); len(ps) != 1 || ps[0].Code != CodeInvalidMerge {
+		t.Errorf("self merge: %v", ps)
+	}
+	m = sampleMerge()
+	m.Retracted = &Retracted{Timestamp: ts, Reason: "r", Source: Source{Author: "ben"}, SupersededBy: "clm_019196a5-8b4c-7def-8abc-0123456789ac"}
+	if ps := ValidateMerge(m); len(ps) != 1 || ps[0].Field != "retracted.superseded-by" {
+		t.Errorf("superseded-by on merge: %v", ps)
+	}
+	if id := NewID(TypeMerge); !strings.HasPrefix(id, "mrg_") || !IsCanonicalID(id) || !IsRetractableID(id) || IsAssertionID(id) {
+		t.Errorf("merge id: %s", id)
+	}
+}
+
+func TestBaseURI(t *testing.T) {
+	if NormaliseBaseURI("https://e.com/p") != "https://e.com/p/" || NormaliseBaseURI("https://e.com/p/") != "https://e.com/p/" || NormaliseBaseURI("") != "" {
+		t.Error("normalise")
+	}
+	if !ValidBaseURI("") || !ValidBaseURI("https://e.com/p/") || ValidBaseURI("https://e.com/p") {
+		t.Error("valid")
+	}
+	if MintURI("https://e.com/p/", "w", "x") != "https://e.com/p/x" {
+		t.Error("mint")
 	}
 }

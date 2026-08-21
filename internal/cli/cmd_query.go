@@ -56,6 +56,9 @@ particular is marked current. --limit keeps the most recent N.`,
 			out := map[string]any{"entries": entries, "count": len(entries)}
 			if opts.Subject != "" {
 				out["subject"] = opts.Subject
+				if class := g.ClassOf(opts.Subject); len(class) > 1 {
+					out["class"] = class
+				}
 			}
 			return a.emit(out, func(w io.Writer) {
 				if len(entries) == 0 {
@@ -70,8 +73,14 @@ particular is marked current. --limit keeps the most recent N.`,
 					if e.Current {
 						flags += " [current]"
 					}
+					if e.Unsynthesised {
+						flags += " [unsynthesised]"
+					}
 					if e.Retracted {
 						flags += " [retracted]"
+					}
+					if opts.Subject != "" && e.Subject != opts.Subject {
+						flags += " [subject " + e.Subject + "]"
 					}
 					fmt.Fprintf(w, "%s  %-9s %s  conf=%s%s\n    %s\n", e.ID, e.Type, e.Timestamp, fmtConfidence(e.Confidence), flags, oneLine(e.Content, 160))
 					if e.Type == dkf.TypeSynthesis {
@@ -132,7 +141,11 @@ func printTree(w io.Writer, n *query.Node, prefix string, root bool) {
 	}
 	var marks []string
 	if n.Retracted {
-		marks = append(marks, "retracted")
+		if n.SupersededBy != "" {
+			marks = append(marks, "retracted → "+n.SupersededBy)
+		} else {
+			marks = append(marks, "retracted")
+		}
 	}
 	if n.Missing {
 		marks = append(marks, "missing")
@@ -210,6 +223,9 @@ contents contradict — that is the agent's job.`,
 				}
 				for _, r := range reports {
 					fmt.Fprintf(w, "%s  %s  priority=%d\n", r.Particular, r.Label, r.Priority)
+					if len(r.Members) > 1 {
+						fmt.Fprintf(w, "  members:       %s\n", strings.Join(r.Members, ", "))
+					}
 					if r.Current != "" {
 						fmt.Fprintf(w, "  current:       %s\n", r.Current)
 					} else {

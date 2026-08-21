@@ -18,6 +18,7 @@ const (
 	TypeParticular Type = "particular"
 	TypeClaim      Type = "claim"
 	TypeSynthesis  Type = "synthesis"
+	TypeMerge      Type = "merge"
 )
 
 // Scope is a claim's visibility scope.
@@ -74,11 +75,11 @@ type Input struct {
 	Weight Weight `yaml:"weight,omitempty" json:"weight,omitempty"`
 }
 
-// ProducedBy records the harness and model that produced a synthesis.
-// Spec order: harness, model.
+// ProducedBy is the pre-resolution provenance block that v0.1.x wrote on
+// syntheses. It is read (and mapped to Source) but never written.
 type ProducedBy struct {
-	Harness string `yaml:"harness,omitempty" json:"harness,omitempty"`
-	Model   string `yaml:"model,omitempty" json:"model,omitempty"`
+	Harness string `yaml:"harness,omitempty"`
+	Model   string `yaml:"model,omitempty"`
 }
 
 // Retracted is the append-only retraction block on a claim or synthesis.
@@ -114,7 +115,7 @@ type Claim struct {
 }
 
 // Synthesis is a DSYNTHESIS: a claim derived from thesis/antithesis inputs.
-// Spec order: id, type, subject, content, inputs, unresolved, produced-by,
+// Spec order: id, type, subject, content, inputs, unresolved, source,
 // method, timestamp, context, confidence, retracted.
 type Synthesis struct {
 	ID         string     `yaml:"id" json:"id"`
@@ -122,37 +123,63 @@ type Synthesis struct {
 	Content    string     `yaml:"content" json:"content"`
 	Inputs     []Input    `yaml:"inputs" json:"inputs"`
 	Unresolved string     `yaml:"unresolved" json:"unresolved"`
-	ProducedBy ProducedBy `yaml:"produced-by" json:"produced-by"`
+	Source     Source     `yaml:"source" json:"source"`
 	Method     string     `yaml:"method,omitempty" json:"method,omitempty"`
 	Timestamp  time.Time  `yaml:"timestamp" json:"timestamp"`
 	Context    Context    `yaml:"context" json:"context"`
 	Confidence *float64   `yaml:"confidence,omitempty" json:"confidence,omitempty"`
 	Retracted  *Retracted `yaml:"retracted,omitempty" json:"retracted,omitempty"`
+
+	// LegacyProducedBy is set by the decoder when Source was populated from a
+	// v0.1.x `produced-by` block. Never serialised.
+	LegacyProducedBy bool `yaml:"-" json:"-"`
+	// ConflictingProvenance is set when a file carried both `source` and
+	// `produced-by`; `source` wins and validate reports it. Never serialised.
+	ConflictingProvenance bool `yaml:"-" json:"-"`
+}
+
+// Merge is a merge record: a declaration that two URIs denote the same
+// particular. It is a record about objects, not a knowledge object.
+// Order: id, type, uris, reason, source, timestamp, retracted.
+type Merge struct {
+	ID        string     `yaml:"id" json:"id"`
+	URIs      []string   `yaml:"uris" json:"uris"`
+	Reason    string     `yaml:"reason,omitempty" json:"reason,omitempty"`
+	Source    Source     `yaml:"source" json:"source"`
+	Timestamp time.Time  `yaml:"timestamp" json:"timestamp"`
+	Retracted *Retracted `yaml:"retracted,omitempty" json:"retracted,omitempty"`
 }
 
 // DefaultMethod is the synthesis method recorded when none is given.
 const DefaultMethod = "reconciliation"
 
-// Object is any DKF object.
+// Object is any DKF object or record.
 type Object interface {
 	ObjectID() string
 	ObjectType() Type
 }
 
+// Retractable is anything that can carry a retracted block: claims,
+// syntheses, and merge records.
+type Retractable interface {
+	Object
+	GetRetracted() *Retracted
+	// SetRetracted attaches a retraction block (in memory only).
+	SetRetracted(r *Retracted)
+}
+
 // Assertion is the behaviour shared by claims and syntheses: both are claims
 // in the spec's sense and both can be retracted, recalled, and cited.
 type Assertion interface {
-	Object
+	Retractable
 	SubjectID() string
 	GetContent() string
 	GetContext() Context
+	GetSource() Source
 	GetTimestamp() time.Time
 	GetConfidence() *float64
-	GetRetracted() *Retracted
 	// InputIDs returns the ids of cited inputs; empty for plain claims.
 	InputIDs() []string
-	// SetRetracted attaches a retraction block (in memory only).
-	SetRetracted(r *Retracted)
 }
 
 func (p *Particular) ObjectID() string { return p.ID }
@@ -163,6 +190,7 @@ func (c *Claim) ObjectType() Type          { return TypeClaim }
 func (c *Claim) SubjectID() string         { return c.Subject }
 func (c *Claim) GetContent() string        { return c.Content }
 func (c *Claim) GetContext() Context       { return c.Context }
+func (c *Claim) GetSource() Source         { return c.Source }
 func (c *Claim) GetTimestamp() time.Time   { return c.Timestamp }
 func (c *Claim) GetConfidence() *float64   { return c.Confidence }
 func (c *Claim) GetRetracted() *Retracted  { return c.Retracted }
@@ -174,10 +202,16 @@ func (s *Synthesis) ObjectType() Type          { return TypeSynthesis }
 func (s *Synthesis) SubjectID() string         { return s.Subject }
 func (s *Synthesis) GetContent() string        { return s.Content }
 func (s *Synthesis) GetContext() Context       { return s.Context }
+func (s *Synthesis) GetSource() Source         { return s.Source }
 func (s *Synthesis) GetTimestamp() time.Time   { return s.Timestamp }
 func (s *Synthesis) GetConfidence() *float64   { return s.Confidence }
 func (s *Synthesis) GetRetracted() *Retracted  { return s.Retracted }
 func (s *Synthesis) SetRetracted(r *Retracted) { s.Retracted = r }
+
+func (m *Merge) ObjectID() string          { return m.ID }
+func (m *Merge) ObjectType() Type          { return TypeMerge }
+func (m *Merge) GetRetracted() *Retracted  { return m.Retracted }
+func (m *Merge) SetRetracted(r *Retracted) { m.Retracted = r }
 
 // InputIDs returns the ids of all inputs in declaration order.
 func (s *Synthesis) InputIDs() []string {

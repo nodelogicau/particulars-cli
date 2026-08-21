@@ -81,7 +81,11 @@ func (a *app) validateCmd() *cobra.Command {
 			if err != nil {
 				// A present-but-malformed dkf.yaml is a validation failure, not a crash.
 				if !errors.Is(err, store.ErrNoWorkspace) && strings.Contains(err.Error(), store.ConfigFile) {
-					fs := query.Findings{{Severity: query.SeverityError, Path: store.ConfigFile, Code: query.CodeParseError, Message: err.Error()}}
+					code := query.CodeParseError
+					if errors.Is(err, store.ErrInvalidBaseURI) {
+						code = query.CodeInvalidBaseURI
+					}
+					fs := query.Findings{{Severity: query.SeverityError, Path: store.ConfigFile, Code: code, Message: err.Error()}}
 					return a.emitFindings(fs)
 				}
 				return err

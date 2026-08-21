@@ -29,6 +29,11 @@ const (
 	CodeStaleSynthesis    = "stale_synthesis"
 	CodeOrphanParticular  = "orphan_particular"
 	CodeNonCanonical      = "non_canonical"
+	CodeLegacyProducedBy  = "legacy_produced_by"
+	CodeLegacyID          = "legacy_id"
+	CodeUnknownMergeURI   = "unknown_merge_uri"
+	CodeDuplicateMerge    = "duplicate_merge"
+	CodeInvalidBaseURI    = "invalid_base_uri"
 )
 
 // Finding is one validation result.
@@ -68,14 +73,47 @@ func Validate(w *store.Workspace) (Findings, error) {
 		add(SeverityError, p.Path, p.Code, p.Message)
 	}
 
-	// Field-level problems and canonical form.
+	// Field-level problems, legacy forms, and canonical form.
 	for _, obj := range g.Objects() {
 		path := g.Files[obj.ObjectID()]
 		for _, p := range dkf.ValidateObject(obj) {
 			add(SeverityError, path, p.Code, p.Error())
 		}
+		if !dkf.IsCanonicalID(obj.ObjectID()) {
+			add(SeverityWarning, path, CodeLegacyID, fmt.Sprintf("id %s is not a canonical UUIDv7; it was written by another implementation", obj.ObjectID()))
+		}
+		if s, ok := obj.(*dkf.Synthesis); ok && s.LegacyProducedBy {
+			add(SeverityWarning, path, CodeLegacyProducedBy, "provenance was read from a legacy produced-by block; new syntheses write source")
+			continue // its bytes necessarily differ from the canonical form
+		}
 		if canon, err := dkf.Encode(obj); err == nil && !bytes.Equal(canon, g.Raw[obj.ObjectID()]) {
 			add(SeverityWarning, path, CodeNonCanonical, "file differs from canonical serialisation; rewrite is not required but diffs will be noisier")
+		}
+	}
+
+	// Merge records: unknown URIs and duplicate pairs.
+	pairs := map[[2]string][]string{}
+	for _, m := range g.SortedMerges() {
+		if m.Retracted != nil || len(m.URIs) != 2 {
+			continue
+		}
+		path := g.Files[m.ID]
+		for _, u := range m.URIs {
+			if g.ParticularByURI(u) == nil {
+				add(SeverityWarning, path, CodeUnknownMergeURI, fmt.Sprintf("uri %q has no local particular; the merge bridges to another source", u))
+			}
+		}
+		a, b := m.URIs[0], m.URIs[1]
+		if a > b {
+			a, b = b, a
+		}
+		pairs[[2]string{a, b}] = append(pairs[[2]string{a, b}], m.ID)
+	}
+	for pair, ids := range pairs {
+		if len(ids) > 1 {
+			for _, id := range ids {
+				add(SeverityWarning, g.Files[id], CodeDuplicateMerge, fmt.Sprintf("uris %q and %q are joined by %d merges: %v", pair[0], pair[1], len(ids), ids))
+			}
 		}
 	}
 
@@ -95,6 +133,7 @@ func Validate(w *store.Workspace) (Findings, error) {
 			}
 		}
 	}
+	staleMemo := map[string]bool{}
 	for _, a := range g.SortedAssertions() {
 		path := g.Files[a.ObjectID()]
 		if a.SubjectID() != "" && g.Particular(a.SubjectID()) == nil {
@@ -107,21 +146,13 @@ func Validate(w *store.Workspace) (Findings, error) {
 		if !ok {
 			continue
 		}
-		stale := false
 		for _, in := range s.Inputs {
-			child := g.Assertion(in.ID)
-			if child == nil {
-				if dkf.IsAssertionID(in.ID) { // particular-typed ids are already reported as invalid_id
-					add(SeverityError, path, CodeDanglingReference, fmt.Sprintf("input %s does not exist", in.ID))
-				}
-				continue
-			}
-			if child.GetRetracted() != nil {
-				stale = true
+			if g.Assertion(in.ID) == nil && dkf.IsAssertionID(in.ID) { // other ids are already reported as invalid_id
+				add(SeverityError, path, CodeDanglingReference, fmt.Sprintf("input %s does not exist", in.ID))
 			}
 		}
-		if stale && s.Retracted == nil {
-			add(SeverityWarning, path, CodeStaleSynthesis, fmt.Sprintf("synthesis %s cites a retracted input; consider re-synthesis", s.ID))
+		if s.Retracted == nil && CitesRetracted(g, s, staleMemo) {
+			add(SeverityWarning, path, CodeStaleSynthesis, fmt.Sprintf("synthesis %s cites a retracted input (directly or transitively); consider re-synthesis", s.ID))
 		}
 	}
 

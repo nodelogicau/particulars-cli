@@ -45,6 +45,18 @@ func resolveSource(ws *store.Workspace, f provenanceFlags) dkf.Source {
 	}
 }
 
+// requireProvenance enforces the format's source minimum (author or harness),
+// plus harness when needHarness is set (syntheses).
+func requireProvenance(src dkf.Source, needHarness bool) error {
+	if needHarness && strings.TrimSpace(src.Harness) == "" {
+		return usageErr("source.harness is required for a synthesis: pass --harness, set %s, or configure defaults.source.harness in dkf.yaml", EnvHarness)
+	}
+	if strings.TrimSpace(src.Author) == "" && strings.TrimSpace(src.Harness) == "" {
+		return usageErr("a source needs at least one of author or harness: pass --author/--harness, set %s/%s, or configure defaults.source in dkf.yaml", EnvAuthor, EnvHarness)
+	}
+	return nil
+}
+
 // resolveScope applies flag → dkf.yaml default → personal.
 func resolveScope(ws *store.Workspace, flag string) (dkf.Scope, error) {
 	s := dkf.Scope(firstNonEmpty(flag, string(ws.Config.Defaults.Scope), string(dkf.ScopePersonal)))

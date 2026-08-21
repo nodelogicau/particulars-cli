@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -23,7 +24,9 @@ func (a *app) initCmd() *cobra.Command {
 				dir = args[0]
 			}
 			cfg := store.NewConfig()
-			cfg.Workspace.BaseURI = baseURI
+			normalised := dkf.NormaliseBaseURI(baseURI)
+			wasNormalised := normalised != strings.TrimSpace(baseURI)
+			cfg.Workspace.BaseURI = normalised
 			cfg.Defaults.Source.Author = author
 			cfg.Defaults.Source.Harness = harness
 			if scope != "" {
@@ -36,15 +39,21 @@ func (a *app) initCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			created := []string{store.ConfigFile, "particulars/", "claims/", "syntheses/", store.IndexFile}
+			created := []string{store.ConfigFile, "particulars/", "claims/", "syntheses/", "merges/", store.IndexFile}
 			out := map[string]any{
 				"workspace": map[string]any{"root": ws.Root, "id": ws.Config.Workspace.ID, "base_uri": ws.Config.Workspace.BaseURI, "format": ws.Config.Format},
 				"created":   created,
+			}
+			if wasNormalised {
+				out["normalised"] = true
 			}
 			return a.emit(out, func(w io.Writer) {
 				fmt.Fprintf(w, "Initialised DKF workspace at %s (id %s)\n", ws.Root, ws.Config.Workspace.ID)
 				for _, c := range created {
 					fmt.Fprintf(w, "  %s\n", filepath.ToSlash(c))
+				}
+				if wasNormalised {
+					fmt.Fprintf(w, "  base-uri normalised to %s (must end in /)\n", ws.Config.Workspace.BaseURI)
 				}
 			})
 		}),

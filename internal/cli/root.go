@@ -60,12 +60,13 @@ func classify(err error) *ExitError {
 		return ee
 	}
 	var ps dkf.Problems
+	var p *dkf.Problem
 	switch {
 	case errors.Is(err, store.ErrNoWorkspace):
 		return &ExitError{Code: ExitNoWorkspace, ErrCode: "no_workspace", Err: err}
 	case errors.Is(err, store.ErrNotFound):
 		return &ExitError{Code: ExitNotFound, ErrCode: "not_found", Err: err}
-	case errors.As(err, &ps):
+	case errors.As(err, &ps), errors.As(err, &p):
 		return &ExitError{Code: ExitUsage, ErrCode: "invalid", Err: err}
 	case errors.Is(err, store.ErrAlreadyExists), errors.Is(err, store.ErrAlreadyRetracted):
 		return &ExitError{Code: ExitRuntime, ErrCode: "conflict", Err: err}
@@ -114,9 +115,10 @@ func isTyped(err error) bool {
 		return true
 	}
 	var ps dkf.Problems
+	var p *dkf.Problem
 	return errors.Is(err, store.ErrNoWorkspace) || errors.Is(err, store.ErrNotFound) ||
 		errors.Is(err, store.ErrAlreadyExists) || errors.Is(err, store.ErrAlreadyRetracted) ||
-		errors.As(err, &ps) || errors.Is(err, errRuntime)
+		errors.As(err, &ps) || errors.As(err, &p) || errors.Is(err, errRuntime)
 }
 
 // errRuntime wraps arbitrary core errors so Execute can tell them apart from
@@ -175,7 +177,8 @@ every verb is non-interactive, supports --json, and uses these exit codes:
   3 not found 4 check failed    5 no workspace
 
 Provenance defaults: --author/--harness/--model flags, then DKF_AUTHOR,
-DKF_HARNESS, DKF_MODEL environment variables, then dkf.yaml defaults.`,
+DKF_HARNESS, DKF_MODEL environment variables, then dkf.yaml defaults. Every
+source needs at least one of author or harness; syntheses always need harness.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -189,6 +192,7 @@ DKF_HARNESS, DKF_MODEL environment variables, then dkf.yaml defaults.`,
 		a.particularCmd(),
 		a.claimCmd(),
 		a.synthesisCmd(),
+		a.retractCmd(),
 		a.recallCmd(),
 		a.topicsCmd(),
 		a.lineageCmd(),

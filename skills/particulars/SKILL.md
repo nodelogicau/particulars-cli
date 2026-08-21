@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires the `particulars` binary on PATH and a DKF workspace (a directory containing dkf.yaml). Shell access required.
 metadata:
   author: nodelogicau
-  version: "0.1"
+  version: "0.2"
   format: dkf/0.1
 ---
 
@@ -55,6 +55,10 @@ export DKF_HARNESS=claude DKF_MODEL=<your model id>
 # DKF_AUTHOR defaults to dkf.yaml defaults.source.author — the human you work for
 ```
 
+A source needs at least one of `author` or `harness`, so an agent acting alone is
+valid; syntheses always need `harness`. Quote ids and use one `--input` per
+input — in zsh an unquoted `$id:thesis` is mangled by the `:t` modifier.
+
 ## Verbs
 
 | Do | Command |
@@ -69,7 +73,8 @@ export DKF_HARNESS=claude DKF_MODEL=<your model id>
 | Which tags exist | `particulars topics ["<thing>"] --json` → `{topics: [{topic, assertions, particulars}]}`; check before inventing a new tag |
 | Why is it believed | `particulars lineage <id> [--depth <n>] --json` → nested tree of inputs with roles |
 | What needs work | `particulars conflicts ["<thing>"] --json` → `{reports: [{particular, current, unsynthesised, stale, priority}]}` |
-| Withdraw a claim | `particulars claim retract <id> --reason "<why>" [--superseded-by <id>] --json` (append-only; never deletes) |
+| Withdraw | `particulars retract <id> --reason "<why>" [--superseded-by <id>] --json` — claims, syntheses, or merges; append-only, never deletes (`claim retract` is a deprecated alias) |
+| Same thing, two URIs | `particulars particular merge <a> <b> [--reason "<why>"] --json` — either side may be a bare URI with no local particular; undo with `retract <mrg_id>` |
 | Health check | `particulars validate --json`; `particulars index --check --json` |
 
 Exit codes: `0` ok · `1` runtime · `2` usage/ambiguous · `3` not found · `4` check failed · `5` no workspace.
@@ -95,16 +100,19 @@ On failure stderr carries `{"error": {"code", "message"}}`.
 
 - Roles say how inputs relate: the belief being challenged is `thesis`, the challenger is `antithesis`; supporting context is `thesis:qualifying`.
 - The `content` carries the **reasoning**, not just the verdict — a future reader (or you) inherits the chain, not only the conclusion.
-- `--unresolved` is mandatory. State what you could not settle, or `"None identified"` — never pad it.
+- `--unresolved` is mandatory. State what you could not settle, or use the exact conventional string `"None identified"` — never pad it.
+- `current` is chosen by `--timestamp` then id, so a backdated synthesis does not displace a newer one.
 - A synthesis is a claim: it can be cited as an input, recalled, and retracted. `conflicts` marks a synthesis **stale** when one of its inputs is retracted; re-synthesise rather than editing.
-- The tool does not judge contradiction. `unsynthesised` means "not yet reconciled into the current belief"; you decide whether it conflicts or merely extends.
+- The tool does not judge contradiction. `unsynthesised` means "not yet reconciled into the current belief"; you decide whether it conflicts or merely extends. `recall` marks each entry `current` or `unsynthesised` so you can see this without running `conflicts`.
+- Merged particulars are one class: `recall`/`conflicts` on any member cover all members, and each entry keeps its own `subject`.
 
 ## Retraction
 
 Retract when a claim is wrong, with a reason a reviewer can check. Never try to
 edit or delete the file. For typo-grade corrections assert the corrected claim
 first, then retract the old one with `--superseded-by <new id>`. For
-disagreements of substance, write a synthesis instead.
+disagreements of substance, write a synthesis instead. A wrong merge is retracted
+the same way (`retract <mrg_id>`); merges cannot be superseded.
 
 ## Working with git
 

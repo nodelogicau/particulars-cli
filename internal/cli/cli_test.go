@@ -104,7 +104,7 @@ func synth(t *testing.T, subject string, inputs []string, extra ...string) strin
 
 func TestInitAndVersion(t *testing.T) {
 	dir := initWS(t, "--base-uri", "https://example.com/particulars/")
-	for _, p := range []string{"dkf.yaml", "particulars", "claims", "syntheses", "index.yaml"} {
+	for _, p := range []string{"dkf.yaml", "particulars", "claims", "syntheses", "merges", "index.yaml"} {
 		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
 			t.Errorf("missing %s", p)
 		}
@@ -243,16 +243,26 @@ func TestClaimAssert(t *testing.T) {
 	if r := run(t, "", "claim", "assert", "--subject", "Nobody", "--content", "x", "--json"); r.code != 3 {
 		t.Errorf("unknown subject should exit 3, got %d", r.code)
 	}
-	// Missing author anywhere.
+	// No provenance anywhere → exit 2; harness alone is enough.
 	dir2 := filepath.Join(t.TempDir(), "kb2")
 	if r := run(t, "", "init", dir2, "--json"); r.code != 0 {
 		t.Fatal(r.stderr)
 	}
 	t.Setenv("DKF_WORKSPACE", dir2)
+	t.Setenv("DKF_HARNESS", "")
 	define(t, "P")
 	if r := run(t, "", "claim", "assert", "--subject", "P", "--content", "x", "--json"); r.code != 2 {
-		t.Errorf("missing author should exit 2, got %d", r.code)
+		t.Errorf("no provenance should exit 2, got %d", r.code)
 	}
+	t.Setenv("DKF_HARNESS", "claude")
+	r = run(t, "", "claim", "assert", "--subject", "P", "--content", "x", "--json")
+	if r.code != 0 {
+		t.Fatalf("agent-only assert: %+v", r)
+	}
+	if src := r.js["claim"].(map[string]any)["source"].(map[string]any); src["harness"] != "claude" || src["author"] != nil {
+		t.Errorf("agent-only source: %v", src)
+	}
+	t.Setenv("DKF_HARNESS", "")
 	t.Setenv("DKF_AUTHOR", "agent")
 	if r := run(t, "", "claim", "assert", "--subject", "P", "--content", "x", "--json"); r.code != 0 || r.js["claim"].(map[string]any)["source"].(map[string]any)["author"] != "agent" {
 		t.Errorf("env author: %+v", r)
@@ -321,9 +331,9 @@ func TestSynthesis(t *testing.T) {
 	if len(inputs) != 3 || inputs[0].(map[string]any)["weight"] != "primary" || inputs[2].(map[string]any)["weight"] != "qualifying" {
 		t.Errorf("inputs: %v", inputs)
 	}
-	pb := s["produced-by"].(map[string]any)
-	if pb["harness"] != "test" || pb["model"] != "claude-sonnet-4-6" || s["method"] != "reconciliation" {
-		t.Errorf("produced-by/method: %+v", s)
+	pb := s["source"].(map[string]any)
+	if _, legacy := s["produced-by"]; legacy || pb["harness"] != "test" || pb["model"] != "claude-sonnet-4-6" || s["method"] != "reconciliation" {
+		t.Errorf("source/method: %+v", s)
 	}
 	for _, args := range [][]string{
 		{"--input", a + ":support", "--unresolved", "x"},
@@ -525,5 +535,180 @@ func TestTopics(t *testing.T) {
 	text := run(t, "", "topics")
 	if !strings.Contains(text.stdout, "architecture") || !strings.Contains(text.stdout, "particulars") {
 		t.Errorf("text output:\n%s", text.stdout)
+	}
+}
+
+func TestInitNormalisesBaseURI(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "kb")
+	r := run(t, "", "init", dir, "--base-uri", "https://example.com/particulars", "--json")
+	if r.code != 0 || r.js["normalised"] != true || r.js["workspace"].(map[string]any)["base_uri"] != "https://example.com/particulars/" {
+		t.Errorf("normalise: %+v", r)
+	}
+	_ = os.WriteFile(filepath.Join(dir, "dkf.yaml"), []byte("format: dkf/0.1\nworkspace:\n  id: 01a00000-0000-7000-8000-000000000000\n  base-uri: https://example.com/particulars\n"), 0o644)
+	t.Setenv("DKF_WORKSPACE", dir)
+	if r := run(t, "", "recall", "x", "--json"); r.code != 1 || !strings.Contains(r.stderr, "dkf.yaml") {
+		t.Errorf("bad base-uri should exit 1 naming dkf.yaml: %+v", r)
+	}
+	r = run(t, "", "validate", "--json")
+	if r.code != 4 || r.js["findings"].([]any)[0].(map[string]any)["code"] != "invalid_base_uri" {
+		t.Errorf("validate bad base-uri: %+v", r)
+	}
+}
+
+func TestSynthesisSourceAndLegacy(t *testing.T) {
+	dir := initWS(t)
+	define(t, "Project X")
+	a := assert(t, "Project X", "A")
+	r := run(t, "", "synthesis", "create", "--subject", "Project X", "--content", "S", "--input", a+":thesis", "--unresolved", "None identified", "--author", "ben", "--document", "notes.md", "--json")
+	if r.code != 0 {
+		t.Fatalf("synthesis: %+v", r)
+	}
+	src := r.js["synthesis"].(map[string]any)["source"].(map[string]any)
+	if src["author"] != "ben" || src["harness"] != "test" || src["document"] != "notes.md" {
+		t.Errorf("source: %v", src)
+	}
+	file, _ := os.ReadFile(filepath.Join(dir, r.js["path"].(string)))
+	if strings.Contains(string(file), "produced-by") || !strings.Contains(string(file), "unresolved: None identified\nsource:\n  author: ben\n  harness: test") {
+		t.Errorf("file:\n%s", file)
+	}
+	// Author alone is not enough for a synthesis.
+	t.Setenv("DKF_WORKSPACE", dir)
+	if r := run(t, "", "synthesis", "create", "--subject", "Project X", "--content", "S", "--input", a+":thesis", "--unresolved", "n", "--harness", "", "--json"); r.code != 0 {
+		// harness still comes from dkf.yaml defaults in initWS; that's fine
+		_ = r
+	}
+	dir2 := filepath.Join(t.TempDir(), "kb2")
+	run(t, "", "init", dir2, "--author", "ben", "--json")
+	t.Setenv("DKF_WORKSPACE", dir2)
+	pid := define(t, "P")
+	x := assert(t, "P", "x")
+	if r := run(t, "", "synthesis", "create", "--subject", "P", "--content", "S", "--input", x+":thesis", "--unresolved", "n", "--author", "ben", "--json"); r.code != 2 || !strings.Contains(r.stderr, "DKF_HARNESS") {
+		t.Errorf("author-only synthesis should exit 2 naming DKF_HARNESS: %+v", r)
+	}
+	// Legacy produced-by file reads as source; validate warns.
+	legacy := "syn_01a00000-0000-7000-8000-00000000aaaa"
+	_ = os.WriteFile(filepath.Join(dir2, "syntheses", legacy+".yaml"), []byte("id: "+legacy+"\ntype: synthesis\nsubject: "+pid+"\ncontent: old\ninputs:\n  - id: "+x+"\n    role: thesis\nunresolved: n\nproduced-by:\n  harness: claude\n  model: m\ntimestamp: 2026-08-20T09:00:00Z\ncontext:\n  scope: personal\n"), 0o644)
+	run(t, "", "index", "--json")
+	rc := run(t, "", "recall", "P", "--json")
+	var found bool
+	for _, e := range rc.js["entries"].([]any) {
+		m := e.(map[string]any)
+		if m["id"] == legacy {
+			found = true
+			if _, has := m["produced-by"]; has || m["source"].(map[string]any)["harness"] != "claude" {
+				t.Errorf("legacy entry: %v", m)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("legacy synthesis not recalled")
+	}
+	v := run(t, "", "validate", "--json")
+	if v.code != 0 {
+		t.Fatalf("validate with legacy file should pass: %+v", v)
+	}
+	codes := []string{}
+	for _, f := range v.js["findings"].([]any) {
+		codes = append(codes, f.(map[string]any)["code"].(string))
+	}
+	if strings.Join(codes, ",") != "legacy_produced_by" {
+		t.Errorf("findings = %v", codes)
+	}
+}
+
+func TestRetractVerbAndMerges(t *testing.T) {
+	initWS(t, "--base-uri", "https://example.com/p")
+	define(t, "Project X")
+	define(t, "ProjectX legacy")
+	define(t, "Other")
+	a := assert(t, "Project X", "A")
+	b := assert(t, "ProjectX legacy", "B")
+	// Top-level retract and alias behave the same.
+	if r := run(t, "", "retract", a, "--reason", "r", "--json"); r.code != 0 || r.js["type"] != "claim" {
+		t.Errorf("retract: %+v", r)
+	}
+	if r := run(t, "", "claim", "retract", b, "--reason", "r", "--json"); r.code != 0 {
+		t.Errorf("alias: %+v", r)
+	}
+	c := assert(t, "Project X", "C")
+	d := assert(t, "ProjectX legacy", "D")
+	// Merge local particulars.
+	r := run(t, "", "particular", "merge", "Project X", "ProjectX legacy", "--reason", "same", "--json")
+	if r.code != 0 {
+		t.Fatalf("merge: %+v", r)
+	}
+	m := r.js["merge"].(map[string]any)
+	uris := m["uris"].([]any)
+	if len(uris) != 2 || uris[0] != "https://example.com/p/project-x" || uris[1] != "https://example.com/p/projectx-legacy" || m["reason"] != "same" {
+		t.Errorf("merge record: %v", m)
+	}
+	if r := run(t, "", "particular", "merge", "Project X", "ProjectX legacy", "--json"); r.code != 2 {
+		t.Errorf("duplicate merge should exit 2, got %d", r.code)
+	}
+	if r := run(t, "", "particular", "merge", "Project X", "https://example.com/p/project-x", "--json"); r.code != 2 {
+		t.Errorf("self merge should exit 2, got %d: %s", r.code, r.stderr)
+	}
+	if r := run(t, "", "particular", "merge", "Project X", "nothing here", "--json"); r.code != 3 {
+		t.Errorf("non-uri unknown side should exit 3, got %d", r.code)
+	}
+	// Recall across the merge, with class.
+	rc := run(t, "", "recall", "Project X", "--json")
+	if rc.js["count"].(float64) != 2 || len(rc.js["class"].([]any)) != 2 {
+		t.Errorf("recall across merge: %+v", rc.js)
+	}
+	ids := map[string]bool{}
+	for _, e := range rc.js["entries"].([]any) {
+		ids[e.(map[string]any)["id"].(string)] = true
+		if e.(map[string]any)["unsynthesised"] != true {
+			t.Errorf("entries should be unsynthesised: %v", e)
+		}
+	}
+	if !ids[c] || !ids[d] {
+		t.Errorf("expected %s and %s, got %v", c, d, ids)
+	}
+	// Conflicts sweep reports the class once with members.
+	cf := run(t, "", "conflicts", "--json")
+	reps := cf.js["reports"].([]any)
+	if len(reps) != 1 || len(reps[0].(map[string]any)["members"].([]any)) != 2 {
+		t.Errorf("conflicts sweep: %+v", cf.js)
+	}
+	// Foreign URI merge → validate warns unknown_merge_uri; index clean.
+	if r := run(t, "", "particular", "merge", "Other", "https://www.wikidata.org/entity/Q1", "--json"); r.code != 0 || r.js["sides"].([]any)[1].(map[string]any)["particular"] != "" {
+		t.Errorf("foreign merge: %+v", r)
+	}
+	if r := run(t, "", "index", "--check", "--json"); r.code != 0 {
+		t.Errorf("index after merge: %+v", r)
+	}
+	v := run(t, "", "validate", "--json")
+	if v.code != 0 || v.js["warnings"].(float64) < 1 {
+		t.Errorf("validate: %+v", v)
+	}
+	// Retract the merge; superseded-by rejected.
+	mid := m["id"].(string)
+	if r := run(t, "", "retract", mid, "--reason", "r", "--superseded-by", c, "--json"); r.code != 2 {
+		t.Errorf("superseded-by on merge should exit 2, got %d", r.code)
+	}
+	if r := run(t, "", "retract", mid, "--reason", "different after all", "--json"); r.code != 0 || r.js["type"] != "merge" {
+		t.Errorf("retract merge: %+v", r)
+	}
+	rc = run(t, "", "recall", "Project X", "--json")
+	if rc.js["count"].(float64) != 1 || rc.js["class"] != nil {
+		t.Errorf("after merge retraction: %+v", rc.js)
+	}
+}
+
+func TestLineageSupersededText(t *testing.T) {
+	initWS(t)
+	define(t, "Project X")
+	a := assert(t, "Project X", "A")
+	y := assert(t, "Project X", "Y")
+	s := synth(t, "Project X", []string{a + ":thesis"})
+	run(t, "", "retract", a, "--reason", "typo", "--superseded-by", y, "--json")
+	r := run(t, "", "lineage", s, "--json")
+	if r.js["inputs"].([]any)[0].(map[string]any)["superseded_by"] != y {
+		t.Errorf("superseded_by missing: %+v", r.js)
+	}
+	if txt := run(t, "", "lineage", s); !strings.Contains(txt.stdout, "retracted → "+y) {
+		t.Errorf("text: %s", txt.stdout)
 	}
 }

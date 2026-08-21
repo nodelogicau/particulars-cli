@@ -1,10 +1,27 @@
 # Feedback on the DKF v0.1 draft from the `particulars` reference implementation
 
-The [DKF README](https://github.com/nodelogicau/particulars) asks for feedback on
+The [DKF README](https://github.com/nodelogicau/particulars) asked for feedback on
 the object model, field names, and missing cases before v0.1 is declared. These
-are the points where implementing the format forced a decision the spec does not
-make, or where this implementation deliberately diverges. Each is phrased as a
-proposal; "we" below means this implementation.
+are the points where implementing the format forced a decision the draft did not
+make. Each was raised as an issue on 2026-08-21 and **all ten were resolved the
+same day** in [nodelogicau/particulars@27743db](https://github.com/nodelogicau/particulars/commit/27743db);
+the resolution is recorded under each item. particulars-cli v0.2.0 implements the
+resolutions. "We" below means this implementation as it was when the item was raised.
+
+| # | Outcome |
+|---|---|
+| 1 | Adopted: `<prefix>_<uuidv7>`, plus `mrg` prefix; legacy ids readable |
+| 2 | Adopted: append-only `retracted` block; merges retractable; signatures exclude it |
+| 3 | Adopted: optional `superseded-by`, informational only |
+| 4 | Adopted: unique-not-resolvable; `<base-uri><slug>` / `urn:dkf:` minting; namespace claimed |
+| 5 | Adopted: `dkf.yaml` marker; **`base-uri` must end in `/`** |
+| 6 | Adopted: derived index with additive fields; rebuild + drift check required |
+| 7 | Defined: `merges/mrg_….yaml`, two URIs, equivalence classes, retractable |
+| 8 | Adopted: structural sets; **`current` by `timestamp` then id; `stale` is transitive** |
+| 9 | **Decided differently:** `source` needs author *or* harness; agent-only sources valid |
+| 10 | **Decided differently:** syntheses carry `source` (harness required), not `produced-by`; `context.scope` required on disk; cross-particular inputs allowed; `None identified` is the conventional empty `unresolved` |
+
+Bold entries are where v0.1.x diverged and v0.2.0 changed.
 
 ## 1. Identifier format: `<prefix>_<uuidv7>` ([#1](https://github.com/nodelogicau/particulars/issues/1))
 
@@ -148,6 +165,14 @@ The spec shows `author`, `harness`, `model`, `document` but does not say which
 are mandatory. We require `author` on claims and on retractions, and
 `produced-by.harness` on syntheses. Worth pinning down, since it determines what
 a minimal valid claim looks like.
+
+## 11. Merge record field order (new, raised after the resolutions)
+
+The `merge-records` spec prose lists fields as "`id`, `type: merge`, `uris`,
+`source`, `timestamp`, and optional `reason`" while the README example writes
+`id, type, uris, reason, source, timestamp`. v0.2.0 follows the example (the
+concrete artifact). The prose should be brought into line, or the example
+changed, before v0.1 is declared.
 
 ## 10. Smaller notes ([#10](https://github.com/nodelogicau/particulars/issues/10))
 

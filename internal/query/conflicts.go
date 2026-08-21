@@ -7,28 +7,35 @@ import (
 	"github.com/nodelogicau/particulars-cli/internal/store"
 )
 
-// Report is the structural conflict summary for one particular.
+// Report is the structural conflict summary for one particular (or merge
+// equivalence class, keyed by the queried or lowest particular).
 type Report struct {
 	Particular    string   `json:"particular"`
 	Label         string   `json:"label"`
 	URI           string   `json:"uri"`
+	Members       []string `json:"members,omitempty"` // all class members when > 1
 	Current       string   `json:"current,omitempty"`
 	Unsynthesised []string `json:"unsynthesised"`
 	Stale         []string `json:"stale"`
 	Priority      int      `json:"priority"`
 }
 
-// Analyse computes the conflict structure for one particular regardless of
-// whether it meets the reporting threshold.
+// Analyse computes the conflict structure for the class containing p,
+// regardless of whether it meets the reporting threshold.
 func Analyse(g *store.Graph, p *dkf.Particular) Report {
+	members := g.ClassOf(p.ID)
 	r := Report{Particular: p.ID, Label: p.Label, URI: p.URI, Unsynthesised: []string{}, Stale: []string{}}
-	cur := CurrentSynthesis(g, p.ID)
+	if len(members) > 1 {
+		r.Members = members
+	}
+	cur := CurrentForClass(g, members)
 	reconciled := map[string]bool{}
 	if cur != nil {
 		r.Current = cur.ID
 		closure(g, cur, reconciled)
 	}
-	for _, a := range g.BySubject[p.ID] {
+	memo := map[string]bool{}
+	for _, a := range g.ClassAssertions(members) {
 		if a.GetRetracted() != nil {
 			continue
 		}
@@ -36,19 +43,40 @@ func Analyse(g *store.Graph, p *dkf.Particular) Report {
 		if cur == nil || (id != cur.ID && !reconciled[id]) {
 			r.Unsynthesised = append(r.Unsynthesised, id)
 		}
-		if s, ok := a.(*dkf.Synthesis); ok {
-			for _, in := range s.Inputs {
-				if child := g.Assertion(in.ID); child != nil && child.GetRetracted() != nil {
-					r.Stale = append(r.Stale, s.ID)
-					break
-				}
-			}
+		if s, ok := a.(*dkf.Synthesis); ok && CitesRetracted(g, s, memo) {
+			r.Stale = append(r.Stale, s.ID)
 		}
 	}
 	sort.Strings(r.Unsynthesised)
 	sort.Strings(r.Stale)
 	r.Priority = len(r.Unsynthesised) + len(r.Stale)
 	return r
+}
+
+// CitesRetracted reports whether s cites, directly or transitively, a
+// retracted object. memo caches results across calls; cycles are guarded.
+func CitesRetracted(g *store.Graph, s *dkf.Synthesis, memo map[string]bool) bool {
+	if v, ok := memo[s.ID]; ok {
+		return v
+	}
+	memo[s.ID] = false // cycle guard: assume not stale while exploring
+	stale := false
+	for _, in := range s.Inputs {
+		child := g.Assertion(in.ID)
+		if child == nil {
+			continue
+		}
+		if child.GetRetracted() != nil {
+			stale = true
+			break
+		}
+		if cs, ok := child.(*dkf.Synthesis); ok && CitesRetracted(g, cs, memo) {
+			stale = true
+			break
+		}
+	}
+	memo[s.ID] = stale
+	return stale
 }
 
 // closure marks every transitive input of s.
@@ -76,9 +104,9 @@ func Reportable(r Report) bool {
 	return len(r.Unsynthesised) >= 2
 }
 
-// Conflicts returns reports for the given particular id (or all particulars
-// when subject is ""), filtered by the threshold and ordered by priority
-// descending, then particular id ascending.
+// Conflicts returns reports for the class of the given particular id (or,
+// when subject is "", one report per class keyed by its lowest particular),
+// filtered by the threshold and ordered by priority descending, then id.
 func Conflicts(g *store.Graph, subject string) []Report {
 	var targets []*dkf.Particular
 	if subject != "" {
@@ -86,7 +114,15 @@ func Conflicts(g *store.Graph, subject string) []Report {
 			targets = append(targets, p)
 		}
 	} else {
-		targets = g.SortedParticulars()
+		seen := map[string]bool{}
+		for _, p := range g.SortedParticulars() {
+			root := g.ClassOf(p.ID)[0]
+			if seen[root] {
+				continue
+			}
+			seen[root] = true
+			targets = append(targets, g.Particular(root))
+		}
 	}
 	out := []Report{}
 	for _, p := range targets {

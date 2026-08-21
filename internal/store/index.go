@@ -29,6 +29,7 @@ type Entry struct {
 	ID        string   `yaml:"id" json:"id"`
 	Type      dkf.Type `yaml:"type" json:"type"`
 	URI       string   `yaml:"uri,omitempty" json:"uri,omitempty"`
+	URIs      []string `yaml:"uris,omitempty" json:"uris,omitempty"`
 	Subject   string   `yaml:"subject,omitempty" json:"subject,omitempty"`
 	Scope     string   `yaml:"scope,omitempty" json:"scope,omitempty"`
 	Topics    []string `yaml:"topics,omitempty" json:"topics,omitempty"`
@@ -42,6 +43,12 @@ func EntryFor(obj dkf.Object) Entry {
 	switch o := obj.(type) {
 	case *dkf.Particular:
 		return Entry{ID: o.ID, Type: dkf.TypeParticular, URI: o.URI}
+	case *dkf.Merge:
+		e := Entry{ID: o.ID, Type: dkf.TypeMerge, URIs: o.URIs, Retracted: o.Retracted != nil}
+		if !o.Timestamp.IsZero() {
+			e.Timestamp = dkf.FormatTime(o.Timestamp)
+		}
+		return e
 	case dkf.Assertion:
 		ctx := o.GetContext()
 		e := Entry{

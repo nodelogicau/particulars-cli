@@ -1,0 +1,67 @@
+## MODIFIED Requirements
+
+### Requirement: Identifier format
+Object and record identifiers SHALL have the form `<prefix>_<uuid>` where `prefix` is `par` for particulars, `clm` for claims, `syn` for syntheses, `mrg` for merge records, and `uuid` is a lowercase, hyphenated, canonical UUID version 7 (RFC 9562). Minting SHALL use a monotonic counter so that identifiers minted by one process are strictly increasing in lexical order. On read, the CLI SHALL accept any identifier matching `^(par|clm|syn|mrg)_[A-Za-z0-9-]+$` so that workspaces written by other implementations remain readable.
+
+#### Scenario: Minted identifier shape
+- **WHEN** a claim is created
+- **THEN** its id matches `^clm_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`
+
+#### Scenario: Merge identifier shape
+- **WHEN** a merge record is created
+- **THEN** its id starts with `mrg_` followed by a canonical lowercase UUIDv7
+
+#### Scenario: Burst minting preserves order
+- **WHEN** ten claims are created within the same millisecond by one process
+- **THEN** their ids sort lexically in creation order
+
+#### Scenario: Foreign identifier accepted on read
+- **WHEN** a workspace contains `claims/clm_01j9xk2p3q4r5s6t.yaml` with a valid body
+- **THEN** `recall` reads it without error and `validate` reports only a `legacy_id` warning for it
+
+### Requirement: Deterministic serialisation
+The CLI SHALL serialise objects with 2-space indentation, keys in spec order (particular: `id, type, uri, label, aliases`; claim: `id, type, subject, content, source, context, timestamp, confidence, retracted`; synthesis: `id, type, subject, content, inputs, unresolved, source, method, timestamp, context, confidence, retracted`; merge: `id, type, uris, reason, source, timestamp, retracted`; `source`: `author, harness, model, document`; `context`: `scope, topics`; input: `id, role, weight`; `retracted`: `timestamp, reason, source, superseded-by`), timestamps as RFC 3339 UTC with a `Z` suffix, multi-line strings as literal block scalars, optional fields omitted when unset, and no document start/end markers. Serialising the same object twice SHALL produce identical bytes. The encoder SHALL never emit a `produced-by` key.
+
+#### Scenario: Stable bytes
+- **WHEN** an object is serialised, parsed, and serialised again
+- **THEN** both serialisations are byte-identical
+
+#### Scenario: Spec field order
+- **WHEN** a claim with all fields set is written
+- **THEN** the top-level keys appear in the order `id, type, subject, content, source, context, timestamp, confidence`
+
+#### Scenario: Synthesis field order
+- **WHEN** a synthesis with all fields set is written
+- **THEN** the top-level keys appear in the order `id, type, subject, content, inputs, unresolved, source, method, timestamp, context, confidence`
+
+### Requirement: Field constraints
+The CLI SHALL enforce on write: `confidence` is a number in [0, 1] when present; `context.scope` is one of `personal`, `organisation`, `public`; `context.topics` is a list of non-empty strings; every `source` block (on claims, syntheses, retractions, and merges) contains at least one of `author` or `harness`, and a synthesis's `source.harness` is present; `timestamp` is a valid RFC 3339 time.
+
+#### Scenario: Confidence out of range
+- **WHEN** `claim assert` is run with `--confidence 1.5`
+- **THEN** the command exits with code 2 and writes nothing
+
+#### Scenario: Invalid scope
+- **WHEN** `claim assert` is run with `--scope team`
+- **THEN** the command exits with code 2 and writes nothing
+
+#### Scenario: Agent-only source accepted
+- **WHEN** a claim is written with `source: {harness: claude, model: claude-sonnet-4-6}` and no `author`
+- **THEN** the claim is valid
+
+#### Scenario: Source with only a document rejected
+- **WHEN** a claim would be written with `source: {document: https://…}` and neither `author` nor `harness`
+- **THEN** the command exits with code 2 and writes nothing
+
+## ADDED Requirements
+
+### Requirement: Legacy synthesis provenance on read
+When a synthesis file carries a `produced-by` block and no `source`, the decoder SHALL populate `source` from `produced-by` (`harness`, `model`) and flag the object as legacy. A file carrying both `source` and `produced-by`, or neither, SHALL be invalid. Legacy objects SHALL behave identically to native ones in every verb; only `validate` distinguishes them.
+
+#### Scenario: v0.1.x synthesis read
+- **WHEN** a synthesis written by particulars-cli v0.1.1 (with `produced-by: {harness: claude}`) is recalled
+- **THEN** the entry's `source.harness` is `claude` and no `produced-by` key appears in JSON output
+
+#### Scenario: Both blocks present
+- **WHEN** a synthesis file carries both `source` and `produced-by`
+- **THEN** `validate` reports an error with code `conflicting_provenance`

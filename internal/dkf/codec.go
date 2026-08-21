@@ -37,6 +37,8 @@ func Encode(obj Object) ([]byte, error) {
 		root = claimNode(o)
 	case *Synthesis:
 		root = synthesisNode(o)
+	case *Merge:
+		root = mergeNode(o)
 	default:
 		return nil, fmt.Errorf("dkf: cannot encode %T", obj)
 	}
@@ -192,10 +194,7 @@ func synthesisNode(s *Synthesis) *yaml.Node {
 	}
 	addKV(m, "inputs", inputs)
 	addStrAlways(m, "unresolved", s.Unresolved)
-	pb := mapping()
-	addStr(pb, "harness", s.ProducedBy.Harness)
-	addStr(pb, "model", s.ProducedBy.Model)
-	addKV(m, "produced-by", pb)
+	addKV(m, "source", sourceNode(s.Source))
 	addStr(m, "method", s.Method)
 	addTime(m, "timestamp", s.Timestamp)
 	addKV(m, "context", contextNode(s.Context))
@@ -206,7 +205,60 @@ func synthesisNode(s *Synthesis) *yaml.Node {
 	return m
 }
 
+func mergeNode(mg *Merge) *yaml.Node {
+	m := mapping()
+	addStrAlways(m, "id", mg.ID)
+	addStrAlways(m, "type", string(TypeMerge))
+	uris := sequence()
+	for _, u := range mg.URIs {
+		uris.Content = append(uris.Content, scalar(u))
+	}
+	addKV(m, "uris", uris)
+	addStr(m, "reason", mg.Reason)
+	addKV(m, "source", sourceNode(mg.Source))
+	addTime(m, "timestamp", mg.Timestamp)
+	if mg.Retracted != nil {
+		addKV(m, "retracted", retractedNode(mg.Retracted))
+	}
+	return m
+}
+
 // --- decoding ------------------------------------------------------------
+
+// synthesisFile mirrors Synthesis but keeps provenance blocks as pointers so
+// the decoder can tell which of source / produced-by were present.
+type synthesisFile struct {
+	ID         string      `yaml:"id"`
+	Subject    string      `yaml:"subject"`
+	Content    string      `yaml:"content"`
+	Inputs     []Input     `yaml:"inputs"`
+	Unresolved string      `yaml:"unresolved"`
+	Source     *Source     `yaml:"source"`
+	ProducedBy *ProducedBy `yaml:"produced-by"`
+	Method     string      `yaml:"method"`
+	Timestamp  time.Time   `yaml:"timestamp"`
+	Context    Context     `yaml:"context"`
+	Confidence *float64    `yaml:"confidence"`
+	Retracted  *Retracted  `yaml:"retracted"`
+}
+
+func (f *synthesisFile) toSynthesis() *Synthesis {
+	s := &Synthesis{
+		ID: f.ID, Subject: f.Subject, Content: f.Content, Inputs: f.Inputs, Unresolved: f.Unresolved,
+		Method: f.Method, Timestamp: f.Timestamp, Context: f.Context, Confidence: f.Confidence, Retracted: f.Retracted,
+	}
+	switch {
+	case f.Source != nil && f.ProducedBy != nil:
+		s.Source = *f.Source
+		s.ConflictingProvenance = true
+	case f.Source != nil:
+		s.Source = *f.Source
+	case f.ProducedBy != nil:
+		s.Source = Source{Harness: f.ProducedBy.Harness, Model: f.ProducedBy.Model}
+		s.LegacyProducedBy = true
+	}
+	return s
+}
 
 // typeProbe reads only the discriminator.
 type typeProbe struct {
@@ -234,11 +286,17 @@ func Decode(data []byte) (Object, error) {
 		}
 		return &c, nil
 	case TypeSynthesis:
-		var s Synthesis
-		if err := yaml.Unmarshal(data, &s); err != nil {
+		var f synthesisFile
+		if err := yaml.Unmarshal(data, &f); err != nil {
 			return nil, fmt.Errorf("parse synthesis: %w", err)
 		}
-		return &s, nil
+		return f.toSynthesis(), nil
+	case TypeMerge:
+		var m Merge
+		if err := yaml.Unmarshal(data, &m); err != nil {
+			return nil, fmt.Errorf("parse merge: %w", err)
+		}
+		return &m, nil
 	case "":
 		return nil, fmt.Errorf("missing type field")
 	default:

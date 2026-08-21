@@ -42,6 +42,10 @@ A DKF PR is easy to read because of three invariants the tool enforces:
   it as non-canonical, and the reviewer should reject.
 - **`index.yaml` is derived.** Its diff is noise; if it conflicts, rebuild it with
   `particulars index` instead of merging by hand.
+- **A merge record is a claim about identity.** A new file under `merges/` says two
+  URIs are the same thing; nothing else moves. Check both URIs really denote one
+  particular — a wrong merge silently pools two particulars' knowledge until it is
+  retracted.
 
 What to look at in each new claim:
 
@@ -58,14 +62,19 @@ And in each synthesis:
 | Field | Ask |
 |---|---|
 | `inputs` | Are the thesis/antithesis roles right? Is anything missing? (`particulars lineage <id>`) |
-| `unresolved` | Is it honest about what was *not* reconciled? |
+| `unresolved` | Is it honest about what was *not* reconciled? (`None identified` means "considered, nothing open") |
+| `source.harness` | Which harness produced it? (`source` replaced `produced-by` in v0.2.0) |
 | `content` | Does it carry the reasoning, not just the conclusion? |
+
+Workspaces written before v0.2.0 hold syntheses with `produced-by`. They remain
+valid; `validate` reports each as a `legacy_produced_by` warning until a newer
+synthesis supersedes it. Do not rewrite them.
 
 ## After merge
 
 - **Something was wrong.** Retract it; never delete or edit:
   ```sh
-  particulars claim retract clm_… --reason "…" [--superseded-by clm_…]
+  particulars retract clm_… --reason "…" [--superseded-by clm_…]
   ```
   The retraction records who and when. `recall` stops returning it, and any
   synthesis that cited it is reported by `conflicts` as **stale** until a new
@@ -96,7 +105,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DKF_WORKSPACE: ${{ github.workspace }}/knowledge
-      PARTICULARS_VERSION: v0.1.1
+      PARTICULARS_VERSION: v0.2.0
     steps:
       - uses: actions/checkout@v4
 

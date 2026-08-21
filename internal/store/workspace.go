@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
 )
@@ -20,6 +21,7 @@ var (
 	ErrNotFound         = errors.New("not found")
 	ErrAlreadyExists    = errors.New("already exists")
 	ErrAlreadyRetracted = errors.New("already retracted")
+	ErrInvalidBaseURI   = errors.New("invalid base-uri")
 )
 
 // Workspace is an opened DKF directory.
@@ -86,7 +88,7 @@ func Init(dir string, cfg Config) (*Workspace, error) {
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		return nil, err
 	}
-	for _, t := range []dkf.Type{dkf.TypeParticular, dkf.TypeClaim, dkf.TypeSynthesis} {
+	for _, t := range allTypes {
 		if err := os.MkdirAll(filepath.Join(abs, dirFor(t)), 0o755); err != nil {
 			return nil, err
 		}
@@ -105,6 +107,9 @@ func Init(dir string, cfg Config) (*Workspace, error) {
 	return w, nil
 }
 
+// allTypes lists every object and record type in load order.
+var allTypes = []dkf.Type{dkf.TypeParticular, dkf.TypeClaim, dkf.TypeSynthesis, dkf.TypeMerge}
+
 func dirFor(t dkf.Type) string {
 	switch t {
 	case dkf.TypeParticular:
@@ -113,6 +118,8 @@ func dirFor(t dkf.Type) string {
 		return "claims"
 	case dkf.TypeSynthesis:
 		return "syntheses"
+	case dkf.TypeMerge:
+		return "merges"
 	}
 	return ""
 }
@@ -223,10 +230,10 @@ func (w *Workspace) WriteParticular(p *dkf.Particular) error {
 	return writeAtomic(path, data)
 }
 
-// Retract appends a retracted block to an existing claim or synthesis file
-// without altering existing bytes, re-parses to confirm validity, and
-// restores the original on failure. Returns the updated assertion.
-func (w *Workspace) Retract(id string, r *dkf.Retracted) (dkf.Assertion, error) {
+// Retract appends a retracted block to an existing claim, synthesis, or merge
+// file without altering existing bytes, re-parses to confirm validity, and
+// restores the original on failure. Returns the updated object.
+func (w *Workspace) Retract(id string, r *dkf.Retracted) (dkf.Retractable, error) {
 	if ps := dkf.ValidateRetracted(r); len(ps) > 0 {
 		return nil, ps
 	}
@@ -234,8 +241,11 @@ func (w *Workspace) Retract(id string, r *dkf.Retracted) (dkf.Assertion, error) 
 	if err != nil {
 		return nil, err
 	}
-	if !dkf.IsAssertionID(id) {
-		return nil, fmt.Errorf("%s: only claims and syntheses can be retracted", id)
+	if !dkf.IsRetractableID(id) {
+		return nil, fmt.Errorf("%s: only claims, syntheses, and merges can be retracted", id)
+	}
+	if t, _ := dkf.TypeOfID(id); t == dkf.TypeMerge && r.SupersededBy != "" {
+		return nil, &dkf.Problem{Code: dkf.CodeInvalidID, Field: "superseded-by", Message: "a merge is undone, not superseded; --superseded-by is not allowed for merge records"}
 	}
 	original, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -248,9 +258,9 @@ func (w *Workspace) Retract(id string, r *dkf.Retracted) (dkf.Assertion, error) 
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", w.Rel(path), err)
 	}
-	existing, ok := obj.(dkf.Assertion)
+	existing, ok := obj.(dkf.Retractable)
 	if !ok {
-		return nil, fmt.Errorf("%s: not a claim or synthesis", id)
+		return nil, fmt.Errorf("%s: not a retractable object", id)
 	}
 	if existing.GetRetracted() != nil {
 		return nil, fmt.Errorf("%s: %w", id, ErrAlreadyRetracted)
@@ -274,7 +284,7 @@ func (w *Workspace) Retract(id string, r *dkf.Retracted) (dkf.Assertion, error) 
 		var parsed dkf.Object
 		parsed, err = dkf.Decode(reread)
 		if err == nil {
-			a, ok := parsed.(dkf.Assertion)
+			a, ok := parsed.(dkf.Retractable)
 			switch {
 			case !ok:
 				err = fmt.Errorf("re-parse yielded %T", parsed)
@@ -352,6 +362,37 @@ func (w *Workspace) UpsertParticular(uri, label string, aliases []string) (*dkf.
 		return nil, false, err
 	}
 	return p, true, nil
+}
+
+// CreateMerge writes a merge record joining two URIs. URIs are stored sorted
+// so the same pair always serialises identically. It refuses a self-merge and
+// a pair already joined by a non-retracted merge.
+func (w *Workspace) CreateMerge(uriA, uriB, reason string, src dkf.Source, ts time.Time) (*dkf.Merge, error) {
+	uriA, uriB = strings.TrimSpace(uriA), strings.TrimSpace(uriB)
+	if uriA == "" || uriB == "" {
+		return nil, &dkf.Problem{Code: dkf.CodeInvalidMerge, Field: "uris", Message: "both uris are required"}
+	}
+	if uriA == uriB {
+		return nil, &dkf.Problem{Code: dkf.CodeInvalidMerge, Field: "uris", Message: "cannot merge a uri with itself"}
+	}
+	if uriA > uriB {
+		uriA, uriB = uriB, uriA
+	}
+	g, err := w.Load()
+	if err != nil {
+		return nil, err
+	}
+	if existing := g.MergeBetween(uriA, uriB); existing != nil {
+		return nil, &dkf.Problem{Code: dkf.CodeInvalidMerge, Field: "uris", Message: fmt.Sprintf("already joined by %s", existing.ID)}
+	}
+	m := &dkf.Merge{ID: dkf.NewID(dkf.TypeMerge), URIs: []string{uriA, uriB}, Reason: reason, Source: src, Timestamp: ts}
+	if err := w.Create(m); err != nil {
+		return nil, err
+	}
+	if err := w.UpsertIndex(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 // --- low-level writes ----------------------------------------------------

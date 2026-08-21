@@ -12,6 +12,10 @@ const (
 	CodeOutOfRange       = "out_of_range"
 	CodeInvalidTimestamp = "invalid_timestamp"
 	CodeInvalidID        = "invalid_id"
+	// CodeConflictingProvenance: a synthesis file carried both source and produced-by.
+	CodeConflictingProvenance = "conflicting_provenance"
+	// CodeInvalidMerge: a merge record's uris are malformed.
+	CodeInvalidMerge = "invalid_merge"
 )
 
 // Problem is one field-level defect in an object.
@@ -60,6 +64,8 @@ func ValidateObject(obj Object) Problems {
 		return ValidateClaim(o)
 	case *Synthesis:
 		return ValidateSynthesis(o)
+	case *Merge:
+		return ValidateMerge(o)
 	}
 	return Problems{{Code: CodeInvalidEnum, Field: "type", Message: fmt.Sprintf("unsupported object %T", obj)}}
 }
@@ -90,7 +96,7 @@ func ValidateClaim(c *Claim) Problems {
 	if strings.TrimSpace(c.Content) == "" {
 		ps = append(ps, missing("content"))
 	}
-	ps = append(ps, checkSource("source", c.Source, true)...)
+	ps = append(ps, checkSource("source", c.Source)...)
 	ps = append(ps, checkContext(c.Context)...)
 	if c.Timestamp.IsZero() {
 		ps = append(ps, missing("timestamp"))
@@ -130,8 +136,12 @@ func ValidateSynthesis(s *Synthesis) Problems {
 	if strings.TrimSpace(s.Unresolved) == "" {
 		ps = append(ps, Problem{Code: CodeMissingField, Field: "unresolved", Message: "unresolved is required; state what could not be reconciled, or that nothing was identified"})
 	}
-	if strings.TrimSpace(s.ProducedBy.Harness) == "" {
-		ps = append(ps, missing("produced-by.harness"))
+	ps = append(ps, checkSource("source", s.Source)...)
+	if strings.TrimSpace(s.Source.Harness) == "" {
+		ps = append(ps, Problem{Code: CodeMissingField, Field: "source.harness", Message: "a synthesis must record the harness that produced it"})
+	}
+	if s.ConflictingProvenance {
+		ps = append(ps, Problem{Code: CodeConflictingProvenance, Field: "produced-by", Message: "file carries both source and the legacy produced-by block; remove one"})
 	}
 	if s.Timestamp.IsZero() {
 		ps = append(ps, missing("timestamp"))
@@ -153,7 +163,7 @@ func ValidateRetracted(r *Retracted) Problems {
 	if strings.TrimSpace(r.Reason) == "" {
 		ps = append(ps, missing("retracted.reason"))
 	}
-	ps = append(ps, checkSource("retracted.source", r.Source, true)...)
+	ps = append(ps, checkSource("retracted.source", r.Source)...)
 	if r.SupersededBy != "" && !IsAssertionID(r.SupersededBy) {
 		ps = append(ps, Problem{Code: CodeInvalidID, Field: "retracted.superseded-by", Message: fmt.Sprintf("must reference a claim or synthesis, got %q", r.SupersededBy)})
 	}
@@ -188,11 +198,37 @@ func checkSubject(subject string) Problems {
 	return nil
 }
 
-func checkSource(field string, s Source, requireAuthor bool) Problems {
-	if requireAuthor && strings.TrimSpace(s.Author) == "" {
-		return Problems{missing(field + ".author")}
+// checkSource enforces the format's minimum: at least one of author or harness.
+func checkSource(field string, s Source) Problems {
+	if strings.TrimSpace(s.Author) == "" && strings.TrimSpace(s.Harness) == "" {
+		return Problems{{Code: CodeMissingField, Field: field, Message: "source must contain at least one of author or harness"}}
 	}
 	return nil
+}
+
+// ValidateMerge checks field-level constraints of a merge record.
+func ValidateMerge(m *Merge) Problems {
+	var ps Problems
+	ps = append(ps, checkID(m.ID, TypeMerge)...)
+	switch {
+	case len(m.URIs) != 2:
+		ps = append(ps, Problem{Code: CodeInvalidMerge, Field: "uris", Message: fmt.Sprintf("a merge must list exactly two uris, got %d", len(m.URIs))})
+	case strings.TrimSpace(m.URIs[0]) == "" || strings.TrimSpace(m.URIs[1]) == "":
+		ps = append(ps, Problem{Code: CodeInvalidMerge, Field: "uris", Message: "uris must be non-empty"})
+	case m.URIs[0] == m.URIs[1]:
+		ps = append(ps, Problem{Code: CodeInvalidMerge, Field: "uris", Message: "a merge cannot join a uri to itself"})
+	}
+	ps = append(ps, checkSource("source", m.Source)...)
+	if m.Timestamp.IsZero() {
+		ps = append(ps, missing("timestamp"))
+	}
+	if m.Retracted != nil {
+		ps = append(ps, ValidateRetracted(m.Retracted)...)
+		if m.Retracted.SupersededBy != "" {
+			ps = append(ps, Problem{Code: CodeInvalidID, Field: "retracted.superseded-by", Message: "a merge is undone, not superseded; superseded-by is not allowed"})
+		}
+	}
+	return ps
 }
 
 func checkContext(c Context) Problems {

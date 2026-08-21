@@ -291,3 +291,98 @@ func TestLoadProblems(t *testing.T) {
 		t.Error("Err() should be non-nil")
 	}
 }
+
+func TestConfigBaseURI(t *testing.T) {
+	cfg := NewConfig()
+	cfg.Workspace.BaseURI = "https://example.com/particulars"
+	if _, err := Init(filepath.Join(t.TempDir(), "kb"), cfg); !errors.Is(err, ErrInvalidBaseURI) {
+		t.Errorf("init without trailing slash should fail with ErrInvalidBaseURI, got %v", err)
+	}
+	cfg.Workspace.BaseURI = "https://example.com/particulars/"
+	w, err := Init(filepath.Join(t.TempDir(), "kb"), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(filepath.Join(w.Root, "merges")); err != nil || !fi.IsDir() {
+		t.Error("init should create merges/")
+	}
+	_ = os.WriteFile(filepath.Join(w.Root, ConfigFile), []byte("format: dkf/0.1\nworkspace:\n  id: x\n  base-uri: https://example.com/p\n"), 0o644)
+	if _, err := Open(w.Root); !errors.Is(err, ErrInvalidBaseURI) {
+		t.Errorf("open with bad base-uri: %v", err)
+	}
+}
+
+func TestMergesAndClasses(t *testing.T) {
+	w := newWS(t)
+	a := mkParticular(t, w, "A")
+	b := mkParticular(t, w, "B")
+	c := mkParticular(t, w, "C")
+	d := mkParticular(t, w, "D")
+	src := dkf.Source{Author: "ben"}
+	m1, err := w.CreateMerge(b.URI, a.URI, "same", src, ts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m1.URIs[0] != a.URI || m1.URIs[1] != b.URI {
+		t.Errorf("uris should be sorted: %v", m1.URIs)
+	}
+	if _, err := w.CreateMerge(a.URI, b.URI, "", src, ts); err == nil {
+		t.Error("duplicate merge should fail")
+	}
+	if _, err := w.CreateMerge(a.URI, a.URI, "", src, ts); err == nil {
+		t.Error("self merge should fail")
+	}
+	// Bridge through a foreign URI: B <-> U <-> C.
+	foreign := "https://www.wikidata.org/entity/Q1"
+	if _, err := w.CreateMerge(b.URI, foreign, "", src, ts); err != nil {
+		t.Fatal(err)
+	}
+	m3, err := w.CreateMerge(foreign, c.URI, "", src, ts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, _ := w.Load()
+	if got := strings.Join(g.ClassOf(a.ID), ","); got != strings.Join([]string{a.ID, b.ID, c.ID}, ",") && len(g.ClassOf(a.ID)) != 3 {
+		t.Errorf("class of A = %v", g.ClassOf(a.ID))
+	}
+	if len(g.ClassOf(a.ID)) != 3 || len(g.ClassOf(d.ID)) != 1 || g.ClassOf(d.ID)[0] != d.ID {
+		t.Errorf("classes: A=%v D=%v", g.ClassOf(a.ID), g.ClassOf(d.ID))
+	}
+	if g.MergeBetween(foreign, b.URI) == nil {
+		t.Error("MergeBetween should find the bridge in either order")
+	}
+	// Retract the C edge → C leaves the class; merge file stays.
+	if _, err := w.Retract(m3.ID, &dkf.Retracted{Timestamp: ts, Reason: "wrong", Source: src, SupersededBy: "clm_01x"}); err == nil {
+		t.Error("superseded-by on a merge should be rejected")
+	}
+	r, err := w.Retract(m3.ID, &dkf.Retracted{Timestamp: ts, Reason: "wrong", Source: src})
+	if err != nil || r.GetRetracted() == nil {
+		t.Fatalf("retract merge: %v", err)
+	}
+	if err := w.UpsertIndex(r); err != nil {
+		t.Fatal(err)
+	}
+	g, _ = w.Load()
+	if len(g.ClassOf(a.ID)) != 2 || len(g.ClassOf(c.ID)) != 1 {
+		t.Errorf("after retract: A=%v C=%v", g.ClassOf(a.ID), g.ClassOf(c.ID))
+	}
+	if _, err := os.Stat(filepath.Join(w.Dir(dkf.TypeMerge), m3.ID+".yaml")); err != nil {
+		t.Error("retracted merge file must remain")
+	}
+	idx, _, _ := w.ReadIndex()
+	found := false
+	for _, e := range idx.Entries {
+		if e.ID == m3.ID {
+			found = true
+			if e.Type != dkf.TypeMerge || len(e.URIs) != 2 || !e.Retracted {
+				t.Errorf("merge index entry: %+v", e)
+			}
+		}
+	}
+	if !found {
+		t.Error("merge missing from index")
+	}
+	if d, _ := w.CheckIndex(); !d.Clean() {
+		t.Errorf("index should be clean: %+v", d)
+	}
+}
