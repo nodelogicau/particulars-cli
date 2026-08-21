@@ -4,7 +4,7 @@
 #   curl -sSL https://raw.githubusercontent.com/nodelogicau/particulars-cli/main/install.sh | sh
 #
 # Configuration (environment only; the script is usually piped):
-#   PARTICULARS_VERSION      tag to install, with or without a leading "v" (default: latest release)
+#   PARTICULARS_VERSION      tag to install, with or without a leading "v", or "latest" (default: latest release)
 #   PARTICULARS_INSTALL_DIR  directory to install into (default: see choose_dir)
 #   PARTICULARS_REPO         owner/name to download from (default: nodelogicau/particulars-cli)
 #
@@ -58,6 +58,7 @@ case "$(uname -m)" in
 esac
 
 TAG="${PARTICULARS_VERSION:-}"
+[ "$TAG" = latest ] && TAG=""
 if [ -z "$TAG" ]; then
   TAG="$(latest_tag)" || true
   [ -n "$TAG" ] || die "could not determine the latest release; set PARTICULARS_VERSION"
