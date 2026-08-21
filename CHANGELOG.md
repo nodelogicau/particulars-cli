@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.1 — fix the Desktop bundle on Intel Macs
+
+- `particulars-0.4.0.mcpb` shipped an arm64-only macOS binary and could not start
+  on Intel Macs. The bundle script globbed the wrong directory for GoReleaser's
+  universal binary and, on the Linux release runner (no `lipo`), silently fell
+  back to a single architecture. It now matches any `*_darwin_all` directory,
+  refuses to write a single-architecture bundle, and is built on a macOS CI job
+  that asserts the binary is universal. No change to the CLI or the server.
+
 ## v0.4.0 — MCP server and Claude Desktop bundle
 
 - `particulars serve --mcp`: a stdio Model Context Protocol server bound to one
