@@ -1,0 +1,63 @@
+#!/bin/sh
+# Assemble the Claude Desktop extension bundle (.mcpb) from built binaries.
+#
+#   scripts/build-bundle.sh <version> <dist-dir>
+#
+# Looks for a darwin universal binary (GoReleaser `universal_binaries`), else
+# builds one with lipo when both darwin arches exist, else falls back to the
+# host's darwin binary; and a windows amd64 binary. Exits 0 silently when the
+# required binaries are not (yet) present, so it can run as a GoReleaser
+# per-build post hook and simply do its work on the last build.
+set -eu
+
+VERSION="${1:?version}"; DIST="${2:?dist dir}"
+VERSION="${VERSION#v}"
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+OUT="${DIST}/particulars-${VERSION}.mcpb"
+
+find_bin() { # pattern -> first match or empty
+  # shellcheck disable=SC2086
+  set -- $1; [ -e "$1" ] && printf '%s' "$1" || true
+}
+
+DARWIN="$(find_bin "${DIST}/particulars_darwin_all*/particulars")"
+if [ -z "$DARWIN" ]; then
+  ARM="$(find_bin "${DIST}/particulars_darwin_arm64*/particulars")"; [ -n "$ARM" ] || ARM="$(find_bin "${DIST}/particulars_darwin_arm64")"
+  AMD="$(find_bin "${DIST}/particulars_darwin_amd64*/particulars")"; [ -n "$AMD" ] || AMD="$(find_bin "${DIST}/particulars_darwin_amd64")"
+  if [ -n "$ARM" ] && [ -n "$AMD" ] && command -v lipo >/dev/null 2>&1; then
+    mkdir -p "${DIST}/particulars_darwin_all"
+    lipo -create -output "${DIST}/particulars_darwin_all/particulars" "$ARM" "$AMD"
+    DARWIN="${DIST}/particulars_darwin_all/particulars"
+  else
+    DARWIN="${ARM:-$AMD}"
+  fi
+fi
+WIN="$(find_bin "${DIST}/particulars_windows_amd64*/particulars.exe")"; [ -n "$WIN" ] || WIN="$(find_bin "${DIST}/particulars_windows_amd64.exe")"
+
+if [ -z "$DARWIN" ] || [ -z "$WIN" ]; then
+  echo "build-bundle: waiting for binaries (darwin=${DARWIN:-none} win=${WIN:-none})" >&2
+  exit 0
+fi
+
+STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
+mkdir -p "$STAGE/server/darwin" "$STAGE/server/win32"
+cp "$DARWIN" "$STAGE/server/darwin/particulars"; chmod 0755 "$STAGE/server/darwin/particulars"
+cp "$WIN" "$STAGE/server/win32/particulars.exe"
+sed "s/__VERSION__/${VERSION}/g" "$HERE/bundle/manifest.json.tmpl" > "$STAGE/manifest.json"
+cp "$HERE/bundle/icon.png" "$STAGE/icon.png"
+
+# Sanity: manifest is JSON and every referenced binary exists.
+python3 - "$STAGE" <<'EOF'
+import json, os, sys
+stage = sys.argv[1]
+m = json.load(open(os.path.join(stage, "manifest.json")))
+assert m["manifest_version"] == "0.3" and m["server"]["type"] == "binary"
+refs = [m["server"]["entry_point"]] + [o["command"].replace("${__dirname}/", "") for o in m["server"]["mcp_config"]["platform_overrides"].values()]
+for r in refs:
+    assert os.path.exists(os.path.join(stage, r)), r
+assert m["user_config"]["workspace"]["type"] == "directory" and m["user_config"]["workspace"]["required"]
+EOF
+
+rm -f "$OUT"
+( cd "$STAGE" && zip -q -r -X "$OLDPWD/$OUT" manifest.json icon.png server )
+echo "build-bundle: wrote $OUT" >&2

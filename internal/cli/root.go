@@ -11,68 +11,32 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/nodelogicau/particulars-cli/internal/dkf"
+	"github.com/nodelogicau/particulars-cli/internal/apperr"
 	"github.com/nodelogicau/particulars-cli/internal/store"
 )
 
 // version is set at build time via -ldflags "-X .../internal/cli.version=...".
 var version = "dev"
 
-// Exit codes (see design D10).
+// Exit codes are shared with every front-end via internal/apperr.
 const (
-	ExitOK          = 0
-	ExitRuntime     = 1
-	ExitUsage       = 2
-	ExitNotFound    = 3
-	ExitCheckFailed = 4
-	ExitNoWorkspace = 5
+	ExitOK          = apperr.ExitOK
+	ExitRuntime     = apperr.ExitRuntime
+	ExitUsage       = apperr.ExitUsage
+	ExitNotFound    = apperr.ExitNotFound
+	ExitCheckFailed = apperr.ExitCheckFailed
+	ExitNoWorkspace = apperr.ExitNoWorkspace
 )
 
 // ExitError carries an exit code and a machine-readable error code.
-type ExitError struct {
-	Code    int
-	ErrCode string
-	Err     error
-}
+type ExitError = apperr.Error
 
-func (e *ExitError) Error() string { return e.Err.Error() }
-func (e *ExitError) Unwrap() error { return e.Err }
-
-func usageErr(format string, args ...any) error {
-	return &ExitError{Code: ExitUsage, ErrCode: "usage", Err: fmt.Errorf(format, args...)}
-}
-
-func notFoundErr(format string, args ...any) error {
-	return &ExitError{Code: ExitNotFound, ErrCode: "not_found", Err: fmt.Errorf(format, args...)}
-}
-
-func checkFailedErr(format string, args ...any) error {
-	return &ExitError{Code: ExitCheckFailed, ErrCode: "check_failed", Err: fmt.Errorf(format, args...)}
-}
-
-// classify maps core errors to exit codes.
-func classify(err error) *ExitError {
-	if err == nil {
-		return nil
-	}
-	var ee *ExitError
-	if errors.As(err, &ee) {
-		return ee
-	}
-	var ps dkf.Problems
-	var p *dkf.Problem
-	switch {
-	case errors.Is(err, store.ErrNoWorkspace):
-		return &ExitError{Code: ExitNoWorkspace, ErrCode: "no_workspace", Err: err}
-	case errors.Is(err, store.ErrNotFound):
-		return &ExitError{Code: ExitNotFound, ErrCode: "not_found", Err: err}
-	case errors.As(err, &ps), errors.As(err, &p):
-		return &ExitError{Code: ExitUsage, ErrCode: "invalid", Err: err}
-	case errors.Is(err, store.ErrAlreadyExists), errors.Is(err, store.ErrAlreadyRetracted):
-		return &ExitError{Code: ExitRuntime, ErrCode: "conflict", Err: err}
-	}
-	return &ExitError{Code: ExitRuntime, ErrCode: "runtime", Err: err}
-}
+var (
+	usageErr       = apperr.Usage
+	notFoundErr    = apperr.NotFound
+	checkFailedErr = apperr.CheckFailed
+	classify       = apperr.Classify
+)
 
 // app holds per-invocation state shared by all commands.
 type app struct {
@@ -110,15 +74,7 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer, stdinIsTe
 }
 
 func isTyped(err error) bool {
-	var ee *ExitError
-	if errors.As(err, &ee) {
-		return true
-	}
-	var ps dkf.Problems
-	var p *dkf.Problem
-	return errors.Is(err, store.ErrNoWorkspace) || errors.Is(err, store.ErrNotFound) ||
-		errors.Is(err, store.ErrAlreadyExists) || errors.Is(err, store.ErrAlreadyRetracted) ||
-		errors.As(err, &ps) || errors.As(err, &p) || errors.Is(err, errRuntime)
+	return apperr.IsDomain(err) || errors.Is(err, errRuntime)
 }
 
 // errRuntime wraps arbitrary core errors so Execute can tell them apart from
@@ -201,6 +157,7 @@ source needs at least one of author or harness; syntheses always need harness.`,
 		a.indexCmd(),
 		a.validateCmd(),
 		a.skillCmd(),
+		a.serveCmd(),
 		a.versionCmd(),
 	)
 	return root

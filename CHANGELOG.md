@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.0 — MCP server and Claude Desktop bundle
+
+- `particulars serve --mcp`: a stdio Model Context Protocol server bound to one
+  workspace (flag, `DKF_WORKSPACE`, or `dkf.yaml`/`.dkf` discovery from the cwd).
+  Tools use the DKF specification's names — `particular_define`, `particular_resolve`,
+  `particular_merge`, `claim_assert`, `claim_retract`, `synthesis_create`
+  (with `particular_id`), `knowledge_recall`, `conflict_detect` (particular or
+  claim-set form), `lineage_trace` — plus two labelled extensions, `topics_list`
+  and `workspace_status`. Results equal the CLI's `--json`; errors are tool results
+  carrying the CLI's codes; `particular_resolve` returns `null` on a miss.
+- The agent discipline is delivered as MCP `instructions` and as the prompt
+  `particulars-discipline`; `source.harness` defaults to the client's name from
+  the handshake.
+- `particulars-<version>.mcpb`, a Claude Desktop extension bundle (macOS universal
+  binary + Windows x64) with a workspace-folder picker, attached to each release.
+- Shared `internal/apperr` and `internal/prov` packages so CLI and MCP map errors
+  and provenance identically; `query.AnalyseSet` for claim-set conflict analysis.
+
 ## v0.3.1 — install the skill for any harness
 
 - `skill install --harness <preset>` (repeatable): `claude` (default),

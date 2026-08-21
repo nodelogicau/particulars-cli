@@ -1,0 +1,61 @@
+{
+  "manifest_version": "0.3",
+  "name": "particulars",
+  "display_name": "particulars — dialectical knowledge",
+  "version": "__VERSION__",
+  "description": "Capture and recall knowledge as claims and syntheses in a DKF workspace. One server per workspace; reviewed by humans through git.",
+  "long_description": "particulars stores what an AI assistant learns as YAML files — particulars, claims, and syntheses — in a Dialectical Knowledge Format workspace. Contradiction is preserved rather than overwritten; every claim carries provenance; a human reviews the files (typically as a pull request). This extension runs the particulars MCP server bound to one workspace folder.",
+  "author": { "name": "NodeLogic", "url": "https://github.com/nodelogicau" },
+  "homepage": "https://github.com/nodelogicau/particulars-cli",
+  "documentation": "https://github.com/nodelogicau/particulars-cli/blob/main/docs/mcp.md",
+  "license": "MIT",
+  "icon": "icon.png",
+  "keywords": ["knowledge", "dkf", "claims", "synthesis", "memory"],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/darwin/particulars",
+    "mcp_config": {
+      "command": "${__dirname}/server/darwin/particulars",
+      "args": ["serve", "--mcp", "--workspace", "${user_config.workspace}", "--author", "${user_config.author}"],
+      "env": {},
+      "platform_overrides": {
+        "darwin": { "command": "${__dirname}/server/darwin/particulars" },
+        "win32":  { "command": "${__dirname}/server/win32/particulars.exe" }
+      }
+    }
+  },
+  "tools": [
+    { "name": "particular_define", "description": "Create or update a particular; idempotent on URI" },
+    { "name": "particular_resolve", "description": "Find a particular by id, URI, label, or alias" },
+    { "name": "particular_merge", "description": "Declare two URIs the same particular" },
+    { "name": "claim_assert", "description": "Record a claim with provenance" },
+    { "name": "claim_retract", "description": "Retract a claim, synthesis, or merge (append-only)" },
+    { "name": "synthesis_create", "description": "Record a reasoned synthesis" },
+    { "name": "knowledge_recall", "description": "Claims and syntheses in lineage order" },
+    { "name": "conflict_detect", "description": "Structural conflict sets" },
+    { "name": "lineage_trace", "description": "Provenance tree" },
+    { "name": "topics_list", "description": "Topic tags in use (extension)" },
+    { "name": "workspace_status", "description": "Workspace counts, validation, uncommitted files (extension)" }
+  ],
+  "prompts": [
+    { "name": "particulars-discipline", "description": "The recall-before-assert discipline", "text": "Use the particulars tools to capture and recall knowledge." }
+  ],
+  "user_config": {
+    "workspace": {
+      "type": "directory",
+      "title": "Knowledge workspace",
+      "description": "Folder containing dkf.yaml. Create one with `particulars init <folder>` (installer: https://github.com/nodelogicau/particulars-cli#install).",
+      "required": true
+    },
+    "author": {
+      "type": "string",
+      "title": "Your name (source.author)",
+      "description": "Recorded as the human behind claims made from this app. Optional: the harness name is recorded regardless.",
+      "required": false,
+      "default": ""
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32"]
+  }
+}

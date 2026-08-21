@@ -150,6 +150,16 @@ For a zero-setup remote session, commit a `.dkf` pointer and add the Claude Code
 [`docs/examples/claude-settings.json`](docs/examples/claude-settings.json): it
 installs the binary if missing and installs the skill, on every session start.
 
+## Use from Claude Desktop or any MCP client
+
+`particulars serve --mcp` serves one workspace over stdio with the DKF
+specification's tool names (`claim_assert`, `knowledge_recall`, …) and results
+identical to `--json`. Claude Desktop users install the `.mcpb` bundle from the
+releases page and pick a workspace folder; Claude Code and Cursor point a server
+entry at `particulars serve --mcp` in the project, where discovery (or a `.dkf`
+pointer) finds the workspace. The agent discipline travels in the server's
+`instructions`. Details, tool table, and client configs: [`docs/mcp.md`](docs/mcp.md).
+
 ## Verbs
 
 | Verb | Purpose |
@@ -168,6 +178,7 @@ installs the binary if missing and installs the skill, on every session start.
 | `conflicts [P] [--fail-on-conflicts]` | Unsynthesised claims and stale syntheses per particular |
 | `index [--check]` | Rebuild `index.yaml`, or verify it (exit 4 on drift) |
 | `validate` | Structural and referential checks; exit 4 on errors |
+| `serve --mcp [--workspace D]` | Serve the workspace to an MCP client over stdio (see [docs/mcp.md](docs/mcp.md)) |
 | `skill show` / `skill install [--harness P]… [--user\|--dir D] [--file F] [--force] [--check]` | Print or install the embedded agent skill for Claude Code, Copilot, Cursor, or AGENTS.md |
 | `version` | Binary version and supported format (`dkf/0.1`) |
 
@@ -282,9 +293,9 @@ conflicts on it, run `particulars index` rather than resolving by hand.
 ## Scope of this release
 
 Implemented: the eight non-federation tools from the DKF spec plus `particular_merge`
-(as CLI verbs), and `init`, `index`, `validate`, `topics`. Not yet: `feed_index`,
-`knowledge_publish`, signing, and an MCP transport — the core packages are
-structured so `serve --mcp` can be added without touching the format layer.
+— as CLI verbs and as MCP tools (`serve --mcp`) — and `init`, `index`, `validate`,
+`topics`, `skill`, `workspace`. Not yet: `feed_index`, `knowledge_publish`, signing,
+and a hosted/HTTP server.
 
 ## Development
 

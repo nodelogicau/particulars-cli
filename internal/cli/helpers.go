@@ -9,15 +9,16 @@ import (
 	"time"
 
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
+	"github.com/nodelogicau/particulars-cli/internal/prov"
 	"github.com/nodelogicau/particulars-cli/internal/query"
 	"github.com/nodelogicau/particulars-cli/internal/store"
 )
 
-// Environment variables for provenance defaults.
+// Environment variables for provenance defaults (shared via internal/prov).
 const (
-	EnvAuthor  = "DKF_AUTHOR"
-	EnvHarness = "DKF_HARNESS"
-	EnvModel   = "DKF_MODEL"
+	EnvAuthor  = prov.EnvAuthor
+	EnvHarness = prov.EnvHarness
+	EnvModel   = prov.EnvModel
 )
 
 // provenanceFlags are the shared --author/--harness/--model/--document flags.
@@ -36,26 +37,12 @@ func firstNonEmpty(vs ...string) string {
 
 // resolveSource applies flag → env → dkf.yaml defaults.
 func resolveSource(ws *store.Workspace, f provenanceFlags) dkf.Source {
-	d := ws.Config.Defaults.Source
-	return dkf.Source{
-		Author:   firstNonEmpty(f.author, os.Getenv(EnvAuthor), d.Author),
-		Harness:  firstNonEmpty(f.harness, os.Getenv(EnvHarness), d.Harness),
-		Model:    firstNonEmpty(f.model, os.Getenv(EnvModel), d.Model),
-		Document: f.document,
-	}
+	return prov.Resolve(ws.Config.Defaults.Source, prov.Explicit{Author: f.author, Harness: f.harness, Model: f.model, Document: f.document}, "")
 }
 
 // requireProvenance enforces the format's source minimum (author or harness),
 // plus harness when needHarness is set (syntheses).
-func requireProvenance(src dkf.Source, needHarness bool) error {
-	if needHarness && strings.TrimSpace(src.Harness) == "" {
-		return usageErr("source.harness is required for a synthesis: pass --harness, set %s, or configure defaults.source.harness in dkf.yaml", EnvHarness)
-	}
-	if strings.TrimSpace(src.Author) == "" && strings.TrimSpace(src.Harness) == "" {
-		return usageErr("a source needs at least one of author or harness: pass --author/--harness, set %s/%s, or configure defaults.source in dkf.yaml", EnvAuthor, EnvHarness)
-	}
-	return nil
-}
+func requireProvenance(src dkf.Source, needHarness bool) error { return prov.Require(src, needHarness) }
 
 // resolveScope applies flag → dkf.yaml default → personal.
 func resolveScope(ws *store.Workspace, flag string) (dkf.Scope, error) {

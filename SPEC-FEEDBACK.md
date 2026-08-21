@@ -189,6 +189,15 @@ reader. Conformant readers ignore `.dkf` and still work from inside the
 workspace. Proposal: bless the pointer as an optional convention in
 `workspace-config`, or state that tools MAY offer equivalent redirection.
 
+## 13. `synthesis_create` has no subject parameter (new)
+
+The tool table gives `synthesis_create(content, inputs[], unresolved, source)`,
+but a `DSYNTHESIS` carries `subject` like any claim, and the tool has no way to
+receive it. The reference MCP server adds `particular_id` (accepting id, URI,
+label, or alias, as the other tools do). Proposal: add `particular_id` to the
+signature; implementations should not infer the subject from the inputs, since
+cross-particular inputs are explicitly allowed.
+
 ## 10. Smaller notes ([#10](https://github.com/nodelogicau/particulars/issues/10))
 
 - `DSYNTHESIS` "extends `DCLAIM`" but the example carries `produced-by` and no

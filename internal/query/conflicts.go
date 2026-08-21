@@ -1,6 +1,7 @@
 package query
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
@@ -14,6 +15,7 @@ type Report struct {
 	Label         string   `json:"label"`
 	URI           string   `json:"uri"`
 	Members       []string `json:"members,omitempty"` // all class members when > 1
+	Set           []string `json:"set,omitempty"`     // the given claim set, for AnalyseSet
 	Current       string   `json:"current,omitempty"`
 	Unsynthesised []string `json:"unsynthesised"`
 	Stale         []string `json:"stale"`
@@ -51,6 +53,57 @@ func Analyse(g *store.Graph, p *dkf.Particular) Report {
 	sort.Strings(r.Stale)
 	r.Priority = len(r.Unsynthesised) + len(r.Stale)
 	return r
+}
+
+// AnalyseSet treats the given claim/synthesis ids as the whole universe:
+// current is the most recent non-retracted synthesis in the set, unsynthesised
+// the members outside its transitive inputs, stale the member syntheses citing
+// a retracted object. Unknown ids are an error.
+func AnalyseSet(g *store.Graph, ids []string) (Report, error) {
+	r := Report{Unsynthesised: []string{}, Stale: []string{}}
+	var members []dkf.Assertion
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		a := g.Assertion(id)
+		if a == nil {
+			return r, fmt.Errorf("%s: %w", id, store.ErrNotFound)
+		}
+		members = append(members, a)
+		r.Set = append(r.Set, id)
+	}
+	sort.Strings(r.Set)
+	var cur *dkf.Synthesis
+	for _, a := range members {
+		if s, ok := a.(*dkf.Synthesis); ok && s.Retracted == nil && (cur == nil || newer(s, cur)) {
+			cur = s
+		}
+	}
+	reconciled := map[string]bool{}
+	if cur != nil {
+		r.Current = cur.ID
+		closure(g, cur, reconciled)
+	}
+	memo := map[string]bool{}
+	for _, a := range members {
+		if a.GetRetracted() != nil {
+			continue
+		}
+		id := a.ObjectID()
+		if cur == nil || (id != cur.ID && !reconciled[id]) {
+			r.Unsynthesised = append(r.Unsynthesised, id)
+		}
+		if s, ok := a.(*dkf.Synthesis); ok && CitesRetracted(g, s, memo) {
+			r.Stale = append(r.Stale, s.ID)
+		}
+	}
+	sort.Strings(r.Unsynthesised)
+	sort.Strings(r.Stale)
+	r.Priority = len(r.Unsynthesised) + len(r.Stale)
+	return r, nil
 }
 
 // CitesRetracted reports whether s cites, directly or transitively, a

@@ -6,7 +6,7 @@ DIST    := dist
 
 export CGO_ENABLED := 0
 
-.PHONY: all build test lint fmt vet cross clean tidy skill
+.PHONY: all build test lint fmt vet cross clean tidy skill bundle
 
 all: build
 
@@ -44,6 +44,10 @@ cross:
 skill:
 	$(MAKE) build VERSION=dev
 	$(DIST)/$(BINARY) skill install --force
+
+# Claude Desktop extension (.mcpb) from the cross-compiled binaries.
+bundle: cross
+	sh scripts/build-bundle.sh $(VERSION) $(DIST)
 
 clean:
 	rm -rf $(DIST)
