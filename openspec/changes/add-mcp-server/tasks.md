@@ -34,4 +34,4 @@
 - [x] 5.2 README: "Use from Claude Desktop or any MCP client" section linking `docs/mcp.md`; verb table gains `serve --mcp`
 - [x] 5.3 `SPEC-FEEDBACK.md` item 13: `synthesis_create` signature lacks the subject particular
 - [ ] 5.4 `CHANGELOG.md` v0.4.0; tag; verify the release has the `.mcpb`, install it from the release asset, and run the stdio smoke against the published binary
-- [ ] 5.5 Record in the knowledge workspace (branch): the MCP tool contract as the interop boundary between this implementation and a future hosted one, with the spec URL as evidence
+- [x] 5.5 Record in the knowledge workspace (branch): the MCP tool contract as the interop boundary between this implementation and a future hosted one, with the spec URL as evidence
