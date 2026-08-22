@@ -28,7 +28,8 @@ discovery, and the MCP server; they are open upstream as
 [#11](https://github.com/nodelogicau/particulars/issues/11),
 [#12](https://github.com/nodelogicau/particulars/issues/12),
 [#13](https://github.com/nodelogicau/particulars/issues/13), and
-[#14](https://github.com/nodelogicau/particulars/issues/14).
+[#14](https://github.com/nodelogicau/particulars/issues/14). Item 15 came out of
+running the Graph export against real knowledge and is **not yet filed**.
 
 ## 1. Identifier format: `<prefix>_<uuidv7>` ([#1](https://github.com/nodelogicau/particulars/issues/1))
 
@@ -232,6 +233,45 @@ with the same "readers must not consult `dkf.yaml`" property that
 `claim-context` already requires — or state plainly that scope is fixed at
 assertion time and `knowledge_publish` selects which already-public claims to
 serve in a feed.
+
+## 15. A synthesis does not inherit its inputs' scope (not yet filed)
+
+`context.scope` is declared per assertion, and the spec says nothing about the
+relationship between a synthesis's scope and the scopes of its `inputs`. Nothing
+stops an `organisation` or `public` synthesis from citing `personal` claims.
+
+Observed on 2026-08-22 in this implementation's own knowledge workspace. An
+`organisation` synthesis reconciling three `personal` claims exports to Microsoft
+Graph as expected — and its item reads `claimCount: 0`, because the export
+correctly withholds every one of its inputs. The belief is published; the
+evidence is not. The synthesis `content`, however, quotes and argues from those
+claims in detail, so the substance crosses the boundary that the scope check on
+each individual claim was there to hold.
+
+Scope therefore protects assertions **individually, but not by derivation**. Any
+implementation that both honours per-claim scope and lets syntheses cite freely
+has this hole; ours did, without anyone writing a line of code for it.
+
+Three ways the spec could close it:
+
+- **Require it**: a synthesis's scope MUST be no wider than its narrowest
+  non-retracted input. Sound, but it forbids legitimate work — reconciling
+  private notes into a shareable conclusion is a normal reason to synthesise, and
+  the author may well have written the conclusion so it discloses nothing.
+- **Warn and leave it to review**: define the condition, name it, and let
+  implementations surface it. This is what we did — `validate` emits a
+  `scope_wider_than_inputs` warning naming the narrower inputs, so the human
+  approving the pull request reads the synthesis before it ships. It puts the
+  judgement where the judgement is: no tool can tell whether prose discloses its
+  sources.
+- **Say nothing, deliberately**: state that scope is per assertion and derived
+  disclosure is the author's responsibility. Defensible, but implementers will
+  each discover this the way we did.
+
+We suggest the second, specified rather than left to implementations, so
+`scope_wider_than_inputs` means the same thing everywhere. Whichever is chosen,
+the spec should say so explicitly — the silence reads as "not considered", and
+scope is exactly the field where a reader assumes someone thought it through.
 
 ## 10. Smaller notes ([#10](https://github.com/nodelogicau/particulars/issues/10))
 

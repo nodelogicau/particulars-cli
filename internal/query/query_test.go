@@ -535,3 +535,78 @@ func TestValidateNewFindings(t *testing.T) {
 		t.Errorf("non_canonical: %+v", fs)
 	}
 }
+
+func TestScopeWiderThanInputsWarning(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	scoped := func(content string, sc dkf.Scope) *dkf.Claim {
+		c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: content,
+			Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: sc}, Timestamp: ts}
+		if err := f.w.Create(c); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.w.UpsertIndex(c); err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	synth := func(content string, sc dkf.Scope, inputs ...dkf.Input) *dkf.Synthesis {
+		s := &dkf.Synthesis{ID: dkf.NewID(dkf.TypeSynthesis), Subject: p.ID, Content: content, Inputs: inputs,
+			Unresolved: "None identified", Source: dkf.Source{Harness: "test"}, Method: dkf.DefaultMethod,
+			Timestamp: ts, Context: dkf.Context{Scope: sc}}
+		if err := f.w.Create(s); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.w.UpsertIndex(s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	priv := scoped("personal input", dkf.ScopePersonal)
+	org := scoped("organisation input", dkf.ScopeOrganisation)
+
+	wider := synth("summarises the personal one", dkf.ScopeOrganisation, in(priv.ID, dkf.RoleThesis), in(org.ID, dkf.RoleThesis))
+	same := synth("only organisation inputs", dkf.ScopeOrganisation, in(org.ID, dkf.RoleThesis))
+	narrower := synth("personal synthesis of an organisation claim", dkf.ScopePersonal, in(org.ID, dkf.RoleThesis))
+	chained := synth("public, citing the organisation synthesis", dkf.ScopePublic, in(same.ID, dkf.RoleThesis))
+	_, _ = f.w.RebuildIndex()
+
+	fs, err := Validate(f.w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flagged := map[string]string{}
+	for _, fi := range fs {
+		if fi.Code == CodeScopeWiderThanInputs {
+			if fi.Severity != SeverityWarning {
+				t.Errorf("must be a warning, got %s", fi.Severity)
+			}
+			flagged[fi.Path] = fi.Message
+		}
+	}
+	g, _ := f.w.Load()
+	for _, want := range []*dkf.Synthesis{wider, chained} {
+		if _, ok := flagged[g.Files[want.ID]]; !ok {
+			t.Errorf("%s should be flagged", want.ID)
+		}
+	}
+	for _, notWant := range []*dkf.Synthesis{same, narrower} {
+		if _, ok := flagged[g.Files[notWant.ID]]; ok {
+			t.Errorf("%s should not be flagged", notWant.ID)
+		}
+	}
+	if msg := flagged[g.Files[wider.ID]]; !strings.Contains(msg, priv.ID) || !strings.Contains(msg, "personal") || strings.Contains(msg, org.ID) {
+		t.Errorf("message should name only the narrower input: %s", msg)
+	}
+	if fs.HasErrors() {
+		t.Errorf("this must never be an error: %+v", fs)
+	}
+	// retracted syntheses are not flagged
+	f.retract(wider.ID)
+	fs, _ = Validate(f.w)
+	for _, fi := range fs {
+		if fi.Code == CodeScopeWiderThanInputs && strings.Contains(fi.Path, wider.ID) {
+			t.Error("retracted synthesis should not be flagged")
+		}
+	}
+}

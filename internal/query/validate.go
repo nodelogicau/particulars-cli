@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
 	"github.com/nodelogicau/particulars-cli/internal/store"
@@ -34,7 +35,23 @@ const (
 	CodeUnknownMergeURI   = "unknown_merge_uri"
 	CodeDuplicateMerge    = "duplicate_merge"
 	CodeInvalidBaseURI    = "invalid_base_uri"
+	// CodeScopeWiderThanInputs: a synthesis is shareable more widely than the
+	// assertions it reasons from, so it can carry their substance past the
+	// boundary that withholds them.
+	CodeScopeWiderThanInputs = "scope_wider_than_inputs"
 )
+
+// scopeRank orders visibility from narrowest to widest. Unknown scopes rank
+// narrowest so they never trigger a false warning.
+func scopeRank(s dkf.Scope) int {
+	switch s {
+	case dkf.ScopeOrganisation:
+		return 1
+	case dkf.ScopePublic:
+		return 2
+	}
+	return 0
+}
 
 // Finding is one validation result.
 type Finding struct {
@@ -149,6 +166,23 @@ func Validate(w *store.Workspace) (Findings, error) {
 		for _, in := range s.Inputs {
 			if g.Assertion(in.ID) == nil && dkf.IsAssertionID(in.ID) { // other ids are already reported as invalid_id
 				add(SeverityError, path, CodeDanglingReference, fmt.Sprintf("input %s does not exist", in.ID))
+			}
+		}
+		if s.Retracted == nil {
+			var narrower []string
+			for _, in := range s.Inputs {
+				child := g.Assertion(in.ID)
+				if child == nil {
+					continue
+				}
+				if scopeRank(child.GetContext().Scope) < scopeRank(s.Context.Scope) {
+					narrower = append(narrower, fmt.Sprintf("%s (%s)", in.ID, child.GetContext().Scope))
+				}
+			}
+			if len(narrower) > 0 {
+				add(SeverityWarning, path, CodeScopeWiderThanInputs, fmt.Sprintf(
+					"synthesis %s is %s but reasons from narrower input(s) %s; its content can carry their substance somewhere those inputs are withheld",
+					s.ID, s.Context.Scope, strings.Join(narrower, ", ")))
 			}
 		}
 		if s.Retracted == nil && CitesRetracted(g, s, staleMemo) {

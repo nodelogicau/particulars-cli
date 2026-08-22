@@ -59,7 +59,9 @@ Workspace-wide structural, referential, and index-consistency checks with error/
 - **THEN** `validate` reports `index_stale`
 
 ### Requirement: Advisory warnings
-`validate` SHALL report a warning (not an error) when: a synthesis cites, directly or transitively, a retracted input (`stale_synthesis`); a particular has no claims (`orphan_particular`); an object file's serialisation differs from the canonical form (`non_canonical`); a synthesis's provenance was read from a legacy `produced-by` block (`legacy_produced_by`); an id parses under the lenient grammar but is not a canonical UUIDv7 (`legacy_id`); a non-retracted merge names a URI with no local particular (`unknown_merge_uri`); two non-retracted merges join the same pair (`duplicate_merge`).
+`validate` SHALL report a warning (not an error) when: a synthesis cites, directly or transitively, a retracted input (`stale_synthesis`); a particular has no claims (`orphan_particular`); an object file's serialisation differs from the canonical form (`non_canonical`); a synthesis's provenance was read from a legacy `produced-by` block (`legacy_produced_by`); an id parses under the lenient grammar but is not a canonical UUIDv7 (`legacy_id`); a non-retracted merge names a URI with no local particular (`unknown_merge_uri`); two non-retracted merges join the same pair (`duplicate_merge`); a non-retracted synthesis declares a scope wider than one of its direct inputs (`scope_wider_than_inputs`).
+
+Scope orders `personal` < `organisation` < `public`. The warning exists because scope is declared per assertion and is not inherited: a synthesis's content can summarise assertions that are withheld from the audience the synthesis is shared with. It SHALL name the narrower inputs and their scopes so a reviewer can judge whether the summary discloses them. It SHALL remain a warning — reasoning across scopes is legitimate, and the judgement is the reviewer's — and SHALL NOT be reported for a retracted synthesis.
 
 #### Scenario: Non-canonical file
 - **WHEN** a claim file was hand-written with keys in a non-spec order
@@ -68,6 +70,14 @@ Workspace-wide structural, referential, and index-consistency checks with error/
 #### Scenario: Legacy synthesis
 - **WHEN** a synthesis file written by v0.1.1 carries `produced-by` and no `source`
 - **THEN** `validate` reports a `legacy_produced_by` warning and no `non_canonical` warning for the same cause, and exits 0 if there are no errors
+
+#### Scenario: Synthesis wider than its inputs
+- **WHEN** a non-retracted `organisation` synthesis cites a `personal` claim and an `organisation` claim
+- **THEN** `validate` reports a `scope_wider_than_inputs` warning naming the personal claim and not the organisation one, and exits 0 if there are no errors
+
+#### Scenario: Synthesis no wider than its inputs
+- **WHEN** a `personal` synthesis cites an `organisation` claim
+- **THEN** `validate` reports no `scope_wider_than_inputs` warning
 
 #### Scenario: Legacy id
 - **WHEN** a claim has id `clm_01j9xk2p3q4r5s6t`

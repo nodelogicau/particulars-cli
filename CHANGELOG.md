@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `validate` warns `scope_wider_than_inputs` when a synthesis is shareable more
+  widely than an assertion it reasons from. Scope is declared per assertion and
+  is **not** inherited, so an `organisation` synthesis of `personal` claims is
+  published while its evidence is withheld — its content can carry their
+  substance across the boundary anyway. The warning names the narrower inputs;
+  it stays a warning because cross-scope reasoning is legitimate and the call
+  belongs to the human reviewing the PR.
+
 - Skill: correct the zsh guidance for synthesis inputs. The previous note said
   to quote ids, but quoting does not help — zsh applies the `:t` history
   modifier inside double quotes, so `"$id:thesis"` silently becomes

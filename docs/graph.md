@@ -53,6 +53,14 @@ Copilot therefore inherits the caveats along with the conclusion.
   belief; the newest standing one is.
 - A particular with nothing exportable produces no item at all.
 
+**A caveat the export cannot enforce.** Scope is declared per assertion and is
+not inherited, so an `organisation` synthesis of `personal` claims is exported
+while those claims are withheld — its `claimCount` reads 0, but its *content* may
+summarise them. `particulars validate` warns (`scope_wider_than_inputs`) when a
+synthesis is shareable more widely than an input it reasons from; the export
+honours declared scope and cannot judge what a summary discloses. Treat the
+warning as a prompt to read the synthesis before it is merged.
+
 **Data movement:** exported content is copied into Microsoft Graph. If your
 knowledge must stay in place, the alternative is a
 [custom federated connector](https://learn.microsoft.com/en-us/microsoft-365/copilot/connectors/set-up-custom-federated-connectors),

@@ -112,6 +112,11 @@ On failure stderr carries `{"error": {"code", "message"}}`.
 - `--unresolved` is mandatory. State what you could not settle, or use the exact conventional string `"None identified"` — never pad it.
 - `current` is chosen by `--timestamp` then id, so a backdated synthesis does not displace a newer one.
 - A synthesis is a claim: it can be cited as an input, recalled, and retracted. `conflicts` marks a synthesis **stale** when one of its inputs is retracted; re-synthesise rather than editing.
+- **A synthesis does not inherit its inputs' scope.** If you reconcile
+  `personal` claims into an `organisation` synthesis, the claims stay withheld
+  but your reasoning is shared — and your `content` may restate them. `validate`
+  warns (`scope_wider_than_inputs`); either write the synthesis at the narrowest
+  input's scope, or keep the wider one free of what the narrower inputs say.
 - The tool does not judge contradiction. `unsynthesised` means "not yet reconciled into the current belief"; you decide whether it conflicts or merely extends. `recall` marks each entry `current` or `unsynthesised` so you can see this without running `conflicts`.
 - Merged particulars are one class: `recall`/`conflicts` on any member cover all members, and each entry keeps its own `subject`.
 
