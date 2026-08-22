@@ -6,6 +6,7 @@ package prov
 
 import (
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/nodelogicau/particulars-cli/internal/apperr"
@@ -24,10 +25,20 @@ type Explicit struct {
 	Author, Harness, Model, Document string
 }
 
+// placeholder matches an unsubstituted template variable such as
+// "${user_config.author}". Hosts that expand a manifest leave these literal
+// when the value is optional and unset, and a literal recorded as
+// source.author is worse than no author at all — the format allows harness
+// alone, so treat it as absent.
+var placeholder = regexp.MustCompile(`^\$\{[^}]*\}$`)
+
+// IsPlaceholder reports whether v is an unsubstituted template variable.
+func IsPlaceholder(v string) bool { return placeholder.MatchString(strings.TrimSpace(v)) }
+
 func first(vs ...string) string {
 	for _, v := range vs {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
+		if v = strings.TrimSpace(v); v != "" && !IsPlaceholder(v) {
+			return v
 		}
 	}
 	return ""

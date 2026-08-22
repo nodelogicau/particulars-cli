@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -19,6 +20,11 @@ const EnvWorkspace = "DKF_WORKSPACE"
 // first non-blank, non-comment line is a path (relative to the file's
 // directory, or absolute) to a directory containing dkf.yaml.
 const PointerFile = ".dkf"
+
+// placeholderPath matches an unsubstituted template variable such as
+// "${user_config.workspace}", which reaches us when a host expands a manifest
+// but leaves a value unfilled. Reporting that beats "no dkf.yaml in ${...}".
+var placeholderPath = regexp.MustCompile(`^\$\{[^}]*\}$`)
 
 // Resolution records how a workspace was found.
 type Resolution struct {
@@ -52,6 +58,9 @@ func Discover(explicit string) (*Workspace, error) {
 // DiscoverWith is Discover plus a record of how the workspace was resolved.
 func DiscoverWith(explicit string) (*Workspace, *Resolution, error) {
 	if explicit != "" {
+		if placeholderPath.MatchString(strings.TrimSpace(explicit)) {
+			return nil, nil, fmt.Errorf("%w: %s is an unsubstituted template variable — the host did not fill it in; set the workspace in the client's configuration", ErrNoWorkspace, explicit)
+		}
 		w, err := Open(explicit)
 		if err != nil {
 			return nil, nil, err

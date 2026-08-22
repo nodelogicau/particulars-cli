@@ -153,6 +153,15 @@ Errors are tool results with `isError: true`, a text line `<code>: <message>`, a
 `DKF_AUTHOR`, or `dkf.yaml`. The usual minimum applies: a source needs author or
 harness; a synthesis needs harness — so an agent-only client is always valid.
 
+**Leaving "Your name" blank in the Desktop extension is safe.** Claude Desktop
+substitutes `${user_config.author}` only when the field has a value; left empty,
+the literal text reaches the server. Since v0.5.2 an unsubstituted `${…}` in any
+provenance value — flag, `DKF_*`, or config — is treated as absent, so it falls
+through to `dkf.yaml` defaults rather than being recorded as the author. Older
+servers write the placeholder into `source.author` verbatim; fill the field in,
+or upgrade the extension. The same applies to the workspace path, where an
+unsubstituted value is reported as such instead of "no dkf.yaml in ${…}".
+
 ## Reviewing what a Desktop conversation wrote
 
 The server never runs git. Files accumulate in the workspace folder; if that

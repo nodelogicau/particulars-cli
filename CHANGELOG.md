@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Treat an unsubstituted template variable as absent everywhere provenance is
+  resolved. Claude Desktop expands `${user_config.author}` only when the user
+  fills the field in; left blank, the literal string reached the server and was
+  recorded as `source.author` on every claim written from that conversation. A
+  `${…}` value in a flag, a `DKF_*` variable, or `dkf.yaml` now falls through to
+  the next layer, so a blank field yields the workspace default (or no author at
+  all, which the format allows alongside a harness). An unsubstituted
+  `--workspace` is reported as such rather than as a missing `dkf.yaml`.
+
 ## v0.5.1 — scope warning, `workspace pointer`, skill corrections
 
 Everything here came out of using the tool on real knowledge rather than reading
