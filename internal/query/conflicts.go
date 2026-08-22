@@ -132,6 +132,9 @@ func CitesRetracted(g *store.Graph, s *dkf.Synthesis, memo map[string]bool) bool
 	return stale
 }
 
+// Closure marks every transitive input of s in seen.
+func Closure(g *store.Graph, s *dkf.Synthesis, seen map[string]bool) { closure(g, s, seen) }
+
 // closure marks every transitive input of s.
 func closure(g *store.Graph, s *dkf.Synthesis, seen map[string]bool) {
 	for _, in := range s.Inputs {

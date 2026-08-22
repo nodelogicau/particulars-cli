@@ -171,6 +171,12 @@ Reasoning, numbers, and the cases that do favour the server:
 
 Details, tool table, and client configs: [`docs/mcp.md`](docs/mcp.md).
 
+**Microsoft 365 Copilot** is a different case again: it runs in Microsoft's cloud
+and cannot reach a local server at all. There, merged knowledge is *exported* into
+Microsoft Graph, where it is indexed and cited — `particulars export --format graph`,
+pushed by a workflow when a knowledge pull request is merged. See
+[`docs/graph.md`](docs/graph.md).
+
 ## Verbs
 
 | Verb | Purpose |
@@ -190,6 +196,7 @@ Details, tool table, and client configs: [`docs/mcp.md`](docs/mcp.md).
 | `index [--check]` | Rebuild `index.yaml`, or verify it (exit 4 on drift) |
 | `validate` | Structural and referential checks; exit 4 on errors |
 | `serve --mcp [--workspace D]` | Serve the workspace to an MCP client over stdio (see [docs/mcp.md](docs/mcp.md)) |
+| `export --format graph [--schema]` | Emit Microsoft Graph items so merged knowledge is searchable in M365 Copilot (see [docs/graph.md](docs/graph.md)) |
 | `skill show` / `skill install [--harness P]… [--user\|--dir D] [--file F] [--force] [--check]` | Print or install the embedded agent skill for Claude Code, Copilot, Cursor, or AGENTS.md |
 | `version` | Binary version and supported format (`dkf/0.1`) |
 

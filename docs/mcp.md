@@ -30,6 +30,12 @@ Cursor's agent, Codex:
   files are still read fresh per call).
 - Review is shell work anyway: branch, assert, commit, open the pull request.
 
+**Microsoft 365 Copilot cannot use either of these.** It runs in Microsoft's cloud
+with no access to your filesystem, so a local stdio server is unreachable; its own
+MCP route (federated connectors) needs a remote HTTPS server and is read-only
+regardless. Publish to it instead with `particulars export --format graph` — see
+[graph.md](graph.md).
+
 **Use the MCP server where there is no shell**, or where you would rather not
 grant one: Claude Desktop chat, mobile, and similar clients. There, typed
 arguments earn their cost — the model cannot mistype a flag, and a required

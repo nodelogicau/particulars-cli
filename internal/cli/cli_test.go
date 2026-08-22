@@ -958,3 +958,94 @@ func TestSkillHarnessPresets(t *testing.T) {
 		t.Errorf("broken check: %+v", r)
 	}
 }
+
+func TestExportGraph(t *testing.T) {
+	dir := initWS(t, "--base-uri", "https://example.com/p/")
+	define(t, "Project X")
+	define(t, "Private Thing")
+	a := assert(t, "Project X", "Uses Postgres 16", "--scope", "organisation", "--topic", "db", "--document", "docs/db.md")
+	assert(t, "Project X", "SECRET personal", "--scope", "personal")
+	assert(t, "Private Thing", "SECRET all personal", "--scope", "personal")
+	synth(t, "Project X", []string{a + ":thesis"}, "--scope", "organisation")
+
+	// usage
+	if r := run(t, "", "export", "--json"); r.code != 2 {
+		t.Errorf("missing --format should exit 2, got %d", r.code)
+	}
+	if r := run(t, "", "export", "--format", "csv", "--json"); r.code != 2 {
+		t.Errorf("unknown format should exit 2, got %d", r.code)
+	}
+	if r := run(t, "", "export", "--format", "graph", "--scope", "personal", "--json"); r.code != 2 || !strings.Contains(r.stderr, "never exported") {
+		t.Errorf("personal scope must be refused: %+v", r)
+	}
+
+	// NDJSON to stdout
+	r := run(t, "", "export", "--format", "graph", "--source-url", "https://github.com/o/r/blob/main/")
+	if r.code != 0 {
+		t.Fatalf("export: %+v", r)
+	}
+	lines := strings.Split(strings.TrimRight(r.stdout, "\n"), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 item (Private Thing is wholly personal), got %d:\n%s", len(lines), r.stdout)
+	}
+	var l struct {
+		ID   string `json:"id"`
+		Item struct {
+			ACL        []map[string]string `json:"acl"`
+			Properties map[string]any      `json:"properties"`
+			Content    map[string]string   `json:"content"`
+		} `json:"item"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &l); err != nil {
+		t.Fatalf("not NDJSON: %v", err)
+	}
+	if !strings.HasPrefix(l.ID, "par_") || l.Item.ACL[0]["type"] != "everyone" || l.Item.Content["type"] != "text" {
+		t.Errorf("item shape: %+v", l)
+	}
+	if strings.Contains(lines[0], "SECRET") {
+		t.Error("personal content leaked into the export")
+	}
+	if l.Item.Properties["claimCount"].(float64) != 1 || l.Item.Properties["title"] != "Project X" {
+		t.Errorf("properties: %v", l.Item.Properties)
+	}
+	if !strings.HasPrefix(l.Item.Properties["url"].(string), "https://github.com/o/r/blob/main/syntheses/") {
+		t.Errorf("url: %v", l.Item.Properties["url"])
+	}
+
+	// determinism
+	if again := run(t, "", "export", "--format", "graph", "--source-url", "https://github.com/o/r/blob/main/"); again.stdout != r.stdout {
+		t.Error("export is not deterministic")
+	}
+
+	// --out and --manifest
+	outPath := filepath.Join(dir, "items.ndjson")
+	manPath := filepath.Join(dir, "manifest.txt")
+	r = run(t, "", "export", "--format", "graph", "--out", outPath, "--manifest", manPath, "--json")
+	if r.code != 0 || r.js["exported"].(float64) != 1 || r.js["skipped"].(float64) != 1 {
+		t.Errorf("summary: %+v", r.js)
+	}
+	body, _ := os.ReadFile(outPath)
+	if len(strings.Split(strings.TrimRight(string(body), "\n"), "\n")) != 1 {
+		t.Errorf("--out contents:\n%s", body)
+	}
+	man, _ := os.ReadFile(manPath)
+	if strings.TrimSpace(string(man)) != l.ID {
+		t.Errorf("manifest = %q, want %s", man, l.ID)
+	}
+
+	// schema
+	r = run(t, "", "export", "--format", "graph", "--schema", "--connection", "particulars", "--json")
+	if r.code != 0 {
+		t.Fatalf("schema: %+v", r)
+	}
+	if r.js["connection"].(map[string]any)["id"] != "particulars" {
+		t.Errorf("connection: %v", r.js["connection"])
+	}
+	props := r.js["schema"].(map[string]any)["properties"].([]any)
+	if len(props) != 10 {
+		t.Errorf("expected 10 schema properties, got %d", len(props))
+	}
+	if r := run(t, "", "export", "--format", "graph", "--schema", "--json"); r.code != 2 {
+		t.Errorf("--schema without --connection should exit 2, got %d", r.code)
+	}
+}

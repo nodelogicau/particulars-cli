@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.5.0 — publish knowledge to Microsoft 365 Copilot
+
+- `particulars export --format graph` emits Microsoft Graph `externalItem`
+  payloads as NDJSON — one item per particular, carrying the current belief, what
+  it could not reconcile, and the claims that support it. `--schema` emits the
+  connection and schema registration payloads; `--manifest` writes the exported
+  ids so a sync job can delete what no longer qualifies.
+- **`personal` knowledge is never exported**, and `--scope personal` is refused;
+  retracted claims, syntheses, and merges never appear, and a retracted synthesis
+  is never treated as the belief.
+- The command emits only: it makes no network request, and no Graph SDK or
+  authentication library enters this codebase. `docs/examples/graph-sync.yml`
+  shows the push, authenticating with GitHub OIDC federated to Entra so no client
+  secret is stored.
+- `docs/graph.md` covers what is indexed, the one-time connection setup, deletion,
+  and the data-movement trade-off against a federated connector.
+
 ## v0.4.1 — fix the Desktop bundle on Intel Macs
 
 - `particulars-0.4.0.mcpb` shipped an arm64-only macOS binary and could not start

@@ -1,0 +1,134 @@
+# Publish reviewed knowledge to Microsoft 365 Copilot.
+#
+# Runs on merge to the knowledge repository's default branch: exports one
+# Graph externalItem per particular, PUTs each, and deletes items that no
+# longer qualify. Only organisation- and public-scoped knowledge is exported,
+# and retracted objects never are — see docs/graph.md.
+#
+# One-time setup (see docs/graph.md):
+#   1. particulars export --format graph --schema --connection particulars
+#   2. create the connection and register the schema with that output
+#   3. an Entra app with the ExternalItem.ReadWrite.OwnedBy *application*
+#      permission, granted admin consent, and a federated credential trusting
+#      this repository — so no client secret is stored anywhere
+name: Publish to Copilot
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Re-PUT every item (use after a schema change)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write        # required for OIDC federation to Entra
+  actions: read          # required to read the previous manifest artifact
+
+concurrency: publish-to-copilot   # never two syncs at once
+
+env:
+  CONNECTION_ID: particulars
+  PARTICULARS_VERSION: v0.5.0
+  SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install particulars
+        run: |
+          curl -sSL -o particulars.tgz \
+            "https://github.com/nodelogicau/particulars-cli/releases/download/${PARTICULARS_VERSION}/particulars_${PARTICULARS_VERSION#v}_linux_amd64.tar.gz"
+          tar -xzf particulars.tgz -C "${RUNNER_TEMP}" particulars
+          sudo install "${RUNNER_TEMP}/particulars" /usr/local/bin/particulars
+          particulars version
+
+      - name: Workspace is valid before publishing
+        run: |
+          particulars validate
+          particulars index --check
+
+      - name: Export items
+        run: |
+          particulars export --format graph \
+            --source-url "${SOURCE_URL}" \
+            --out items.ndjson --manifest manifest.txt --json
+          wc -l < items.ndjson
+
+      - name: Fetch the previous manifest
+        id: prev
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: graph-manifest
+          path: previous
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id || '' }}
+
+      - name: Acquire a Graph token (OIDC → Entra, no stored secret)
+        id: token
+        run: |
+          oidc=$(curl -sS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api://AzureADTokenExchange" | jq -r .value)
+          token=$(curl -sS -X POST \
+            "https://login.microsoftonline.com/${{ secrets.AZURE_TENANT_ID }}/oauth2/v2.0/token" \
+            -d client_id="${{ secrets.AZURE_CLIENT_ID }}" \
+            -d scope="https://graph.microsoft.com/.default" \
+            -d grant_type=client_credentials \
+            -d client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer \
+            -d client_assertion="${oidc}" | jq -r .access_token)
+          test "${token}" != null || { echo "token request failed"; exit 1; }
+          echo "::add-mask::${token}"
+          echo "token=${token}" >> "$GITHUB_OUTPUT"
+
+      - name: Put items
+        env:
+          TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -eu
+          while IFS= read -r line; do
+            id=$(printf '%s' "$line" | jq -r .id)
+            printf '%s' "$line" | jq -c .item > item.json
+            code=$(curl -sS -o response.txt -w '%{http_code}' -X PUT \
+              "https://graph.microsoft.com/v1.0/external/connections/${CONNECTION_ID}/items/${id}" \
+              -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+              --data-binary @item.json)
+            case "$code" in
+              20*) echo "put  ${id}" ;;
+              *)   echo "put  ${id} failed (${code})"; cat response.txt; exit 1 ;;
+            esac
+          done < items.ndjson
+
+      - name: Delete items that no longer qualify
+        env:
+          TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -eu
+          if [ ! -f previous/manifest.txt ]; then
+            echo "no previous manifest: skipping deletions (a withdrawn particular may linger until the next run)"
+            exit 0
+          fi
+          comm -23 <(sort previous/manifest.txt) <(sort manifest.txt) | while IFS= read -r id; do
+            [ -n "$id" ] || continue
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE \
+              "https://graph.microsoft.com/v1.0/external/connections/${CONNECTION_ID}/items/${id}" \
+              -H "Authorization: Bearer ${TOKEN}")
+            case "$code" in
+              20*|404) echo "delete ${id} (${code})" ;;
+              *)       echo "delete ${id} failed (${code})"; exit 1 ;;
+            esac
+          done
+
+      - name: Keep this manifest for the next run
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-manifest
+          path: manifest.txt
+          retention-days: 90
+          overwrite: true
