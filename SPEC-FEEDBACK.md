@@ -29,7 +29,8 @@ discovery, and the MCP server; they are open upstream as
 [#12](https://github.com/nodelogicau/particulars/issues/12),
 [#13](https://github.com/nodelogicau/particulars/issues/13), and
 [#14](https://github.com/nodelogicau/particulars/issues/14). Item 15 came out of
-running the Graph export against real knowledge and is **not yet filed**.
+running the Graph export against real knowledge and is open as
+[#15](https://github.com/nodelogicau/particulars/issues/15).
 
 ## 1. Identifier format: `<prefix>_<uuidv7>` ([#1](https://github.com/nodelogicau/particulars/issues/1))
 
@@ -234,7 +235,7 @@ with the same "readers must not consult `dkf.yaml`" property that
 assertion time and `knowledge_publish` selects which already-public claims to
 serve in a feed.
 
-## 15. A synthesis does not inherit its inputs' scope (not yet filed)
+## 15. A synthesis does not inherit its inputs' scope ([#15](https://github.com/nodelogicau/particulars/issues/15))
 
 `context.scope` is declared per assertion, and the spec says nothing about the
 relationship between a synthesis's scope and the scopes of its `inputs`. Nothing
