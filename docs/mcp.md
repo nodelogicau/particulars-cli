@@ -5,6 +5,45 @@ is bound to one workspace; a second workspace is a second server entry in your
 client. Tools use the DKF specification's names, and every result is exactly what
 the corresponding CLI verb prints with `--json`.
 
+## Which should I use — the MCP server or the skill and CLI?
+
+Both reach the same core and write the same files, so this is not a lock-in
+decision. It comes down to whether your harness already has a shell.
+
+| | Always in context | When knowledge work happens |
+|---|---|---|
+| MCP server | ~4,900 tokens (11 tool schemas ≈ 2,600, instructions ≈ 2,300) | the same |
+| Skill + CLI | ~86 tokens (the skill's frontmatter description) | ~2,300 tokens (the body loads when triggered) |
+
+**Use the skill and the CLI in harnesses that have a shell** — Claude Code,
+Cursor's agent, Codex:
+
+- The tool definitions and instructions are loaded in *every* session, whether or
+  not it touches knowledge; the skill stays collapsed to its description until
+  something triggers it.
+- The shell composes: `particulars recall X --json | jq …`, a heredoc into
+  `--content-file -`, a loop over ids, `conflicts --json` piped into a check.
+  MCP tools are atomic calls — no piping, no chaining.
+- The CLI resolves the workspace on **every invocation**, so it follows you
+  across worktrees, branch switches, and repositories within one session. The
+  server binds its workspace root and `dkf.yaml` config once at startup (object
+  files are still read fresh per call).
+- Review is shell work anyway: branch, assert, commit, open the pull request.
+
+**Use the MCP server where there is no shell**, or where you would rather not
+grant one: Claude Desktop chat, mobile, and similar clients. There, typed
+arguments earn their cost — the model cannot mistype a flag, and a required
+field like `unresolved` is enforced by the schema rather than by the model
+remembering. It is also the right choice if you want knowledge writes confined
+to an explicit allowlist of operations, since the CLI is reachable through any
+shell command.
+
+**Avoid running both in the same harness.** Two surfaces for the same operations
+duplicate the context cost and make it a coin flip which one the model reaches
+for. Mixing across harnesses is expected, though: Claude Desktop through the
+bundle and Claude Code through the CLI, against one git repository — every claim
+records the harness that made it.
+
 ## Connecting
 
 ### Claude Desktop — extension bundle
