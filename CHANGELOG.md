@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Skill: state workspace precedence in the right order. The setup note listed
+  `dkf.yaml`, `$DKF_WORKSPACE`, `--workspace` — which is precedence *backwards*,
+  leading with the one that loses. An agent reading it would expect a `dkf.yaml`
+  underfoot to override an already-set `$DKF_WORKSPACE`; it does not.
+
 - `validate` warns `scope_wider_than_inputs` when a synthesis is shareable more
   widely than an assertion it reasons from. Scope is declared per assertion and
   is **not** inherited, so an `organisation` synthesis of `personal` claims is

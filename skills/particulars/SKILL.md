@@ -40,9 +40,14 @@ prefer a new synthesis over another loose claim.
 
 ## Setup
 
-Find the workspace: it is the nearest ancestor directory containing `dkf.yaml`,
-or `$DKF_WORKSPACE`, or `--workspace <dir>`. If there is none and the user wants
-one:
+Find the workspace. Precedence is **`--workspace <dir>`, then `$DKF_WORKSPACE`,
+then the nearest ancestor directory containing `dkf.yaml`** (or a `.dkf` pointer
+at the same level) — so a `dkf.yaml` under your feet does *not* override an
+already-set `$DKF_WORKSPACE`. Run `particulars workspace --json` when it matters:
+`via` tells you which of the three won. A `$DKF_WORKSPACE` pointing at a
+directory with no `dkf.yaml` is an error, not a fallback to the search.
+
+If there is no workspace and the user wants one:
 
 ```sh
 particulars init ./knowledge --author <user> --harness <your harness> --json
