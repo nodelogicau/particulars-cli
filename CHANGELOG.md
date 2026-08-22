@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.5.2 — unsubstituted template variables
 
 - Treat an unsubstituted template variable as absent everywhere provenance is
   resolved. Claude Desktop expands `${user_config.author}` only when the user
