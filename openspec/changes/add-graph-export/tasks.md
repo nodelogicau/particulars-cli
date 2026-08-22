@@ -25,5 +25,5 @@
 
 - [x] 4.1 Dry run against the knowledge workspace: export, inspect a brief by eye, confirm no `personal` content and no retracted content appears, confirm determinism
 - [x] 4.2 Validate the emitted schema and one item against Microsoft's documented shapes (payload ≤ 30 MB, ISO 8601 datetimes, collection type specifiers present)
-- [ ] 4.3 Tag `v0.5.0`; verify the released binary produces the same export as the working tree
+- [x] 4.3 Tag `v0.5.0`; verify the released binary produces the same export as the working tree
 - [ ] 4.4 **User-side (cannot be closed here):** create the connection and register the schema in a tenant, run the workflow once, and confirm the knowledge appears and cites correctly in Copilot Chat. Record the outcome — including any schema or brief changes it forces — in the knowledge workspace

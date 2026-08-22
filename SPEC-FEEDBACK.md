@@ -204,6 +204,34 @@ label, or alias, as the other tools do). Proposal: add `particular_id` to the
 signature; implementations should not infer the subject from the inputs, since
 cross-particular inputs are explicitly allowed.
 
+## 14. How does `knowledge_publish` promote an immutable claim? (new)
+
+The federation tool list includes:
+
+> `knowledge_publish(claim_ids[], scope)` — Promote claims from personal or
+> organisation scope to public. Explicit and deliberate — not a default.
+
+But claims are immutable, and `context.scope` lives on the claim file, so there
+is no defined way to carry out the promotion. The candidates each have costs:
+
+- **Rewrite `context.scope` in place** — contradicts immutability and the rule
+  that the only permitted modification to an existing object file is the
+  `retracted` block.
+- **Assert a new claim at the wider scope** — changes the id, so anything citing
+  the original (syntheses, `superseded-by`) still points at the narrower one.
+- **A publish record**, like the merge record — a fourth record type, needing
+  its own file location, fields, and precedence rule for readers computing a
+  claim's effective scope.
+
+This is not hypothetical: a workspace whose `defaults.scope` is `personal`
+accumulates claims that can never be shared, and the reference implementation's
+Graph export correctly emits nothing for it. Proposal: define promotion as a
+record (`pub_`?) whose presence widens the effective scope of the named claims,
+with the same "readers must not consult `dkf.yaml`" property that
+`claim-context` already requires — or state plainly that scope is fixed at
+assertion time and `knowledge_publish` selects which already-public claims to
+serve in a feed.
+
 ## 10. Smaller notes ([#10](https://github.com/nodelogicau/particulars/issues/10))
 
 - `DSYNTHESIS` "extends `DCLAIM`" but the example carries `produced-by` and no
