@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased
+## v0.5.1 — scope warning, `workspace pointer`, skill corrections
+
+Everything here came out of using the tool on real knowledge rather than reading
+the code: publishing a synthesis to Copilot, and being misled twice by the skill.
+
+- `validate` warns `scope_wider_than_inputs` when a synthesis is shareable more
+  widely than an assertion it reasons from. Scope is declared per assertion and
+  is **not** inherited, so an `organisation` synthesis of `personal` claims is
+  published while its evidence is withheld — its content can carry their
+  substance across the boundary anyway. The warning names the narrower inputs;
+  it stays a warning because cross-scope reasoning is legitimate and the call
+  belongs to the human reviewing the PR. Raised upstream as
+  [particulars#15](https://github.com/nodelogicau/particulars/issues/15).
 
 - `particulars workspace pointer [dir]` writes a `.dkf` pointer for a workspace
   that already exists — previously only `init --pointer` could, so a workspace
@@ -14,18 +26,12 @@
   leading with the one that loses. An agent reading it would expect a `dkf.yaml`
   underfoot to override an already-set `$DKF_WORKSPACE`; it does not.
 
-- `validate` warns `scope_wider_than_inputs` when a synthesis is shareable more
-  widely than an assertion it reasons from. Scope is declared per assertion and
-  is **not** inherited, so an `organisation` synthesis of `personal` claims is
-  published while its evidence is withheld — its content can carry their
-  substance across the boundary anyway. The warning names the narrower inputs;
-  it stays a warning because cross-scope reasoning is legitimate and the call
-  belongs to the human reviewing the PR.
-
 - Skill: correct the zsh guidance for synthesis inputs. The previous note said
   to quote ids, but quoting does not help — zsh applies the `:t` history
   modifier inside double quotes, so `"$id:thesis"` silently becomes
   `…hesis` and the call fails. The skill now tells agents to brace: `"${id}:thesis"`.
+
+No format or on-disk change: v0.5.0 workspaces are read and written identically.
 
 ## v0.5.0 — publish knowledge to Microsoft 365 Copilot
 
