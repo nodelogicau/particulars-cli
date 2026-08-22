@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Skill: correct the zsh guidance for synthesis inputs. The previous note said
+  to quote ids, but quoting does not help — zsh applies the `:t` history
+  modifier inside double quotes, so `"$id:thesis"` silently becomes
+  `…hesis` and the call fails. The skill now tells agents to brace: `"${id}:thesis"`.
+
 ## v0.5.0 — publish knowledge to Microsoft 365 Copilot
 
 - `particulars export --format graph` emits Microsoft Graph `externalItem`

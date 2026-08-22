@@ -59,8 +59,13 @@ If this skill is not yet installed for your harness, `particulars skill install`
 does it (`--harness copilot|agents|cursor|agents-md` for others; `skill --help`).
 
 A source needs at least one of `author` or `harness`, so an agent acting alone is
-valid; syntheses always need `harness`. Quote ids and use one `--input` per
-input — in zsh an unquoted `$id:thesis` is mangled by the `:t` modifier.
+valid; syntheses always need `harness`.
+
+**In zsh, brace every id you follow with a colon:** write `--input "${id}:thesis"`,
+not `--input "$id:thesis"`. Quoting is not enough — zsh applies the `:t` history
+modifier inside double quotes too, so `"$id:thesis"` silently becomes
+`clm_0191abchesis` and the call fails on an unparseable input. `"${id}"` and
+`"$id":thesis` are both safe; bash is unaffected. Pass one `--input` per input.
 
 ## Verbs
 
