@@ -26,8 +26,9 @@ Bold entries are where v0.1.x diverged and v0.2.0 changed.
 Items 11–13 were raised later, from implementing merge records, workspace
 discovery, and the MCP server; they are open upstream as
 [#11](https://github.com/nodelogicau/particulars/issues/11),
-[#12](https://github.com/nodelogicau/particulars/issues/12), and
-[#13](https://github.com/nodelogicau/particulars/issues/13).
+[#12](https://github.com/nodelogicau/particulars/issues/12),
+[#13](https://github.com/nodelogicau/particulars/issues/13), and
+[#14](https://github.com/nodelogicau/particulars/issues/14).
 
 ## 1. Identifier format: `<prefix>_<uuidv7>` ([#1](https://github.com/nodelogicau/particulars/issues/1))
 
@@ -204,7 +205,7 @@ label, or alias, as the other tools do). Proposal: add `particular_id` to the
 signature; implementations should not infer the subject from the inputs, since
 cross-particular inputs are explicitly allowed.
 
-## 14. How does `knowledge_publish` promote an immutable claim? (new)
+## 14. How does `knowledge_publish` promote an immutable claim? ([#14](https://github.com/nodelogicau/particulars/issues/14))
 
 The federation tool list includes:
 
