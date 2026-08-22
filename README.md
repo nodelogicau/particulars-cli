@@ -114,7 +114,10 @@ GitHub Action that runs `validate` and `index --check` on every PR.
 
 The binary carries an agent-facing skill — the recall-before-assert loop, a verb
 cheat-sheet, and rules for good claims, syntheses, and retractions — stamped with
-its own version so skill and verbs cannot drift. Install it for your harness:
+its own version so skill and verbs cannot drift. This is the recommended setup for
+any harness with a shell; for one without, see
+[Use from Claude Desktop](#use-from-claude-desktop-or-any-mcp-client). Install it
+for your harness:
 
 | `--harness` | Writes | Read by |
 |---|---|---|
@@ -154,11 +157,19 @@ installs the binary if missing and installs the skill, on every session start.
 
 `particulars serve --mcp` serves one workspace over stdio with the DKF
 specification's tool names (`claim_assert`, `knowledge_recall`, …) and results
-identical to `--json`. Claude Desktop users install the `.mcpb` bundle from the
-releases page and pick a workspace folder; Claude Code and Cursor point a server
-entry at `particulars serve --mcp` in the project, where discovery (or a `.dkf`
-pointer) finds the workspace. The agent discipline travels in the server's
-`instructions`. Details, tool table, and client configs: [`docs/mcp.md`](docs/mcp.md).
+identical to `--json`. The agent discipline travels in the server's `instructions`.
+Claude Desktop users install the `.mcpb` bundle from the releases page and pick a
+workspace folder — that is what the server is for: harnesses with no shell.
+
+**In a harness that already has a shell — Claude Code, Cursor's agent — prefer the
+skill and the CLI above.** The server's tools and instructions cost about 4,900
+tokens of context in every session, while the skill stays collapsed to ~86 tokens
+until something triggers it; the shell also composes (`recall --json | jq …`) and
+resolves the workspace on every invocation rather than binding it at startup.
+Reasoning, numbers, and the cases that do favour the server:
+[`docs/mcp.md`](docs/mcp.md#which-should-i-use--the-mcp-server-or-the-skill-and-cli).
+
+Details, tool table, and client configs: [`docs/mcp.md`](docs/mcp.md).
 
 ## Verbs
 
