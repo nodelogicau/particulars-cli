@@ -23,6 +23,12 @@ resolutions. "We" below means this implementation as it was when the item was ra
 
 Bold entries are where v0.1.x diverged and v0.2.0 changed.
 
+Items 11–13 were raised later, from implementing merge records, workspace
+discovery, and the MCP server; they are open upstream as
+[#11](https://github.com/nodelogicau/particulars/issues/11),
+[#12](https://github.com/nodelogicau/particulars/issues/12), and
+[#13](https://github.com/nodelogicau/particulars/issues/13).
+
 ## 1. Identifier format: `<prefix>_<uuidv7>` ([#1](https://github.com/nodelogicau/particulars/issues/1))
 
 **Spec today:** examples like `par_01j9xk2p3q4r5s6t` (a truncated ULID); "ID
@@ -166,15 +172,15 @@ are mandatory. We require `author` on claims and on retractions, and
 `produced-by.harness` on syntheses. Worth pinning down, since it determines what
 a minimal valid claim looks like.
 
-## 11. Merge record field order (new, raised after the resolutions)
+## 11. Merge record field order ([#11](https://github.com/nodelogicau/particulars/issues/11))
 
 The `merge-records` spec prose lists fields as "`id`, `type: merge`, `uris`,
 `source`, `timestamp`, and optional `reason`" while the README example writes
-`id, type, uris, reason, source, timestamp`. v0.2.0 follows the example (the
+`id, type, uris, reason, source, timestamp`. The reference implementation follows the example (the
 concrete artifact). The prose should be brought into line, or the example
 changed, before v0.1 is declared.
 
-## 12. Workspace pointer file (`.dkf`) for discovery from above (new)
+## 12. Workspace pointer file (`.dkf`) for discovery from above ([#12](https://github.com/nodelogicau/particulars/issues/12))
 
 `workspace-config` mandates discovery by walking up for `dkf.yaml`. That fails
 when a tool runs from *above* the workspace — the common "knowledge/ inside a
@@ -189,7 +195,7 @@ reader. Conformant readers ignore `.dkf` and still work from inside the
 workspace. Proposal: bless the pointer as an optional convention in
 `workspace-config`, or state that tools MAY offer equivalent redirection.
 
-## 13. `synthesis_create` has no subject parameter (new)
+## 13. `synthesis_create` has no subject parameter ([#13](https://github.com/nodelogicau/particulars/issues/13))
 
 The tool table gives `synthesis_create(content, inputs[], unresolved, source)`,
 but a `DSYNTHESIS` carries `subject` like any claim, and the tool has no way to
