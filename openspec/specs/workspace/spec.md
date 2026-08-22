@@ -81,10 +81,31 @@ Objects SHALL be stored one per file at `<root>/particulars/<id>.yaml`, `<root>/
 - **WHEN** `particulars workspace --json` is run from a directory whose ancestor holds a `.dkf` pointing at a valid workspace
 - **THEN** the result has `via: "pointer"`, `pointer` set to the absolute `.dkf` path, and `root` set to the target
 
-#### Scenario: Resolved via environment
-- **WHEN** `DKF_WORKSPACE` is set to a valid workspace and `particulars workspace --json` is run
-- **THEN** the result has `via: "env"`
-
 #### Scenario: Nothing resolves
 - **WHEN** `particulars workspace` is run with no flag, no env, and no `dkf.yaml` or `.dkf` in any ancestor
 - **THEN** the command exits with code 5
+
+### Requirement: Pointer verb
+`particulars workspace pointer [workspace-dir] [--at <dir>] [--force]` SHALL write a `.dkf` pointer in `--at` (default: the current directory) naming a workspace that already exists, so that the workspace resolves from that directory and below. With no argument it SHALL name the workspace that would be used now, resolved by the ordinary precedence. The target SHALL be written relative when the workspace lies within the pointer's directory and absolute otherwise, and the result SHALL report which; with `--json` as `{"pointer", "root", "target", "relative"}`.
+
+It SHALL be a usage error (exit code 2) when the pointer directory is the workspace itself, when it already contains `dkf.yaml` — which wins over a pointer at the same level — or when `--at` is not a directory. Writing a pointer that already names the same target SHALL succeed unchanged; one naming a different target SHALL fail with exit code 1 and leave the file untouched unless `--force` is given.
+
+#### Scenario: Pointer for an existing workspace
+- **WHEN** `particulars workspace pointer ./knowledge` is run at a repository root
+- **THEN** `./.dkf` contains `knowledge`, the result reports `relative: true`, and a verb run from `src/pkg/` resolves via the pointer
+
+#### Scenario: Workspace outside the pointer's tree
+- **WHEN** the named workspace is not under the pointer directory
+- **THEN** the target is written absolute, `relative` is `false`, and the result warns that the pointer is machine-specific and should not be committed
+
+#### Scenario: Replacing a pointer
+- **WHEN** a `.dkf` naming a different workspace already exists
+- **THEN** the command exits 1 mentioning `--force`, the file is unchanged, and repeating with `--force` rewrites it
+
+#### Scenario: Shadowed pointer refused
+- **WHEN** `--at` names a directory that already contains `dkf.yaml`
+- **THEN** the command exits 2 explaining that `dkf.yaml` wins over a pointer at the same level
+
+#### Scenario: Resolved via environment
+- **WHEN** `DKF_WORKSPACE` is set to a valid workspace and `particulars workspace --json` is run
+- **THEN** the result has `via: "env"`

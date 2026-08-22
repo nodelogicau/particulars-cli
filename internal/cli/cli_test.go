@@ -1049,3 +1049,74 @@ func TestExportGraph(t *testing.T) {
 		t.Errorf("--schema without --connection should exit 2, got %d", r.code)
 	}
 }
+
+func TestWorkspacePointerVerb(t *testing.T) {
+	repo := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "kb")
+	t.Chdir(repo)
+	t.Setenv("DKF_WORKSPACE", "")
+	run(t, "", "init", "./knowledge", "--author", "ben", "--json")
+	run(t, "", "init", outside, "--author", "ben", "--json")
+
+	// Inside the tree: relative target, and the workspace resolves from below.
+	r := run(t, "", "workspace", "pointer", "./knowledge", "--json")
+	if r.code != 0 || r.js["pointer"] != filepath.Join(repo, ".dkf") || r.js["target"] != "knowledge" || r.js["relative"] != true {
+		t.Fatalf("pointer inside tree: %+v", r)
+	}
+	if data, _ := os.ReadFile(filepath.Join(repo, ".dkf")); string(data) != "knowledge\n" {
+		t.Errorf(".dkf content: %q", data)
+	}
+	_ = os.MkdirAll(filepath.Join(repo, "src", "pkg"), 0o755)
+	t.Chdir(filepath.Join(repo, "src", "pkg"))
+	if w := run(t, "", "workspace", "--json"); w.js["via"] != "pointer" || filepath.Base(w.js["root"].(string)) != "knowledge" {
+		t.Errorf("resolve via written pointer: %+v", w.js)
+	}
+	t.Chdir(repo)
+
+	// Naming a different workspace is refused, then allowed with --force.
+	if r := run(t, "", "workspace", "pointer", outside, "--json"); r.code != 1 || !strings.Contains(r.stderr, "--force") {
+		t.Errorf("differing pointer should exit 1 mentioning --force: %+v", r)
+	}
+	if data, _ := os.ReadFile(filepath.Join(repo, ".dkf")); string(data) != "knowledge\n" {
+		t.Errorf("refused write must not touch the file: %q", data)
+	}
+	r = run(t, "", "workspace", "pointer", outside, "--force", "--json")
+	if r.code != 0 || r.js["relative"] != false || r.js["target"] != outside {
+		t.Errorf("--force outside the tree should write an absolute target: %+v", r)
+	}
+	if !strings.Contains(run(t, "", "workspace", "pointer", outside, "--force").stdout, "do not commit") {
+		t.Error("absolute pointer should warn against committing it")
+	}
+	// Writing the same target again is a no-op, not a conflict.
+	if r := run(t, "", "workspace", "pointer", outside, "--json"); r.code != 0 {
+		t.Errorf("identical rewrite: %+v", r)
+	}
+
+	// Refusals: the workspace itself, and a directory that already has dkf.yaml.
+	if r := run(t, "", "workspace", "pointer", "--at", filepath.Join(repo, "knowledge"), outside, "--json"); r.code != 2 || !strings.Contains(r.stderr, "dkf.yaml") {
+		t.Errorf("--at a workspace should exit 2: %+v", r)
+	}
+	t.Chdir(filepath.Join(repo, "knowledge"))
+	if r := run(t, "", "workspace", "pointer", ".", "--json"); r.code != 2 {
+		t.Errorf("pointer to itself should exit 2: %+v", r)
+	}
+	t.Chdir(repo)
+	if r := run(t, "", "workspace", "pointer", "--at", filepath.Join(repo, "missing"), outside, "--json"); r.code != 2 {
+		t.Errorf("--at a missing directory should exit 2: %+v", r)
+	}
+
+	// No argument: whatever would be used now, here $DKF_WORKSPACE.
+	_ = os.Remove(filepath.Join(repo, ".dkf"))
+	t.Setenv("DKF_WORKSPACE", outside)
+	if r := run(t, "", "workspace", "pointer", "--json"); r.code != 0 || r.js["root"] != outside {
+		t.Errorf("no-arg pointer should name the resolved workspace: %+v", r)
+	}
+	t.Setenv("DKF_WORKSPACE", "")
+	if w := run(t, "", "workspace", "--json"); w.js["via"] != "pointer" || w.js["root"] != outside {
+		t.Errorf("written pointer should now resolve: %+v", w.js)
+	}
+	// A missing workspace is reported, not silently pointed at.
+	if r := run(t, "", "workspace", "pointer", filepath.Join(repo, "nope"), "--force", "--json"); r.code == 0 {
+		t.Errorf("pointing at a non-workspace should fail: %+v", r)
+	}
+}

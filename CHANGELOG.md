@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `particulars workspace pointer [dir]` writes a `.dkf` pointer for a workspace
+  that already exists — previously only `init --pointer` could, so a workspace
+  predating the repository layout around it had to have the file hand-written.
+  Relative target inside the tree, absolute outside with a warning not to commit
+  it; refuses to shadow a `dkf.yaml` or to silently replace a pointer naming a
+  different workspace.
+
 - Skill: state workspace precedence in the right order. The setup note listed
   `dkf.yaml`, `$DKF_WORKSPACE`, `--workspace` — which is precedence *backwards*,
   leading with the one that loses. An agent reading it would expect a `dkf.yaml`

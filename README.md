@@ -183,6 +183,7 @@ pushed by a workflow when a knowledge pull request is merged. See
 |---|---|
 | `init [dir] [--pointer]` | Create a workspace; `--pointer` also writes `./.dkf` pointing at it |
 | `workspace` | Show the resolved workspace root and how it was found (`flag`/`env`/`dkf.yaml`/`pointer`) |
+| `workspace pointer [dir] [--at D] [--force]` | Write a `.dkf` pointer to an existing workspace |
 | `particular define --label L [--uri U] [--alias A]…` | Create or update a particular; idempotent on URI |
 | `particular resolve <id\|uri\|label\|alias>` | Find particulars (label/alias case-insensitive) |
 | `claim assert --subject P (--content T \| --content-file F\|-) […]` | Record a claim |
@@ -271,9 +272,14 @@ A workspace kept in a subdirectory of a repository (the `knowledge/` convention)
 invisible to upward discovery from the repo root; a pointer fixes that:
 
 ```sh
-particulars init ./knowledge --pointer     # writes ./.dkf containing "knowledge"
+particulars init ./knowledge --pointer     # at creation: writes ./.dkf containing "knowledge"
+particulars workspace pointer ./knowledge  # afterwards: same file, workspace already exists
 particulars workspace                      # → …/knowledge  via: pointer
 ```
+
+The path is written relative when the workspace is inside the pointer's directory,
+so the file survives being cloned elsewhere, and absolute when it is not — in which
+case it is machine-specific and should stay out of git.
 
 `.dkf` is an implementation extension; spec-conformant readers still find the
 workspace by walking up from inside it. `workspace.base-uri`, if set, must end in
