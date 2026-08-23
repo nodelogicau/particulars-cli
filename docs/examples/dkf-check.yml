@@ -50,26 +50,55 @@ jobs:
       # sees the shape of what changed — which claim is the antithesis, whether
       # the new synthesis became the current belief — without cloning.
       #
-      # A diagram discloses whatever it contains. Before enabling this, decide
-      # whether every particular it might draw is safe to render in a comment,
-      # and set --scope accordingly. See docs/visualise.md.
+      # A diagram discloses whatever it contains. In a PRIVATE repository the
+      # comment reaches exactly the people who can already read the YAML in the
+      # diff, so it discloses nothing new. In a public one, add
+      # --scope organisation to the export, or leave this off. See
+      # docs/visualise.md.
       #
       # - name: Draw what changed
       #   if: always() && github.event_name == 'pull_request'
+      #   env:
+      #     BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      #     MAX_SUBJECTS: "6"      # cap the comment; the excess is reported, never silently dropped
+      #     MAX_CHARS: "8000"      # a large lineage is linked, not pasted
+      #     DEPTH: "2"             # what changed and what it reconciles, not the whole chain
       #   run: |
-      #     git fetch --depth=1 origin "${{ github.base_ref }}"
-      #     subjects=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD \
-      #       -- 'claims/*.yaml' 'syntheses/*.yaml' \
-      #       | xargs -r -I{} sh -c 'sed -n "s/^subject: //p" {}' | sort -u)
-      #     [ -n "${subjects}" ] || exit 0
+      #     set -eu
+      #     git fetch --depth=1 origin "${BASE_SHA}"
+      #     subjects=$(git diff --name-only "${BASE_SHA}" HEAD -- 'claims/*.yaml' 'syntheses/*.yaml' \
+      #       | xargs -r -I{} sh -c 'sed -n "s/^subject: //p" "$1"' _ {} | sort -u)
+      #     if [ -z "${subjects}" ]; then
+      #       echo "no claims or syntheses changed: nothing to draw"
+      #       exit 0
+      #     fi
+      #     total=$(printf '%s\n' "${subjects}" | wc -l | tr -d ' ')
       #     {
       #       echo
-      #       echo '### What changed'
-      #       for s in ${subjects}; do
+      #       echo "### What changed"
+      #       echo
+      #       n=0
+      #       printf '%s\n' "${subjects}" | while IFS= read -r s; do
+      #         [ -n "${s}" ] || continue
+      #         n=$((n + 1))
+      #         if [ "${n}" -gt "${MAX_SUBJECTS}" ]; then
+      #           echo "_${total} particulars changed; drawing the first ${MAX_SUBJECTS}._"
+      #           break
+      #         fi
+      #         label=$(particulars particular resolve "${s}" --json | jq -r '.matches[0].label // "?"')
+      #         diagram=$(particulars export --format mermaid --subject "${s}" --depth "${DEPTH}" || true)
+      #         size=$(printf '%s' "${diagram}" | wc -c | tr -d ' ')
+      #         echo "**${label}**"
       #         echo
-      #         echo '```mermaid'
-      #         particulars export --format mermaid --subject "${s}" || true
-      #         echo '```'
+      #         if [ "${size}" -gt "${MAX_CHARS}" ]; then
+      #           nodes=$(particulars export --format mermaid --subject "${s}" --depth "${DEPTH}" --json | jq -r .nodes)
+      #           echo "_${nodes} nodes (${size} characters) — too large for a comment. Draw it locally with particulars export --format mermaid._"
+      #         else
+      #           echo '```mermaid'
+      #           printf '%s\n' "${diagram}"
+      #           echo '```'
+      #         fi
+      #         echo
       #       done
       #     } >> conflicts.md
 

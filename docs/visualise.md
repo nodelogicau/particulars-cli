@@ -130,5 +130,14 @@ which claim is the antithesis, whether the new synthesis actually became the
 current belief — without cloning the branch.
 
 Before enabling it, decide whether the repository is one where every particular
-it might draw is safe to render in a comment. It renders whatever scope the
-workflow's `--scope` flag allows.
+it might draw is safe to render in a comment. In a **private** repository the
+comment reaches exactly the people who can already read the YAML in the diff, so
+the diagram discloses nothing the pull request does not; in a **public** one, add
+`--scope organisation` to the export or leave the step off.
+
+The step is bounded on both axes, and reports rather than hides what it drops:
+`DEPTH: 2` keeps each diagram to what changed and what it reconciles,
+`MAX_SUBJECTS` caps how many particulars are drawn and says how many were left,
+and a lineage over `MAX_CHARS` is named with its node count and the command to
+draw it locally instead of being pasted. A silent cap would read as "that is all
+there was".
