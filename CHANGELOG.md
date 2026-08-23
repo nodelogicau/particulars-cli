@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.6.0 — draw the workspace
 
 - `particulars export --format dot|mermaid` draws the workspace. With
   `--subject`, one particular's dialectic: claims and syntheses as nodes, inputs
