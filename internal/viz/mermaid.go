@@ -25,18 +25,12 @@ func Mermaid(m *Model) string {
 		fmt.Fprintf(&b, "  %s%s%s%s\n", n.ID, lhs, mermaidQuote(mermaidLabel(n)), rhs)
 	}
 	for _, e := range m.Edges {
-		arrow := "-->"
+		arrow, label := "-->", e.Role
 		switch e.Kind {
 		case EdgeSuperseded:
-			arrow = "-.->"
+			arrow, label = "-.->", "superseded by"
 		case EdgeMerge:
-			arrow = "---"
-		}
-		label := e.Role
-		if e.Kind == EdgeSuperseded {
-			label = "superseded by"
-		} else if e.Kind == EdgeMerge {
-			label = "same as"
+			arrow, label = "---", "same as"
 		}
 		if label != "" {
 			fmt.Fprintf(&b, "  %s %s|%s| %s\n", e.From, arrow, mermaidEdgeLabel(label), e.To)
