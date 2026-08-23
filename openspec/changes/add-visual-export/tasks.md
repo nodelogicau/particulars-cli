@@ -47,4 +47,4 @@
 ## 7. Verification
 
 - [x] 7.1 `go build ./... && go vet ./... && go test ./...` clean.
-- [~] 7.2 (partial: structural checks and determinism confirmed on the real workspace; SVG render unverified — Graphviz is not installed here) Run both views of both formats against the real knowledge workspace; render the DOT to SVG and check the Mermaid renders on GitHub, confirming the current belief, an unsynthesised claim, and a retracted object are each visually distinguishable in practice and not merely attributed in the source.
+- [x] 7.2 Run both views of both formats against the real knowledge workspace; render the DOT to SVG and check the Mermaid renders on GitHub, confirming the current belief, an unsynthesised claim, and a retracted object are each visually distinguishable in practice and not merely attributed in the source.

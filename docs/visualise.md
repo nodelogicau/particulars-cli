@@ -77,9 +77,14 @@ A particular with no claims still appears — an orphan is a thing worth seeing.
 ## Rendering
 
 ```sh
+brew install graphviz                                              # or apt install graphviz
 particulars export --format dot --out graph.dot && dot -Tsvg graph.dot -o graph.svg
-particulars export --format dot | dot -Tpng -o graph.png          # brew install graphviz
+particulars export --format dot | dot -Tpng -Gdpi=140 -o graph.png
 ```
+
+Graphviz parses the output without warnings, and the rendered SVG carries one
+`class="node"` per node and one `class="edge"` per edge — worth checking with
+`grep -c` if you ever suspect a label has swallowed part of the graph.
 
 Mermaid needs no tooling: paste it into a fenced ` ```mermaid ` block in any
 markdown file, pull request comment, or issue on GitHub and it renders. So does
