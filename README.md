@@ -198,6 +198,7 @@ pushed by a workflow when a knowledge pull request is merged. See
 | `validate` | Structural and referential checks; exit 4 on errors |
 | `serve --mcp [--workspace D]` | Serve the workspace to an MCP client over stdio (see [docs/mcp.md](docs/mcp.md)) |
 | `export --format graph [--schema]` | Emit Microsoft Graph items so merged knowledge is searchable in M365 Copilot (see [docs/graph.md](docs/graph.md)) |
+| `export --format dot\|mermaid [--subject P]` | Draw the workspace: one particular's dialectic, or a map of them all (see [docs/visualise.md](docs/visualise.md)) |
 | `skill show` / `skill install [--harness P]… [--user\|--dir D] [--file F] [--force] [--check]` | Print or install the embedded agent skill for Claude Code, Copilot, Cursor, or AGENTS.md |
 | `version` | Binary version and supported format (`dkf/0.1`) |
 

@@ -41,18 +41,6 @@ const (
 	CodeScopeWiderThanInputs = "scope_wider_than_inputs"
 )
 
-// scopeRank orders visibility from narrowest to widest. Unknown scopes rank
-// narrowest so they never trigger a false warning.
-func scopeRank(s dkf.Scope) int {
-	switch s {
-	case dkf.ScopeOrganisation:
-		return 1
-	case dkf.ScopePublic:
-		return 2
-	}
-	return 0
-}
-
 // Finding is one validation result.
 type Finding struct {
 	Severity string `json:"severity"`
@@ -175,7 +163,7 @@ func Validate(w *store.Workspace) (Findings, error) {
 				if child == nil {
 					continue
 				}
-				if scopeRank(child.GetContext().Scope) < scopeRank(s.Context.Scope) {
+				if dkf.ScopeRank(child.GetContext().Scope) < dkf.ScopeRank(s.Context.Scope) {
 					narrower = append(narrower, fmt.Sprintf("%s (%s)", in.ID, child.GetContext().Scope))
 				}
 			}

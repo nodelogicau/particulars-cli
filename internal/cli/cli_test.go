@@ -1120,3 +1120,143 @@ func TestWorkspacePointerVerb(t *testing.T) {
 		t.Errorf("pointing at a non-workspace should fail: %+v", r)
 	}
 }
+
+func TestExportVisualFormats(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+	t.Setenv("DKF_WORKSPACE", ws)
+	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
+	for _, label := range []string{"Project X", "Library Y"} {
+		if r := run(t, "", "particular", "define", "--label", label, "--json"); r.code != 0 {
+			t.Fatalf("define %s: %+v", label, r)
+		}
+	}
+	claim := func(subject, content string, extra ...string) string {
+		t.Helper()
+		args := append([]string{"claim", "assert", "--subject", subject, "--content", content, "--json"}, extra...)
+		r := run(t, "", args...)
+		if r.code != 0 {
+			t.Fatalf("assert: %+v", r)
+		}
+		return r.js["claim"].(map[string]any)["id"].(string)
+	}
+	a := claim("Project X", "microservices since 2022")
+	b := claim("Project X", "monolith since Nov 2024")
+	org := claim("Project X", "an organisation fact", "--scope", "organisation")
+	loose := claim("Project X", "billing split out again")
+	r := run(t, "", "synthesis", "create", "--subject", "Project X",
+		"--input", a+":thesis", "--input", b+":antithesis",
+		"--unresolved", "None identified", "--content", "consolidated in Nov 2024", "--json")
+	if r.code != 0 {
+		t.Fatalf("synthesis: %+v", r)
+	}
+	syn := r.js["synthesis"].(map[string]any)["id"].(string)
+
+	// Both formats, both views.
+	for _, format := range []string{"dot", "mermaid"} {
+		lineage := run(t, "", "export", "--format", format, "--subject", "Project X")
+		if lineage.code != 0 {
+			t.Fatalf("%s lineage: %+v", format, lineage)
+		}
+		for _, want := range []string{shortTag(a), shortTag(b), shortTag(loose), shortTag(syn)} {
+			if !strings.Contains(lineage.stdout, want) {
+				t.Errorf("%s lineage is missing %s:\n%s", format, want, lineage.stdout)
+			}
+		}
+		wsMap := run(t, "", "export", "--format", format)
+		if wsMap.code != 0 || !strings.Contains(wsMap.stdout, "Project X") || !strings.Contains(wsMap.stdout, "Library Y") {
+			t.Errorf("%s map: %+v", format, wsMap)
+		}
+		if strings.Contains(wsMap.stdout, shortTag(a)) {
+			t.Errorf("%s map should show particulars, not claims", format)
+		}
+	}
+	if got := run(t, "", "export", "--format", "dot").stdout; !strings.HasPrefix(got, "digraph particulars {") {
+		t.Errorf("dot envelope: %q", got[:min2(40, len(got))])
+	}
+	if got := run(t, "", "export", "--format", "mermaid").stdout; !strings.HasPrefix(got, "flowchart BT") {
+		t.Errorf("mermaid envelope: %q", got[:min2(40, len(got))])
+	}
+
+	// --json summarises instead of drawing; --out writes the drawing to a file.
+	j := run(t, "", "export", "--format", "mermaid", "--subject", "Project X", "--json")
+	if j.code != 0 || j.js["format"] != "mermaid" || j.js["view"] != "lineage" || j.js["subject"] != "Project X" {
+		t.Errorf("json summary: %+v", j.js)
+	}
+	if n, ok := j.js["nodes"].(float64); !ok || n < 4 {
+		t.Errorf("json summary should count nodes: %+v", j.js)
+	}
+	if strings.Contains(j.stdout, "flowchart") {
+		t.Error("--json must not emit the diagram")
+	}
+	out := filepath.Join(ws, "sub", "graph.dot")
+	f := run(t, "", "export", "--format", "dot", "--out", out, "--json")
+	if f.code != 0 || f.js["path"] != out {
+		t.Fatalf("--out: %+v", f)
+	}
+	if data, err := os.ReadFile(out); err != nil || !strings.HasPrefix(string(data), "digraph") {
+		t.Errorf("--out file: %v %q", err, string(data)[:min2(40, len(string(data)))])
+	}
+
+	// Subject resolution failures use the ordinary exit codes.
+	if r := run(t, "", "export", "--format", "dot", "--subject", "Nothing Here", "--json"); r.code != 3 {
+		t.Errorf("unknown subject should exit 3, got %d", r.code)
+	}
+
+	// Flags that belong to the other format are refused, not ignored.
+	for _, tc := range [][]string{
+		{"export", "--format", "graph", "--subject", "Project X", "--json"},
+		{"export", "--format", "graph", "--depth", "2", "--json"},
+		{"export", "--format", "graph", "--include-retracted", "--json"},
+		{"export", "--format", "mermaid", "--manifest", "m.txt", "--json"},
+		{"export", "--format", "mermaid", "--schema", "--connection", "c", "--json"},
+		{"export", "--format", "mermaid", "--source-url", "https://example.com/", "--json"},
+		{"export", "--format", "svg", "--json"},
+		{"export", "--format", "dot", "--depth", "-1", "--json"},
+	} {
+		if r := run(t, "", tc...); r.code != 2 {
+			t.Errorf("%v should be a usage error, got %d", tc[1:], r.code)
+		}
+	}
+
+	// personal is drawable but never exportable to Graph.
+	if r := run(t, "", "export", "--format", "mermaid", "--scope", "personal"); r.code != 0 {
+		t.Errorf("--scope personal should be accepted for a drawing: %+v", r)
+	}
+	if r := run(t, "", "export", "--format", "graph", "--scope", "personal", "--json"); r.code != 2 {
+		t.Errorf("--scope personal must stay refused for graph, got %d", r.code)
+	}
+	// Narrowing to organisation drops the personal claims from the drawing.
+	narrowed := run(t, "", "export", "--format", "mermaid", "--subject", "Project X", "--scope", "organisation")
+	if !strings.Contains(narrowed.stdout, shortTag(org)) {
+		t.Errorf("organisation claim should survive --scope organisation:\n%s", narrowed.stdout)
+	}
+	if strings.Contains(narrowed.stdout, shortTag(a)) {
+		t.Errorf("personal claim should be dropped by --scope organisation:\n%s", narrowed.stdout)
+	}
+
+	// Retraction: hidden by default, drawn on request.
+	if r := run(t, "", "retract", loose, "--reason", "mistaken", "--json"); r.code != 0 {
+		t.Fatalf("retract: %+v", r)
+	}
+	if got := run(t, "", "export", "--format", "mermaid", "--subject", "Project X").stdout; strings.Contains(got, shortTag(loose)) {
+		t.Error("retracted claim should be omitted by default")
+	}
+	withRetracted := run(t, "", "export", "--format", "mermaid", "--subject", "Project X", "--include-retracted").stdout
+	if !strings.Contains(withRetracted, shortTag(loose)) || !strings.Contains(withRetracted, "retracted") {
+		t.Errorf("--include-retracted should draw it, marked:\n%s", withRetracted)
+	}
+}
+
+// shortTag mirrors viz.Tag without importing the package into these tests.
+func shortTag(id string) string {
+	prefix, rest, _ := strings.Cut(id, "_")
+	return prefix + "…" + rest[len(rest)-6:]
+}
+
+func min2(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

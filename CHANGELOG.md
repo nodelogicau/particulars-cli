@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- `particulars export --format dot|mermaid` draws the workspace. With
+  `--subject`, one particular's dialectic: claims and syntheses as nodes, inputs
+  as edges labelled with their role, the current belief emphasised, and
+  `unsynthesised`, `stale`, retracted, and cross-particular inputs each marked
+  distinctly. Without one, a map of every particular, weighted by what is known
+  about it and joined by merge records. `--depth` bounds the lineage;
+  `--include-retracted` draws what was withdrawn, with `superseded-by` as its own
+  edge.
+- Mermaid renders with no tooling — in a pull request comment, an issue, or a
+  markdown file — so `docs/examples/dkf-check.yml` gains a commented-out step
+  that draws the particulars a pull request touches. DOT is for Graphviz when a
+  workspace outgrows what a comment can show. Neither requires Graphviz to be
+  installed to *emit*.
+- Unlike `--format graph`, the drawings include `personal` knowledge by default:
+  writing a local file is not a transfer to a third party, and a diagram missing
+  half the graph misrepresents the reasoning. `--scope` narrows it, and
+  `docs/visualise.md` states plainly that publishing a diagram is the same
+  judgement as publishing the objects it draws.
+
 ## v0.5.2 — unsubstituted template variables
 
 - Treat an unsubstituted template variable as absent everywhere provenance is

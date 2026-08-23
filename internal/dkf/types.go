@@ -150,6 +150,22 @@ type Merge struct {
 	Retracted *Retracted `yaml:"retracted,omitempty" json:"retracted,omitempty"`
 }
 
+// ScopeRank orders visibility from narrowest to widest: personal <
+// organisation < public. An unrecognised scope ranks narrowest, so a value we
+// do not understand is never treated as more widely shareable than it is.
+func ScopeRank(s Scope) int {
+	switch s {
+	case ScopeOrganisation:
+		return 1
+	case ScopePublic:
+		return 2
+	}
+	return 0
+}
+
+// ScopeAtLeast reports whether s is at least as wide as min.
+func ScopeAtLeast(s, min Scope) bool { return ScopeRank(s) >= ScopeRank(min) }
+
 // DefaultMethod is the synthesis method recorded when none is given.
 const DefaultMethod = "reconciliation"
 
