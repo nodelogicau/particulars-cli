@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.7.0 — promotion records and effective scope
 
 - **Promotion records and effective scope.** `particulars publish <id>… --scope <s>`
   writes `publishes/pub_….yaml` naming claims and syntheses to share more widely.
