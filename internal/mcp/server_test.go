@@ -297,7 +297,7 @@ func TestStdioBinary(t *testing.T) {
 	}
 	defer func() { _ = cs.Close() }()
 	tools, err := cs.ListTools(context.Background(), nil)
-	if err != nil || len(tools.Tools) != 11 {
+	if err != nil || len(tools.Tools) != 12 {
 		t.Fatalf("tools: %v %v", err, tools)
 	}
 	res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{Name: "workspace_status", Arguments: map[string]any{}})

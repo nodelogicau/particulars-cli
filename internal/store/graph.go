@@ -24,6 +24,7 @@ type Graph struct {
 	Particulars map[string]*dkf.Particular // by id
 	Assertions  map[string]dkf.Assertion   // claims and syntheses by id
 	Merges      map[string]*dkf.Merge      // merge records by id
+	Promotions  map[string]*dkf.Promotion  // promotion records by id
 	BySubject   map[string][]dkf.Assertion // subject id -> assertions, sorted by id
 	Files       map[string]string          // object id -> relative path
 	Raw         map[string][]byte          // object id -> file bytes (for canonical checks)
@@ -31,6 +32,9 @@ type Graph struct {
 
 	byURI   map[string]*dkf.Particular
 	classOf map[string][]string // particular id -> sorted member ids (incl. self)
+	// effective holds the widest scope any non-retracted promotion grants an
+	// object. Absent means "no promotion covers it", not "personal".
+	effective map[string]dkf.Scope
 }
 
 func newGraph() *Graph {
@@ -38,6 +42,7 @@ func newGraph() *Graph {
 		Particulars: map[string]*dkf.Particular{},
 		Assertions:  map[string]dkf.Assertion{},
 		Merges:      map[string]*dkf.Merge{},
+		Promotions:  map[string]*dkf.Promotion{},
 		BySubject:   map[string][]dkf.Assertion{},
 		Files:       map[string]string{},
 		Raw:         map[string][]byte{},
@@ -97,12 +102,80 @@ func (w *Workspace) Load() (*Graph, error) {
 		sortAssertions(g.BySubject[subj])
 	}
 	g.buildClasses()
+	g.buildEffective()
 	return g, nil
 }
 
 // buildClasses unions the URIs of every non-retracted merge and derives, for
 // each particular, the sorted ids of all particulars in its class. URIs with
 // no local particular still act as bridges.
+// buildEffective computes each object's promoted scope once, at load. Every
+// scope filter reads this rather than context.Scope: after promotions exist,
+// no correct scope decision can be made from an object alone.
+func (g *Graph) buildEffective() {
+	g.effective = map[string]dkf.Scope{}
+	for _, pr := range g.Promotions {
+		if pr.Retracted != nil {
+			continue
+		}
+		for _, id := range pr.Claims {
+			if cur, ok := g.effective[id]; !ok || dkf.ScopeRank(pr.Scope) > dkf.ScopeRank(cur) {
+				g.effective[id] = pr.Scope
+			}
+		}
+	}
+}
+
+// EffectiveScope is an object's asserted scope widened by any non-retracted
+// promotion covering it. This is the only place effective scope is computed.
+func (g *Graph) EffectiveScope(id string) dkf.Scope {
+	asserted := dkf.Scope("")
+	if a := g.Assertion(id); a != nil {
+		asserted = a.GetContext().Scope
+	}
+	if promoted, ok := g.effective[id]; ok && dkf.ScopeRank(promoted) > dkf.ScopeRank(asserted) {
+		return promoted
+	}
+	return asserted
+}
+
+// EffectiveScopeOf is EffectiveScope for an assertion already in hand.
+func (g *Graph) EffectiveScopeOf(a dkf.Assertion) dkf.Scope {
+	if a == nil {
+		return ""
+	}
+	return g.EffectiveScope(a.ObjectID())
+}
+
+// PromotionsFor returns the non-retracted promotions covering an object, by
+// ascending id, so a message can name the record responsible for a scope.
+func (g *Graph) PromotionsFor(id string) []*dkf.Promotion {
+	var out []*dkf.Promotion
+	for _, pr := range g.Promotions {
+		if pr.Retracted != nil {
+			continue
+		}
+		for _, c := range pr.Claims {
+			if c == id {
+				out = append(out, pr)
+				break
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// SortedPromotions returns every promotion record by ascending id.
+func (g *Graph) SortedPromotions() []*dkf.Promotion {
+	out := make([]*dkf.Promotion, 0, len(g.Promotions))
+	for _, pr := range g.Promotions {
+		out = append(out, pr)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
 func (g *Graph) buildClasses() {
 	parent := map[string]string{}
 	var find func(string) string
@@ -204,6 +277,8 @@ func (g *Graph) add(obj dkf.Object) {
 		g.BySubject[o.SubjectID()] = append(g.BySubject[o.SubjectID()], o)
 	case *dkf.Merge:
 		g.Merges[o.ID] = o
+	case *dkf.Promotion:
+		g.Promotions[o.ID] = o
 	}
 }
 
@@ -250,7 +325,7 @@ func (g *Graph) SortedAssertions() []dkf.Assertion {
 
 // Objects returns every object and record ordered by id.
 func (g *Graph) Objects() []dkf.Object {
-	out := make([]dkf.Object, 0, len(g.Particulars)+len(g.Assertions)+len(g.Merges))
+	out := make([]dkf.Object, 0, len(g.Particulars)+len(g.Assertions)+len(g.Merges)+len(g.Promotions))
 	for _, p := range g.SortedParticulars() {
 		out = append(out, p)
 	}
@@ -259,6 +334,9 @@ func (g *Graph) Objects() []dkf.Object {
 	}
 	for _, m := range g.SortedMerges() {
 		out = append(out, m)
+	}
+	for _, pr := range g.SortedPromotions() {
+		out = append(out, pr)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ObjectID() < out[j].ObjectID() })
 	return out

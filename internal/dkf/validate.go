@@ -16,6 +16,9 @@ const (
 	CodeConflictingProvenance = "conflicting_provenance"
 	// CodeInvalidMerge: a merge record's uris are malformed.
 	CodeInvalidMerge = "invalid_merge"
+	// CodeInvalidPromotion: a promotion record's claims list is malformed, or
+	// names something that carries no scope.
+	CodeInvalidPromotion = "invalid_promotion"
 )
 
 // Problem is one field-level defect in an object.
@@ -66,6 +69,8 @@ func ValidateObject(obj Object) Problems {
 		return ValidateSynthesis(o)
 	case *Merge:
 		return ValidateMerge(o)
+	case *Promotion:
+		return ValidatePromotion(o)
 	}
 	return Problems{{Code: CodeInvalidEnum, Field: "type", Message: fmt.Sprintf("unsupported object %T", obj)}}
 }
@@ -207,6 +212,45 @@ func checkSource(field string, s Source) Problems {
 }
 
 // ValidateMerge checks field-level constraints of a merge record.
+// ValidatePromotion checks a promotion record's own fields. Whether the ids
+// resolve, and whether the promotion widens rather than narrows, needs the
+// workspace and is checked by the store and by validate.
+func ValidatePromotion(pr *Promotion) Problems {
+	var ps Problems
+	ps = append(ps, checkID(pr.ID, TypePublish)...)
+	if len(pr.Claims) == 0 {
+		ps = append(ps, Problem{Code: CodeInvalidPromotion, Field: "claims", Message: "a promotion must name at least one claim or synthesis"})
+	}
+	seen := map[string]bool{}
+	for i, id := range pr.Claims {
+		field := fmt.Sprintf("claims[%d]", i)
+		t, err := TypeOfID(id)
+		switch {
+		case err != nil:
+			ps = append(ps, Problem{Code: CodeInvalidID, Field: field, Message: fmt.Sprintf("%q is not a valid id", id)})
+		case t != TypeClaim && t != TypeSynthesis:
+			ps = append(ps, Problem{Code: CodeInvalidPromotion, Field: field, Message: fmt.Sprintf("%s is a %s; only claims and syntheses carry a scope to promote", id, t)})
+		case seen[id]:
+			ps = append(ps, Problem{Code: CodeInvalidPromotion, Field: field, Message: fmt.Sprintf("%s is named twice", id)})
+		}
+		seen[id] = true
+	}
+	if !ValidScope(pr.Scope) {
+		ps = append(ps, Problem{Code: CodeInvalidEnum, Field: "scope", Message: fmt.Sprintf("invalid scope %q: must be personal, organisation, or public", pr.Scope)})
+	}
+	ps = append(ps, checkSource("source", pr.Source)...)
+	if pr.Timestamp.IsZero() {
+		ps = append(ps, missing("timestamp"))
+	}
+	if pr.Retracted != nil {
+		ps = append(ps, ValidateRetracted(pr.Retracted)...)
+		if pr.Retracted.SupersededBy != "" {
+			ps = append(ps, Problem{Code: CodeInvalidID, Field: "retracted.superseded-by", Message: "a promotion is undone, not superseded; superseded-by is not allowed"})
+		}
+	}
+	return ps
+}
+
 func ValidateMerge(m *Merge) Problems {
 	var ps Problems
 	ps = append(ps, checkID(m.ID, TypeMerge)...)

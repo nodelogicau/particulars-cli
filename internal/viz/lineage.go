@@ -31,11 +31,11 @@ func (o Options) labelChars() int {
 	return defaultLabelChars
 }
 
-func (o Options) visible(a dkf.Assertion) bool {
+func (o Options) visible(g *store.Graph, a dkf.Assertion) bool {
 	if a.GetRetracted() != nil && !o.IncludeRetracted {
 		return false
 	}
-	if o.Scope != "" && !dkf.ScopeAtLeast(a.GetContext().Scope, o.Scope) {
+	if o.Scope != "" && !dkf.ScopeAtLeast(g.EffectiveScope(a.ObjectID()), o.Scope) {
 		return false
 	}
 	return true
@@ -92,7 +92,7 @@ func Lineage(g *store.Graph, p *dkf.Particular, o Options) *Model {
 	for i := 0; i < len(queue); i++ {
 		id := queue[i]
 		a := g.Assertion(id)
-		if a == nil || !o.visible(a) {
+		if a == nil || !o.visible(g, a) {
 			continue
 		}
 		b.node(id, kindOf(a), state[id], Truncate(a.GetContent(), o.labelChars()))
@@ -118,7 +118,7 @@ func Lineage(g *store.Graph, p *dkf.Particular, o Options) *Model {
 		}
 		for _, in := range s.Inputs {
 			ia := g.Assertion(in.ID)
-			if ia == nil || !o.visible(ia) {
+			if ia == nil || !o.visible(g, ia) {
 				continue
 			}
 			b.edge(in.ID, id, EdgeInput, string(in.Role)+weightSuffix(in.Weight))

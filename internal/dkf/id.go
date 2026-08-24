@@ -14,14 +14,15 @@ const (
 	PrefixClaim      = "clm"
 	PrefixSynthesis  = "syn"
 	PrefixMerge      = "mrg"
+	PrefixPublish    = "pub"
 )
 
 var (
 	// lenientID accepts any prefixed opaque identifier so that workspaces
 	// written by other implementations remain readable.
-	lenientID = regexp.MustCompile(`^(par|clm|syn|mrg)_[A-Za-z0-9-]+$`)
+	lenientID = regexp.MustCompile(`^(par|clm|syn|mrg|pub)_[A-Za-z0-9-]+$`)
 	// canonicalID is what this implementation mints: prefix + lowercase UUIDv7.
-	canonicalID = regexp.MustCompile(`^(par|clm|syn|mrg)_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	canonicalID = regexp.MustCompile(`^(par|clm|syn|mrg|pub)_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 )
 
 // Prefix returns the identifier prefix for an object type.
@@ -35,6 +36,8 @@ func Prefix(t Type) string {
 		return PrefixSynthesis
 	case TypeMerge:
 		return PrefixMerge
+	case TypePublish:
+		return PrefixPublish
 	}
 	return ""
 }
@@ -72,6 +75,8 @@ func TypeOfID(id string) (Type, error) {
 		return TypeSynthesis, nil
 	case PrefixMerge:
 		return TypeMerge, nil
+	case PrefixPublish:
+		return TypePublish, nil
 	}
 	return "", fmt.Errorf("invalid identifier %q", id)
 }
@@ -88,8 +93,9 @@ func IsAssertionID(id string) bool {
 	return err == nil && (t == TypeClaim || t == TypeSynthesis)
 }
 
-// IsRetractableID reports whether id names a claim, synthesis, or merge.
+// IsRetractableID reports whether id names a claim, synthesis, merge, or
+// promotion — everything that carries a retracted block.
 func IsRetractableID(id string) bool {
 	t, err := TypeOfID(id)
-	return err == nil && (t == TypeClaim || t == TypeSynthesis || t == TypeMerge)
+	return err == nil && (t == TypeClaim || t == TypeSynthesis || t == TypeMerge || t == TypePublish)
 }

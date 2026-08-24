@@ -25,7 +25,7 @@ func Map(g *store.Graph, o Options) *Model {
 		b.node(p.ID, KindParticular, state, p.Label)
 		weight := 0
 		for _, a := range g.BySubject[p.ID] {
-			if a.GetRetracted() == nil && o.visible(a) {
+			if a.GetRetracted() == nil && o.visible(g, a) {
 				weight++
 			}
 		}

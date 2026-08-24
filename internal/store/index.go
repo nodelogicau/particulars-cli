@@ -26,10 +26,13 @@ type Index struct {
 
 // Entry is one index row. Field order is the on-disk order.
 type Entry struct {
-	ID        string   `yaml:"id" json:"id"`
-	Type      dkf.Type `yaml:"type" json:"type"`
-	URI       string   `yaml:"uri,omitempty" json:"uri,omitempty"`
-	URIs      []string `yaml:"uris,omitempty" json:"uris,omitempty"`
+	ID   string   `yaml:"id" json:"id"`
+	Type dkf.Type `yaml:"type" json:"type"`
+	URI  string   `yaml:"uri,omitempty" json:"uri,omitempty"`
+	URIs []string `yaml:"uris,omitempty" json:"uris,omitempty"`
+	// Claims is the set a promotion covers. With Scope it lets a consumer
+	// compute effective scope from index.yaml alone, without opening files.
+	Claims    []string `yaml:"claims,omitempty" json:"claims,omitempty"`
 	Subject   string   `yaml:"subject,omitempty" json:"subject,omitempty"`
 	Scope     string   `yaml:"scope,omitempty" json:"scope,omitempty"`
 	Topics    []string `yaml:"topics,omitempty" json:"topics,omitempty"`
@@ -49,7 +52,16 @@ func EntryFor(obj dkf.Object) Entry {
 			e.Timestamp = dkf.FormatTime(o.Timestamp)
 		}
 		return e
+	case *dkf.Promotion:
+		e := Entry{ID: o.ID, Type: dkf.TypePublish, Claims: o.Claims, Scope: string(o.Scope), Retracted: o.Retracted != nil}
+		if !o.Timestamp.IsZero() {
+			e.Timestamp = dkf.FormatTime(o.Timestamp)
+		}
+		return e
 	case dkf.Assertion:
+		// An assertion entry carries its ASSERTED scope: the index is a cache
+		// of the files. Effective scope is derived by combining these entries
+		// with the promotion entries, which is why promotions carry claims.
 		ctx := o.GetContext()
 		e := Entry{
 			ID:        o.ObjectID(),

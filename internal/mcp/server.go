@@ -62,7 +62,7 @@ func (s *Server) Instructions() string { return s.instructions() }
 func (s *Server) instructions() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "This particulars server is bound to the DKF workspace at %s (id %s). Everything you write lands as YAML files there for a human to review — typically through a git pull request; nothing is committed for you.\n\n", s.ws.Root, s.ws.Config.Workspace.ID)
-	b.WriteString("Tool names follow the DKF specification (particular_*, claim_*, synthesis_create, knowledge_recall, conflict_detect, lineage_trace); topics_list and workspace_status are particulars extensions.\n")
+	b.WriteString("Tool names follow the DKF specification (particular_*, claim_*, synthesis_create, knowledge_recall, conflict_detect, lineage_trace, knowledge_publish); topics_list and workspace_status are particulars extensions.\n")
 	b.Write(skill.Body())
 	return b.String()
 }

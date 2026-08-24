@@ -388,3 +388,92 @@ func TestBaseURI(t *testing.T) {
 		t.Error("mint")
 	}
 }
+
+func TestPromotionRoundTrip(t *testing.T) {
+	ts := time.Date(2026, 8, 24, 9, 30, 0, 0, time.UTC)
+	pr := &Promotion{
+		ID:        NewID(TypePublish),
+		Claims:    []string{"clm_01916f03-b680-71a3-974f-9401ba374e1f", "syn_01933034-b1a0-705f-b788-2c7c58c46e29"},
+		Scope:     ScopePublic,
+		Reason:    "Architecture history cleared for the public docs site.",
+		Source:    Source{Author: "ben", Harness: "claude"},
+		Timestamp: ts,
+	}
+	if ps := ValidatePromotion(pr); len(ps) != 0 {
+		t.Fatalf("valid promotion rejected: %v", ps)
+	}
+	data, err := Encode(pr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Field order is normative: id, type, claims, scope, reason, source, timestamp.
+	var keys []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if len(line) > 0 && line[0] != ' ' && line[0] != '-' && strings.Contains(line, ":") {
+			keys = append(keys, strings.SplitN(line, ":", 2)[0])
+		}
+	}
+	want := []string{"id", "type", "claims", "scope", "reason", "source", "timestamp"}
+	if strings.Join(keys, ",") != strings.Join(want, ",") {
+		t.Errorf("field order:\n got %v\nwant %v\n%s", keys, want, data)
+	}
+	back, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := back.(*Promotion)
+	if !ok {
+		t.Fatalf("decoded as %T", back)
+	}
+	if got.ID != pr.ID || got.Scope != pr.Scope || len(got.Claims) != 2 || got.Claims[1] != pr.Claims[1] {
+		t.Errorf("round trip lost data: %+v", got)
+	}
+	again, err := Encode(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, again) {
+		t.Errorf("not byte-stable:\n%s\n---\n%s", data, again)
+	}
+	// A retraction is appended without disturbing the rest.
+	got.SetRetracted(&Retracted{Timestamp: ts, Reason: "no longer cleared", Source: Source{Author: "ben"}})
+	withR, err := Encode(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(withR, data) {
+		t.Errorf("retraction should append, not rewrite:\n%s", withR)
+	}
+}
+
+func TestPromotionValidation(t *testing.T) {
+	base := func() *Promotion {
+		return &Promotion{ID: NewID(TypePublish), Claims: []string{"clm_01916f03-b680-71a3-974f-9401ba374e1f"},
+			Scope: ScopeOrganisation, Source: Source{Harness: "claude"}, Timestamp: time.Now()}
+	}
+	for name, mutate := range map[string]func(*Promotion){
+		"empty claims":     func(p *Promotion) { p.Claims = nil },
+		"a particular":     func(p *Promotion) { p.Claims = []string{"par_01916f03-b680-71a3-974f-9401ba374e1f"} },
+		"a merge":          func(p *Promotion) { p.Claims = []string{"mrg_01916f03-b680-71a3-974f-9401ba374e1f"} },
+		"a duplicate id":   func(p *Promotion) { p.Claims = append(p.Claims, p.Claims[0]) },
+		"a bad id":         func(p *Promotion) { p.Claims = []string{"nope"} },
+		"an invalid scope": func(p *Promotion) { p.Scope = "everyone" },
+		"no source":        func(p *Promotion) { p.Source = Source{} },
+		"superseded-by set": func(p *Promotion) {
+			p.Retracted = &Retracted{Timestamp: time.Now(), Reason: "x", Source: Source{Author: "b"}, SupersededBy: "pub_01916f03-b680-71a3-974f-9401ba374e1f"}
+		},
+	} {
+		p := base()
+		mutate(p)
+		if ps := ValidatePromotion(p); len(ps) == 0 {
+			t.Errorf("%s should be rejected", name)
+		}
+	}
+	// pub ids are canonical, so they never raise legacy_id.
+	if !IsCanonicalID(NewID(TypePublish)) {
+		t.Error("a minted promotion id must match the canonical pattern")
+	}
+	if !IsRetractableID(NewID(TypePublish)) {
+		t.Error("promotions must be retractable")
+	}
+}

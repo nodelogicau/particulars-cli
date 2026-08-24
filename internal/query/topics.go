@@ -28,7 +28,7 @@ func Topics(g *store.Graph, opts RecallOptions) []TopicSummary {
 			continue
 		}
 		ctx := a.GetContext()
-		if opts.Scope != "" && ctx.Scope != opts.Scope {
+		if opts.Scope != "" && g.EffectiveScope(a.ObjectID()) != opts.Scope {
 			continue
 		}
 		for _, t := range ctx.Topics {

@@ -1,6 +1,7 @@
 package query
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,6 +53,20 @@ func (f *fixture) claim(subject, content string, topics ...string) *dkf.Claim {
 
 func (f *fixture) synthesis(subject, content string, inputs ...dkf.Input) *dkf.Synthesis {
 	return f.synthesisAt(subject, content, ts, inputs...)
+}
+
+func (f *fixture) synthesisScoped(subject, content string, sc dkf.Scope, inputs ...dkf.Input) *dkf.Synthesis {
+	f.t.Helper()
+	s := &dkf.Synthesis{ID: dkf.NewID(dkf.TypeSynthesis), Subject: subject, Content: content, Inputs: inputs,
+		Unresolved: "None identified", Source: dkf.Source{Harness: "test"}, Method: dkf.DefaultMethod,
+		Timestamp: ts, Context: dkf.Context{Scope: sc}}
+	if err := f.w.Create(s); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := f.w.UpsertIndex(s); err != nil {
+		f.t.Fatal(err)
+	}
+	return s
 }
 
 func (f *fixture) synthesisAt(subject, content string, at time.Time, inputs ...dkf.Input) *dkf.Synthesis {
@@ -608,5 +623,157 @@ func TestScopeWiderThanInputsWarning(t *testing.T) {
 		if fi.Code == CodeScopeWiderThanInputs && strings.Contains(fi.Path, wider.ID) {
 			t.Error("retracted synthesis should not be flagged")
 		}
+	}
+}
+
+// promote is a fixture helper: write a promotion covering ids at scope.
+func (f *fixture) promote(scope dkf.Scope, ids ...string) *dkf.Promotion {
+	f.t.Helper()
+	pr, err := f.w.CreatePromotion(ids, scope, "test", dkf.Source{Author: "ben"}, ts)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return pr
+}
+
+func TestScopeWiderThanInputsUsesEffectiveScope(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	priv := f.claim(p.ID, "a personal observation")
+	if err := f.w.Create(&dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: "an organisation fact",
+		Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: dkf.ScopeOrganisation}, Timestamp: ts}); err != nil {
+		t.Fatal(err)
+	}
+	s := f.synthesisScoped(p.ID, "reconciled", dkf.ScopeOrganisation, in(priv.ID, dkf.RoleThesis))
+	_, _ = f.w.RebuildIndex()
+
+	warned := func() string {
+		g, err := f.w.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ScopeWiderThanInputs(g, g.Assertion(s.ID).(*dkf.Synthesis))
+	}
+
+	// Asserted organisation over an asserted personal input: warned.
+	if warned() == "" {
+		t.Fatal("an organisation synthesis over a personal input should warn")
+	}
+
+	// Promoting the input to match clears it — neither file changed.
+	before, err := os.ReadFile(filepath.Join(f.w.Root, "syntheses", s.ID+".yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.promote(dkf.ScopeOrganisation, priv.ID)
+	if msg := warned(); msg != "" {
+		t.Errorf("promoting the input should clear the warning: %s", msg)
+	}
+	after, _ := os.ReadFile(filepath.Join(f.w.Root, "syntheses", s.ID+".yaml"))
+	if !bytes.Equal(before, after) {
+		t.Error("the synthesis file must not have changed")
+	}
+
+	// Promoting the synthesis past its inputs creates it again, and the
+	// message names the promotion responsible rather than only the scope.
+	pr := f.promote(dkf.ScopePublic, s.ID)
+	msg := warned()
+	if msg == "" {
+		t.Fatal("promoting the synthesis past its inputs should warn")
+	}
+	if !strings.Contains(msg, pr.ID) {
+		t.Errorf("the message should name the promotion that widened it: %s", msg)
+	}
+	if !strings.Contains(msg, "public") || !strings.Contains(msg, "organisation") {
+		t.Errorf("the message should name both effective scopes: %s", msg)
+	}
+
+	// A retracted synthesis is never warned about.
+	if _, err := f.w.Retract(s.ID, &dkf.Retracted{Timestamp: ts, Reason: "x", Source: dkf.Source{Author: "ben"}}); err != nil {
+		t.Fatal(err)
+	}
+	if msg := warned(); msg != "" {
+		t.Errorf("a retracted synthesis should not warn: %s", msg)
+	}
+}
+
+func TestPromotionValidationFindings(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	a := f.claim(p.ID, "one")
+	b := f.claim(p.ID, "two")
+	gone := f.claim(p.ID, "withdrawn")
+	f.promote(dkf.ScopeOrganisation, a.ID)
+	f.promote(dkf.ScopeOrganisation, a.ID, b.ID) // duplicate for a, not for b
+	f.promote(dkf.ScopePublic, gone.ID)
+	if _, err := f.w.Retract(gone.ID, &dkf.Retracted{Timestamp: ts, Reason: "x", Source: dkf.Source{Author: "ben"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.w.RebuildIndex()
+
+	fs, err := Validate(f.w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes := map[string]int{}
+	for _, fi := range fs {
+		codes[fi.Code]++
+		if fi.Code == CodeDuplicatePromotion || fi.Code == CodePromotionOfRetracted {
+			if fi.Severity != SeverityWarning {
+				t.Errorf("%s must be a warning", fi.Code)
+			}
+		}
+	}
+	if codes[CodeDuplicatePromotion] != 2 {
+		t.Errorf("both records promoting %s to organisation should be flagged: %v", a.ID, codes)
+	}
+	if codes[CodePromotionOfRetracted] != 1 {
+		t.Errorf("promoting a retracted claim should warn once: %v", codes)
+	}
+	if fs.HasErrors() {
+		t.Errorf("none of these are errors: %+v", fs)
+	}
+}
+
+func TestPromotionsAreNotKnowledge(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	a := f.claim(p.ID, "one")
+	b := f.claim(p.ID, "two")
+	s := f.synthesis(p.ID, "reconciled", in(a.ID, dkf.RoleThesis), in(b.ID, dkf.RoleAntithesis))
+	loose := f.claim(p.ID, "not yet reconciled")
+	_, _ = f.w.RebuildIndex()
+
+	g, err := f.w.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := Analyse(g, p)
+	beforeLineage, err := Lineage(g, s.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Promote everything in sight, including the loose claim.
+	f.promote(dkf.ScopePublic, a.ID, b.ID, s.ID, loose.ID)
+	g, _ = f.w.Load()
+	after := Analyse(g, p)
+
+	if after.Current != before.Current || after.Priority != before.Priority ||
+		len(after.Unsynthesised) != len(before.Unsynthesised) || len(after.Stale) != len(before.Stale) {
+		t.Errorf("promotion must not change any conflict set:\nbefore %+v\nafter  %+v", before, after)
+	}
+	afterLineage, err := Lineage(g, s.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(afterLineage.Inputs) != len(beforeLineage.Inputs) {
+		t.Errorf("promotion is not provenance: lineage inputs changed from %d to %d",
+			len(beforeLineage.Inputs), len(afterLineage.Inputs))
+	}
+	// And a promotion id is not a lineage subject.
+	prs := g.SortedPromotions()
+	if _, err := Lineage(g, prs[0].ID, 0); err == nil {
+		t.Error("a promotion should not be traceable as provenance")
 	}
 }

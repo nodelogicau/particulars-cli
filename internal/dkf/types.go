@@ -19,6 +19,7 @@ const (
 	TypeClaim      Type = "claim"
 	TypeSynthesis  Type = "synthesis"
 	TypeMerge      Type = "merge"
+	TypePublish    Type = "publish"
 )
 
 // Scope is a claim's visibility scope.
@@ -166,6 +167,21 @@ func ScopeRank(s Scope) int {
 // ScopeAtLeast reports whether s is at least as wide as min.
 func ScopeAtLeast(s, min Scope) bool { return ScopeRank(s) >= ScopeRank(min) }
 
+// Promotion records a decision to share the named claims and syntheses more
+// widely. Claims are immutable, so scope cannot be rewritten in place; an
+// object's effective scope is its asserted scope widened by the promotions
+// covering it. Promotion may only widen, and never cascades to a synthesis's
+// inputs.
+type Promotion struct {
+	ID        string     `yaml:"id" json:"id"`
+	Claims    []string   `yaml:"claims" json:"claims"`
+	Scope     Scope      `yaml:"scope" json:"scope"`
+	Reason    string     `yaml:"reason,omitempty" json:"reason,omitempty"`
+	Source    Source     `yaml:"source" json:"source"`
+	Timestamp time.Time  `yaml:"timestamp" json:"timestamp"`
+	Retracted *Retracted `yaml:"retracted,omitempty" json:"retracted,omitempty"`
+}
+
 // DefaultMethod is the synthesis method recorded when none is given.
 const DefaultMethod = "reconciliation"
 
@@ -224,7 +240,12 @@ func (s *Synthesis) GetConfidence() *float64   { return s.Confidence }
 func (s *Synthesis) GetRetracted() *Retracted  { return s.Retracted }
 func (s *Synthesis) SetRetracted(r *Retracted) { s.Retracted = r }
 
-func (m *Merge) ObjectID() string          { return m.ID }
+func (m *Merge) ObjectID() string               { return m.ID }
+func (pr *Promotion) ObjectID() string          { return pr.ID }
+func (pr *Promotion) ObjectType() Type          { return TypePublish }
+func (pr *Promotion) GetRetracted() *Retracted  { return pr.Retracted }
+func (pr *Promotion) SetRetracted(r *Retracted) { pr.Retracted = r }
+
 func (m *Merge) ObjectType() Type          { return TypeMerge }
 func (m *Merge) GetRetracted() *Retracted  { return m.Retracted }
 func (m *Merge) SetRetracted(r *Retracted) { m.Retracted = r }

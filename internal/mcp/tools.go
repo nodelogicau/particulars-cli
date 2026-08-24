@@ -29,7 +29,7 @@ func (s *Server) registerTools() {
 		Description: "Record one falsifiable statement about a particular, with evidence in source.document and calibrated confidence. Recall first (knowledge_recall) so you extend or reconcile rather than duplicate. Claims are immutable; correct them with claim_retract + a new claim, or a synthesis."},
 		s.claimAssert)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "claim_retract", Annotations: additive,
-		Description: "Append a retracted block (reason, source, optional superseded_by) to a claim, synthesis, or merge record. Never deletes; provenance is preserved. Syntheses that cite a retracted input become stale until re-synthesised."},
+		Description: "Append a retracted block (reason, source, optional superseded_by) to a claim, synthesis, merge, or promotion record. Retracting a promotion returns the objects it covered to the scope they would have had without it. Never deletes; provenance is preserved. Syntheses that cite a retracted input become stale until re-synthesised."},
 		s.claimRetract)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "synthesis_create", Annotations: additive,
 		Description: "Record a synthesis you have already reasoned: inputs with roles (thesis = the belief challenged, antithesis = the challenger; weight primary|qualifying), content carrying the reasoning, and the mandatory unresolved — state what remains open, or exactly 'None identified'. A synthesis is itself a claim and becomes the current belief for its particular."},
@@ -43,6 +43,9 @@ func (s *Server) registerTools() {
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "lineage_trace", Annotations: readOnly,
 		Description: "Provenance tree of a claim or synthesis: inputs with roles, recursively, including retracted ancestors and their superseded_by successors."},
 		s.lineageTrace)
+	sdk.AddTool(s.srv, &sdk.Tool{Name: "knowledge_publish", Annotations: additive,
+		Description: "Share claims and syntheses more widely by writing a promotion record. Claims are immutable, so scope is never rewritten: effective scope is the asserted scope widened by the promotions covering an object. Promotion may only widen — reduce exposure by retracting the promotion, not by promoting downwards — and never cascades, so promote a synthesis's inputs too when the chain should be traversable. Names objects by id only. Explicit and deliberate; not a default."},
+		s.knowledgePublish)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "topics_list", Annotations: readOnly,
 		Description: "(particulars extension, not part of the DKF tool set) List topic tags in use with counts, so you reuse existing tags rather than inventing near-duplicates."},
 		s.topicsList)
@@ -222,6 +225,49 @@ func (s *Server) particularMerge(ctx context.Context, req *sdk.CallToolRequest, 
 	}
 	sides := []map[string]any{{"uri": ua, "particular": ida}, {"uri": ub, "particular": idb}}
 	return okResult("Merged " + m.ID + ": " + ua + " = " + ub), map[string]any{"merge": m, "sides": sides, "path": s.rel(m.ID)}, nil
+}
+
+// --- promotion ---------------------------------------------------------------
+
+type publishIn struct {
+	ClaimIDs []string  `json:"claim_ids" jsonschema:"ids of the claims and syntheses to share more widely; ids only, never labels"`
+	Scope    string    `json:"scope" jsonschema:"the scope to widen to: personal, organisation, or public"`
+	Reason   string    `json:"reason,omitempty" jsonschema:"why these may be shared more widely"`
+	Source   *sourceIn `json:"source,omitempty"`
+}
+
+func (s *Server) knowledgePublish(ctx context.Context, req *sdk.CallToolRequest, in publishIn) (*sdk.CallToolResult, any, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(in.ClaimIDs) == 0 {
+		return errResult(apperr.Usage("claim_ids: name at least one claim or synthesis to promote")), nil, nil
+	}
+	if !dkf.ValidScope(dkf.Scope(in.Scope)) {
+		return errResult(apperr.Usage("invalid scope %q: must be personal, organisation, or public", in.Scope)), nil, nil
+	}
+	for _, id := range in.ClaimIDs {
+		if !dkf.IsAssertionID(id) {
+			return errResult(apperr.Usage("%q is not a claim or synthesis id; promotion names objects by id, never by label", id)), nil, nil
+		}
+	}
+	src, err := s.source(req, in.Source, false)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	pr, err := s.ws.CreatePromotion(in.ClaimIDs, dkf.Scope(in.Scope), in.Reason, src, time.Now().UTC().Truncate(time.Second))
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	g, err := s.load()
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	warnings := query.ScopeFindingsForPromotion(g, pr)
+	out := map[string]any{"promotion": pr, "path": s.rel(pr.ID)}
+	if len(warnings) > 0 {
+		out["warnings"] = warnings
+	}
+	return okResult(fmt.Sprintf("Promoted %d object(s) to %s", len(pr.Claims), pr.Scope)), out, nil
 }
 
 // --- claims -----------------------------------------------------------------

@@ -18,7 +18,7 @@ func (a *app) retractCmd() *cobra.Command { return a.buildRetractCmd(false) }
 func (a *app) buildRetractCmd(alias bool) *cobra.Command {
 	var reason, supersededBy string
 	var prov provenanceFlags
-	short := "Mark a claim, synthesis, or merge record retracted (append-only; never deletes)"
+	short := "Mark a claim, synthesis, merge, or promotion retracted (append-only; never deletes)"
 	if alias {
 		short = "Alias of `particulars retract` (kept for compatibility)"
 	}
@@ -26,9 +26,12 @@ func (a *app) buildRetractCmd(alias bool) *cobra.Command {
 		Use:   "retract <id> --reason <text> [--superseded-by <id>] [flags]",
 		Short: short,
 		Long: `Appends a retracted block to the object's own file; nothing is deleted or
-rewritten. Claims, syntheses, and merge records can be retracted. For a
-typo-grade correction, assert the corrected claim first and point at it with
---superseded-by; merges are undone, not superseded.`,
+rewritten. Claims, syntheses, merge records, and promotion records can be
+retracted. For a typo-grade correction, assert the corrected claim first and
+point at it with --superseded-by; merges and promotions are undone, not
+superseded. Retracting a promotion returns the objects it covered to the scope
+they would have had without it — which stops future readers, but cannot recall
+what an external consumer has already fetched.`,
 		Args: cobra.ExactArgs(1),
 		RunE: a.run(func(cmd *cobra.Command, args []string) error {
 			id := args[0]
@@ -36,11 +39,11 @@ typo-grade correction, assert the corrected claim first and point at it with
 				return usageErr("--reason is required")
 			}
 			if !dkf.IsRetractableID(id) {
-				return usageErr("%q is not a claim, synthesis, or merge id", id)
+				return usageErr("%q is not a claim, synthesis, merge, or promotion id", id)
 			}
 			t, _ := dkf.TypeOfID(id)
-			if t == dkf.TypeMerge && supersededBy != "" {
-				return usageErr("--superseded-by is not allowed for merge records; a merge is undone, not superseded")
+			if (t == dkf.TypeMerge || t == dkf.TypePublish) && supersededBy != "" {
+				return usageErr("--superseded-by is not allowed for %s records; they are undone, not superseded", t)
 			}
 			ws, err := a.openWorkspace()
 			if err != nil {

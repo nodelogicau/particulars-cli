@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- **Promotion records and effective scope.** `particulars publish <id>… --scope <s>`
+  writes `publishes/pub_….yaml` naming claims and syntheses to share more widely.
+  Claims are immutable, so scope is never rewritten: an object's *effective* scope
+  is its asserted scope widened by the non-retracted promotions covering it. A
+  workspace written entirely at `personal` becomes exportable by promotion, keeping
+  every id and the whole lineage — which is what
+  [particulars#14](https://github.com/nodelogicau/particulars/issues/14) asked for,
+  after this implementation's own Graph export produced zero items from 38 claims.
+- **Promotion may only widen**, measured against asserted scope so that a record's
+  validity never depends on the order records were written. Reduce exposure by
+  retracting the promotion, not by promoting downwards. **Promotion does not
+  cascade** to a synthesis's inputs, and there is deliberately no flag that
+  promotes a chain in one step — that is the silent lineage-widening the rule
+  exists to prevent.
+- `recall --scope`, `topics --scope`, `export --format graph`, and
+  `export --format dot|mermaid --scope` all filter on effective scope. Index
+  entries for promotions carry `claims` and `scope`, so effective scope is
+  computable from `index.yaml` without opening an object file.
+- `scope_wider_than_inputs` now compares **effective** scope on both sides, and is
+  evaluated at the three points the spec names: on `synthesis create` (reported,
+  never blocking — a wider synthesis is permitted), on promotion, and during
+  `validate`. Comparing asserted scope went wrong in both directions once
+  promotions existed: it warned about inputs promoted to match, and stayed silent
+  when a synthesis was promoted past inputs that were not — the case it exists to
+  catch, and one in which **neither file changes**. The message now names the
+  promotion responsible for a scope.
+- `knowledge_publish` joins the MCP tool list, completing the spec's tool surface
+  at twelve. `retract` accepts `pub_` ids and refuses `--superseded-by` for them,
+  as it does for merges.
+- New warnings `promotion_of_retracted` and `duplicate_promotion`. A workspace with
+  no `publishes/` directory behaves exactly as before.
 - Skill: tell agents to show the shape, not just the diff. When writing a branch
   up for a human, draw each particular touched with `export --format mermaid
   --subject <thing> --depth 2` and paste it into a fenced block — the reviewer

@@ -46,9 +46,9 @@ Copilot therefore inherits the caveats along with the conclusion.
 
 **Never exported:**
 
-- **`personal` knowledge.** Only `organisation` and `public` scopes leave the
-  workspace. `--scope personal` is rejected rather than honoured, so this cannot
-  regress into a flag default.
+- **`personal` knowledge.** Only `organisation` and `public` **effective** scopes
+  leave the workspace. `--scope personal` is rejected rather than honoured, so
+  this cannot regress into a flag default.
 - **Retracted claims, syntheses, and merges.** A retracted synthesis is not the
   belief; the newest standing one is.
 - A particular with nothing exportable produces no item at all.
@@ -60,6 +60,33 @@ summarise them. `particulars validate` warns (`scope_wider_than_inputs`) when a
 synthesis is shareable more widely than an input it reasons from; the export
 honours declared scope and cannot judge what a summary discloses. Treat the
 warning as a prompt to read the synthesis before it is merged.
+
+## Promoting a personal workspace
+
+A workspace whose `defaults.scope` was `personal` exports nothing — every claim
+is withheld, correctly. Claims are immutable, so the fix is not to rewrite them:
+
+```sh
+particulars publish clm_… syn_… --scope organisation --reason "cleared for the docs site"
+```
+
+That writes `publishes/pub_….yaml`. An object's **effective scope** is its
+asserted scope widened by the non-retracted promotions covering it, so the same
+files now export, keeping their ids and their lineage.
+
+Three rules worth knowing before you promote:
+
+- **Promotion may only widen.** A scope narrower than an object's asserted scope
+  is refused. That fixes the direction in which the format fails: a consumer
+  ignoring `/publishes/` withholds something authorised, but can never expose
+  something restricted.
+- **Promotion does not cascade.** Promoting a synthesis leaves its inputs where
+  they are, so Copilot can receive a belief whose supporting claims are absent —
+  `claimCount: 0`. Promote the inputs too when the evidence should travel with
+  the conclusion. There is deliberately no flag that does both in one step.
+- **Retraction stops future readers, not past ones.** Retracting the promotion
+  reverts the effective scope and the next sync deletes the item, but nothing in
+  this format can recall what an external consumer already fetched.
 
 **Data movement:** exported content is copied into Microsoft Graph. If your
 knowledge must stay in place, the alternative is a

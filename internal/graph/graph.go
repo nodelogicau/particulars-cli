@@ -64,12 +64,15 @@ type Options struct {
 }
 
 // exportable reports whether an assertion may leave the workspace: never
-// retracted, never personal, and within Scope when one is given.
-func (o Options) exportable(a dkf.Assertion) bool {
+// retracted, never personal, and within Scope when one is given. Scope here is
+// the EFFECTIVE scope — asserted, widened by any non-retracted promotion — so
+// a workspace written entirely at personal scope becomes exportable by
+// promotion, without re-asserting anything.
+func (o Options) exportable(g *store.Graph, a dkf.Assertion) bool {
 	if a.GetRetracted() != nil {
 		return false
 	}
-	sc := a.GetContext().Scope
+	sc := g.EffectiveScope(a.ObjectID())
 	if sc == dkf.ScopePersonal || sc == "" {
 		return false
 	}
@@ -88,7 +91,7 @@ func Build(g *store.Graph, ws *store.Workspace, o Options) []Line {
 		// another particular's claims to this item's title and url.
 		var kept []dkf.Assertion
 		for _, a := range g.BySubject[p.ID] {
-			if o.exportable(a) {
+			if o.exportable(g, a) {
 				kept = append(kept, a)
 			}
 		}
@@ -124,7 +127,7 @@ func item(g *store.Graph, ws *store.Workspace, p *dkf.Particular, kept []dkf.Ass
 	cur, reconciled := belief(g, kept)
 	return Item{
 		ACL:        grantEveryone(),
-		Properties: properties(ws, p, kept, cur, reconciled, o),
+		Properties: properties(g, ws, p, kept, cur, reconciled, o),
 		Content:    Content{Value: Brief(p, kept, cur, reconciled), Type: "text"},
 	}
 }
@@ -194,7 +197,7 @@ func plural(n int, word string) string {
 	return fmt.Sprintf("%d %ss", n, word)
 }
 
-func properties(ws *store.Workspace, p *dkf.Particular, kept []dkf.Assertion, cur *dkf.Synthesis, reconciled map[string]bool, o Options) Properties {
+func properties(g *store.Graph, ws *store.Workspace, p *dkf.Particular, kept []dkf.Assertion, cur *dkf.Synthesis, reconciled map[string]bool, o Options) Properties {
 	var topics, authors []string
 	seenTopic, seenAuthor := map[string]bool{}, map[string]bool{}
 	var latest time.Time
@@ -214,7 +217,7 @@ func properties(ws *store.Workspace, p *dkf.Particular, kept []dkf.Assertion, cu
 			seenAuthor[au] = true
 			authors = append(authors, au)
 		}
-		if ctx.Scope == dkf.ScopePublic {
+		if g.EffectiveScope(a.ObjectID()) == dkf.ScopePublic {
 			scope = dkf.ScopePublic
 		}
 		if ts := a.GetTimestamp(); ts.After(latest) {

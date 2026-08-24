@@ -112,7 +112,9 @@ not a transfer to a third party, and a diagram silently missing half the graph
 would misrepresent the reasoning it claims to show.
 
 `--scope organisation` or `--scope public` narrows it when the drawing is going
-somewhere less private.
+somewhere less private. Scope here is **effective** scope — asserted, widened by
+any promotion covering the object — so a claim someone published is drawn by a
+narrowed diagram even though its file still reads `personal`.
 
 **A diagram discloses whatever it contains.** Publishing one — in a pull request
 comment, a wiki, a slide — is the same judgement as publishing the objects

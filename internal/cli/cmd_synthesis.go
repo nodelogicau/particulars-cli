@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
+	"github.com/nodelogicau/particulars-cli/internal/query"
 )
 
 func (a *app) synthesisCmd() *cobra.Command {
@@ -134,6 +135,15 @@ id), so a backdated synthesis does not displace a newer one.`,
 			}
 			if err := ws.UpsertIndex(s); err != nil {
 				return err
+			}
+			// The spec evaluates scope_wider_than_inputs at create time as well
+			// as during validate — reported, never blocking: a wider synthesis
+			// is permitted, and refusing it would push authors toward writing
+			// standalone claims with no inputs, losing the lineage.
+			if g2, err := loadGraph(ws); err == nil {
+				if msg := query.ScopeWiderThanInputs(g2, s); msg != "" {
+					warnings = append(warnings, msg)
+				}
 			}
 			if warnings == nil {
 				warnings = []string{}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
 	"github.com/nodelogicau/particulars-cli/internal/store"
@@ -34,11 +33,14 @@ const (
 	CodeLegacyID          = "legacy_id"
 	CodeUnknownMergeURI   = "unknown_merge_uri"
 	CodeDuplicateMerge    = "duplicate_merge"
-	CodeInvalidBaseURI    = "invalid_base_uri"
-	// CodeScopeWiderThanInputs: a synthesis is shareable more widely than the
-	// assertions it reasons from, so it can carry their substance past the
-	// boundary that withholds them.
-	CodeScopeWiderThanInputs = "scope_wider_than_inputs"
+	// CodePromotionOfRetracted: a live promotion covers a withdrawn object. It
+	// grants nothing, but it usually means the retraction came after.
+	CodePromotionOfRetracted = "promotion_of_retracted"
+	// CodeDuplicatePromotion: two live promotions grant the same object the
+	// same scope. Valid — promotion may only widen, and this widens nothing —
+	// but redundant.
+	CodeDuplicatePromotion = "duplicate_promotion"
+	CodeInvalidBaseURI     = "invalid_base_uri"
 )
 
 // Finding is one validation result.
@@ -114,6 +116,46 @@ func Validate(w *store.Workspace) (Findings, error) {
 		}
 		pairs[[2]string{a, b}] = append(pairs[[2]string{a, b}], m.ID)
 	}
+	// Promotions: the record's own fields are checked by dkf.ValidatePromotion
+	// on load; here we check what needs the workspace.
+	type promoKey struct{ id, scope string }
+	promoted := map[promoKey][]string{}
+	for _, pr := range g.SortedPromotions() {
+		if pr.Retracted != nil {
+			continue
+		}
+		path := g.Files[pr.ID]
+		for _, id := range pr.Claims {
+			a := g.Assertion(id)
+			if a == nil {
+				if dkf.IsAssertionID(id) {
+					add(SeverityError, path, CodeDanglingReference, fmt.Sprintf("promoted object %s does not exist", id))
+				}
+				continue
+			}
+			// Widen-only is measured against the ASSERTED scope, so that a
+			// record's validity never depends on what else has been written.
+			if asserted := a.GetContext().Scope; dkf.ScopeRank(pr.Scope) < dkf.ScopeRank(asserted) {
+				add(SeverityError, path, dkf.CodeInvalidPromotion, fmt.Sprintf(
+					"promotion may only widen: %s is asserted %s, wider than this record's %s", id, asserted, pr.Scope))
+			}
+			if a.GetRetracted() != nil {
+				add(SeverityWarning, path, CodePromotionOfRetracted, fmt.Sprintf(
+					"%s is retracted, so this promotion grants nothing; retract the promotion too if that was intended", id))
+			}
+			k := promoKey{id, string(pr.Scope)}
+			promoted[k] = append(promoted[k], pr.ID)
+		}
+	}
+	for k, ids := range promoted {
+		if len(ids) > 1 {
+			for _, id := range ids {
+				add(SeverityWarning, g.Files[id], CodeDuplicatePromotion, fmt.Sprintf(
+					"%s is promoted to %s by %d records: %v", k.id, k.scope, len(ids), ids))
+			}
+		}
+	}
+
 	for pair, ids := range pairs {
 		if len(ids) > 1 {
 			for _, id := range ids {
@@ -156,22 +198,8 @@ func Validate(w *store.Workspace) (Findings, error) {
 				add(SeverityError, path, CodeDanglingReference, fmt.Sprintf("input %s does not exist", in.ID))
 			}
 		}
-		if s.Retracted == nil {
-			var narrower []string
-			for _, in := range s.Inputs {
-				child := g.Assertion(in.ID)
-				if child == nil {
-					continue
-				}
-				if dkf.ScopeRank(child.GetContext().Scope) < dkf.ScopeRank(s.Context.Scope) {
-					narrower = append(narrower, fmt.Sprintf("%s (%s)", in.ID, child.GetContext().Scope))
-				}
-			}
-			if len(narrower) > 0 {
-				add(SeverityWarning, path, CodeScopeWiderThanInputs, fmt.Sprintf(
-					"synthesis %s is %s but reasons from narrower input(s) %s; its content can carry their substance somewhere those inputs are withheld",
-					s.ID, s.Context.Scope, strings.Join(narrower, ", ")))
-			}
+		if msg := ScopeWiderThanInputs(g, s); msg != "" {
+			add(SeverityWarning, path, CodeScopeWiderThanInputs, msg)
 		}
 		if s.Retracted == nil && CitesRetracted(g, s, staleMemo) {
 			add(SeverityWarning, path, CodeStaleSynthesis, fmt.Sprintf("synthesis %s cites a retracted input (directly or transitively); consider re-synthesis", s.ID))

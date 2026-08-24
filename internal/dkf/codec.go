@@ -39,6 +39,8 @@ func Encode(obj Object) ([]byte, error) {
 		root = synthesisNode(o)
 	case *Merge:
 		root = mergeNode(o)
+	case *Promotion:
+		root = promotionNode(o)
 	default:
 		return nil, fmt.Errorf("dkf: cannot encode %T", obj)
 	}
@@ -205,6 +207,25 @@ func synthesisNode(s *Synthesis) *yaml.Node {
 	return m
 }
 
+func promotionNode(pr *Promotion) *yaml.Node {
+	m := mapping()
+	addStrAlways(m, "id", pr.ID)
+	addStrAlways(m, "type", string(TypePublish))
+	claims := sequence()
+	for _, c := range pr.Claims {
+		claims.Content = append(claims.Content, scalar(c))
+	}
+	addKV(m, "claims", claims)
+	addStrAlways(m, "scope", string(pr.Scope))
+	addStr(m, "reason", pr.Reason)
+	addKV(m, "source", sourceNode(pr.Source))
+	addTime(m, "timestamp", pr.Timestamp)
+	if pr.Retracted != nil {
+		addKV(m, "retracted", retractedNode(pr.Retracted))
+	}
+	return m
+}
+
 func mergeNode(mg *Merge) *yaml.Node {
 	m := mapping()
 	addStrAlways(m, "id", mg.ID)
@@ -297,6 +318,12 @@ func Decode(data []byte) (Object, error) {
 			return nil, fmt.Errorf("parse merge: %w", err)
 		}
 		return &m, nil
+	case TypePublish:
+		var pr Promotion
+		if err := yaml.Unmarshal(data, &pr); err != nil {
+			return nil, fmt.Errorf("parse promotion: %w", err)
+		}
+		return &pr, nil
 	case "":
 		return nil, fmt.Errorf("missing type field")
 	default:

@@ -88,7 +88,8 @@ modifier inside double quotes too, so `"$id:thesis"` silently becomes
 | Why is it believed | `particulars lineage <id> [--depth <n>] --json` → nested tree of inputs with roles |
 | What needs work | `particulars conflicts ["<thing>"] --json` → `{reports: [{particular, current, unsynthesised, stale, priority}]}` |
 | Show the shape | `particulars export --format mermaid --subject "<thing>" [--depth 2] [--include-retracted]` → a diagram to paste into a PR (`--format dot` for Graphviz) |
-| Withdraw | `particulars retract <id> --reason "<why>" [--superseded-by <id>] --json` — claims, syntheses, or merges; append-only, never deletes (`claim retract` is a deprecated alias) |
+| Withdraw | `particulars retract <id> --reason "<why>" [--superseded-by <id>] --json` — claims, syntheses, merges, or promotions; append-only, never deletes (`claim retract` is a deprecated alias) |
+| Share it wider | `particulars publish <id>... --scope organisation\|public [--reason "<why>"] --json` — ids only; widens, never narrows, never cascades to a synthesis's inputs |
 | Same thing, two URIs | `particulars particular merge <a> <b> [--reason "<why>"] --json` — either side may be a bare URI with no local particular; undo with `retract <mrg_id>` |
 | Health check | `particulars validate --json`; `particulars index --check --json` |
 
@@ -120,9 +121,13 @@ On failure stderr carries `{"error": {"code", "message"}}`.
 - A synthesis is a claim: it can be cited as an input, recalled, and retracted. `conflicts` marks a synthesis **stale** when one of its inputs is retracted; re-synthesise rather than editing.
 - **A synthesis does not inherit its inputs' scope.** If you reconcile
   `personal` claims into an `organisation` synthesis, the claims stay withheld
-  but your reasoning is shared — and your `content` may restate them. `validate`
-  warns (`scope_wider_than_inputs`); either write the synthesis at the narrowest
-  input's scope, or keep the wider one free of what the narrower inputs say.
+  but your reasoning is shared — and your `content` may restate them. This is
+  permitted, not an error; `validate` warns (`scope_wider_than_inputs`) and so
+  does `synthesis create`. Three ways out, in the order usually worth trying:
+  **promote the inputs** (`particulars publish <id>… --scope <s>`), which keeps
+  the conclusion shareable and its evidence with it; write the synthesis at the
+  narrowest input's scope, which demotes the conclusion; or keep the wider
+  synthesis free of what the narrower inputs actually say.
 - The tool does not judge contradiction. `unsynthesised` means "not yet reconciled into the current belief"; you decide whether it conflicts or merely extends. `recall` marks each entry `current` or `unsynthesised` so you can see this without running `conflicts`.
 - Merged particulars are one class: `recall`/`conflicts` on any member cover all members, and each entry keeps its own `subject`.
 

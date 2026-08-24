@@ -452,3 +452,176 @@ func TestPointerDiscovery(t *testing.T) {
 		t.Errorf("flag: %+v", res)
 	}
 }
+
+func mkScopedClaim(t *testing.T, w *Workspace, subject, content string, sc dkf.Scope) *dkf.Claim {
+	t.Helper()
+	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: subject, Content: content,
+		Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: sc}, Timestamp: ts}
+	if err := w.Create(c); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.UpsertIndex(c); err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestEffectiveScope(t *testing.T) {
+	w := newWS(t)
+	p := mkParticular(t, w, "Project X")
+	priv := mkScopedClaim(t, w, p.ID, "a", dkf.ScopePersonal)
+	other := mkScopedClaim(t, w, p.ID, "b", dkf.ScopePersonal)
+	src := dkf.Source{Author: "ben"}
+	now := time.Now().UTC()
+
+	// No promotions: effective == asserted, everywhere.
+	g, err := w.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := g.EffectiveScope(priv.ID); got != dkf.ScopePersonal {
+		t.Errorf("unpromoted claim: %q", got)
+	}
+	if len(g.Promotions) != 0 || len(g.PromotionsFor(priv.ID)) != 0 {
+		t.Error("a workspace with no publishes/ should load no promotions")
+	}
+
+	// The widest promotion wins, regardless of the order written.
+	if _, err := w.CreatePromotion([]string{priv.ID}, dkf.ScopePublic, "", src, now); err != nil {
+		t.Fatal(err)
+	}
+	second, err := w.CreatePromotion([]string{priv.ID}, dkf.ScopeOrganisation, "redundant but valid", src, now)
+	if err != nil {
+		t.Fatalf("a narrower-than-existing but not narrowing promotion must be allowed: %v", err)
+	}
+	g, _ = w.Load()
+	if got := g.EffectiveScope(priv.ID); got != dkf.ScopePublic {
+		t.Errorf("widest promotion should win: %q", got)
+	}
+	if got := g.EffectiveScope(other.ID); got != dkf.ScopePersonal {
+		t.Errorf("promotion must not leak to an uncovered object: %q", got)
+	}
+	if n := len(g.PromotionsFor(priv.ID)); n != 2 {
+		t.Errorf("PromotionsFor: want 2, got %d", n)
+	}
+
+	// Retracting a promotion reverts what it granted.
+	if _, err := w.Retract(second.ID, &dkf.Retracted{Timestamp: now, Reason: "undo", Source: src}); err != nil {
+		t.Fatal(err)
+	}
+	g, _ = w.Load()
+	if got := g.EffectiveScope(priv.ID); got != dkf.ScopePublic {
+		t.Errorf("the wider promotion still stands: %q", got)
+	}
+	for _, pr := range g.SortedPromotions() {
+		if pr.Retracted == nil {
+			if _, err := w.Retract(pr.ID, &dkf.Retracted{Timestamp: now, Reason: "undo", Source: src}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	g, _ = w.Load()
+	if got := g.EffectiveScope(priv.ID); got != dkf.ScopePersonal {
+		t.Errorf("with every promotion retracted the claim reverts: %q", got)
+	}
+}
+
+func TestPromotionMayOnlyWiden(t *testing.T) {
+	w := newWS(t)
+	p := mkParticular(t, w, "Project X")
+	pub := mkScopedClaim(t, w, p.ID, "already public", dkf.ScopePublic)
+	priv := mkScopedClaim(t, w, p.ID, "private", dkf.ScopePersonal)
+	src := dkf.Source{Author: "ben"}
+	now := time.Now().UTC()
+
+	if _, err := w.CreatePromotion([]string{pub.ID}, dkf.ScopeOrganisation, "", src, now); err == nil {
+		t.Error("narrowing a public claim to organisation must be refused")
+	} else if !strings.Contains(err.Error(), "only widen") {
+		t.Errorf("the error should say why: %v", err)
+	}
+	// Refused before writing: nothing lands on disk.
+	g, _ := w.Load()
+	if len(g.Promotions) != 0 {
+		t.Error("a refused promotion must not be written")
+	}
+	// Widening a mixed set is fine as long as no member is narrowed.
+	if _, err := w.CreatePromotion([]string{priv.ID}, dkf.ScopePublic, "", src, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.CreatePromotion([]string{priv.ID, pub.ID}, dkf.ScopePublic, "", src, now); err != nil {
+		t.Errorf("promoting both to public is not narrowing either: %v", err)
+	}
+	// Only assertions can be promoted.
+	if _, err := w.CreatePromotion([]string{p.ID}, dkf.ScopePublic, "", src, now); err == nil {
+		t.Error("a particular carries no scope and must be refused")
+	}
+	if _, err := w.CreatePromotion([]string{"clm_01916f03-b680-71a3-974f-9401ba374e1f"}, dkf.ScopePublic, "", src, now); !errors.Is(err, ErrNotFound) {
+		t.Errorf("an unknown id should be ErrNotFound, got %v", err)
+	}
+	if _, err := w.CreatePromotion(nil, dkf.ScopePublic, "", src, now); err == nil {
+		t.Error("an empty promotion must be refused")
+	}
+}
+
+func TestPromotionIndexEntry(t *testing.T) {
+	w := newWS(t)
+	p := mkParticular(t, w, "Project X")
+	a := mkScopedClaim(t, w, p.ID, "one", dkf.ScopePersonal)
+	b := mkScopedClaim(t, w, p.ID, "two", dkf.ScopePersonal)
+	pr, err := w.CreatePromotion([]string{a.ID, b.ID}, dkf.ScopeOrganisation, "", dkf.Source{Author: "ben"}, ts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, _, err := w.ReadIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got *Entry
+	for i := range idx.Entries {
+		if idx.Entries[i].ID == pr.ID {
+			got = &idx.Entries[i]
+		}
+	}
+	if got == nil {
+		t.Fatal("the promotion should be indexed")
+	}
+	if got.Type != dkf.TypePublish || got.Scope != string(dkf.ScopeOrganisation) || len(got.Claims) != 2 {
+		t.Fatalf("promotion entry: %+v", got)
+	}
+
+	// Effective scope must be computable from index.yaml alone: a consumer
+	// that never opens an object file gets the same answer as the graph.
+	fromIndex := map[string]dkf.Scope{}
+	for _, e := range idx.Entries {
+		if e.Retracted || e.Scope == "" {
+			continue
+		}
+		if e.Type == dkf.TypePublish {
+			for _, id := range e.Claims {
+				if dkf.ScopeRank(dkf.Scope(e.Scope)) > dkf.ScopeRank(fromIndex[id]) {
+					fromIndex[id] = dkf.Scope(e.Scope)
+				}
+			}
+			continue
+		}
+		if dkf.ScopeRank(dkf.Scope(e.Scope)) > dkf.ScopeRank(fromIndex[e.ID]) {
+			fromIndex[e.ID] = dkf.Scope(e.Scope)
+		}
+	}
+	g, err := w.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{a.ID, b.ID} {
+		if fromIndex[id] != g.EffectiveScope(id) {
+			t.Errorf("%s: index says %q, graph says %q", id, fromIndex[id], g.EffectiveScope(id))
+		}
+	}
+	// The index rebuild is stable with promotions present.
+	if _, err := w.RebuildIndex(); err != nil {
+		t.Fatal(err)
+	}
+	if diff, err := w.CheckIndex(); err != nil || !diff.Clean() {
+		t.Errorf("index should be current after rebuild: %+v %v", diff, err)
+	}
+}

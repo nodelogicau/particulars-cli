@@ -1260,3 +1260,136 @@ func min2(a, b int) int {
 	}
 	return b
 }
+
+func TestPublishAndEffectiveScope(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+	t.Setenv("DKF_WORKSPACE", ws)
+	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
+	run(t, "", "particular", "define", "--label", "Project X", "--json")
+	claim := func(content string, extra ...string) string {
+		t.Helper()
+		r := run(t, "", append([]string{"claim", "assert", "--subject", "Project X", "--content", content, "--json"}, extra...)...)
+		if r.code != 0 {
+			t.Fatalf("assert: %+v", r)
+		}
+		return r.js["claim"].(map[string]any)["id"].(string)
+	}
+	a, b := claim("microservices since 2022"), claim("monolith since Nov 2024")
+	r := run(t, "", "synthesis", "create", "--subject", "Project X", "--input", a+":thesis", "--input", b+":antithesis",
+		"--unresolved", "None identified", "--content", "consolidated Nov 2024", "--json")
+	if r.code != 0 {
+		t.Fatalf("synthesis: %+v", r)
+	}
+	syn := r.js["synthesis"].(map[string]any)["id"].(string)
+
+	// Everything is personal, so nothing is exportable.
+	if e := run(t, "", "export", "--format", "graph", "--json"); e.js["exported"].(float64) != 0 {
+		t.Fatalf("a personal workspace should export nothing: %+v", e.js)
+	}
+
+	// Promotion is by id only, and only of assertions.
+	if p := run(t, "", "publish", "Project X", "--scope", "public", "--json"); p.code != 2 {
+		t.Errorf("a label must be refused: %+v", p)
+	}
+	if p := run(t, "", "publish", "par_01916f03-b680-71a3-974f-9401ba374e1f", "--scope", "public", "--json"); p.code != 2 {
+		t.Errorf("a particular must be refused: %+v", p)
+	}
+	if p := run(t, "", "publish", "clm_01916f03-b680-71a3-974f-9401ba374e1f", "--scope", "public", "--json"); p.code != 3 {
+		t.Errorf("an unknown id should exit 3: %+v", p)
+	}
+	if p := run(t, "", "publish", a, "--json"); p.code != 2 {
+		t.Errorf("--scope is required: %+v", p)
+	}
+
+	// Promote the belief and its inputs: the workspace becomes exportable
+	// though no object file changed.
+	before, err := os.ReadFile(filepath.Join(ws, "syntheses", syn+".yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := run(t, "", "publish", a, b, syn, "--scope", "organisation", "--reason", "cleared for the docs site", "--json")
+	if p.code != 0 {
+		t.Fatalf("publish: %+v", p)
+	}
+	pr := p.js["promotion"].(map[string]any)
+	if pr["scope"] != "organisation" || len(pr["claims"].([]any)) != 3 {
+		t.Errorf("promotion record: %+v", pr)
+	}
+	if after, _ := os.ReadFile(filepath.Join(ws, "syntheses", syn+".yaml")); !bytes.Equal(before, after) {
+		t.Error("promotion must not modify the object it covers")
+	}
+	e := run(t, "", "export", "--format", "graph", "--json")
+	if e.js["exported"].(float64) != 1 {
+		t.Errorf("after promotion the particular should export: %+v", e.js)
+	}
+	if rc := run(t, "", "recall", "Project X", "--scope", "organisation", "--json"); len(rc.js["entries"].([]any)) != 3 {
+		t.Errorf("recall --scope organisation should see the promoted three: %+v", rc.js["entries"])
+	}
+	if tp := run(t, "", "topics", "--scope", "organisation", "--json"); tp.code != 0 {
+		t.Errorf("topics --scope: %+v", tp)
+	}
+
+	// Widen-only: a claim asserted public cannot be promoted downwards.
+	pub := claim("already public", "--scope", "public")
+	if d := run(t, "", "publish", pub, "--scope", "organisation", "--json"); d.code == 0 {
+		t.Error("narrowing must be refused")
+	} else if !strings.Contains(d.stderr, "only widen") {
+		t.Errorf("the error should say why: %s", d.stderr)
+	}
+
+	// Retracting the promotion reverts exposure.
+	prID := pr["id"].(string)
+	if rr := run(t, "", "retract", prID, "--reason", "withdrawn", "--json"); rr.code != 0 {
+		t.Fatalf("retract: %+v", rr)
+	}
+	if e := run(t, "", "export", "--format", "graph", "--json"); e.js["exported"].(float64) != 1 {
+		// the public claim keeps the particular exportable; the promoted three are gone
+		t.Logf("export after retraction: %+v", e.js)
+	}
+	if rc := run(t, "", "recall", "Project X", "--scope", "organisation", "--json"); len(rc.js["entries"].([]any)) != 0 {
+		t.Errorf("after retraction nothing is organisation-scoped: %+v", rc.js["entries"])
+	}
+	if s := run(t, "", "retract", prID, "--reason", "x", "--superseded-by", a, "--json"); s.code != 2 {
+		t.Errorf("--superseded-by must be refused for a promotion: %+v", s)
+	}
+	if v := run(t, "", "validate", "--json"); v.code != 0 {
+		t.Errorf("workspace should validate: %+v", v)
+	}
+}
+
+func TestSynthesisCreateWarnsOnWiderScope(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+	t.Setenv("DKF_WORKSPACE", ws)
+	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
+	run(t, "", "particular", "define", "--label", "Project X", "--json")
+	r := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "a personal note", "--json")
+	priv := r.js["claim"].(map[string]any)["id"].(string)
+
+	s := run(t, "", "synthesis", "create", "--subject", "Project X", "--input", priv+":thesis",
+		"--scope", "organisation", "--unresolved", "None identified", "--content", "shareable conclusion", "--json")
+	if s.code != 0 {
+		t.Fatalf("a wider synthesis must still be written: %+v", s)
+	}
+	warnings, _ := s.js["warnings"].([]any)
+	var found bool
+	for _, w := range warnings {
+		if strings.Contains(w.(string), "narrower input") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("create should report scope_wider_than_inputs: %+v", s.js["warnings"])
+	}
+	// Promoting the input clears it for validate, with no file rewritten.
+	if p := run(t, "", "publish", priv, "--scope", "organisation", "--json"); p.code != 0 {
+		t.Fatalf("publish: %+v", p)
+	}
+	v := run(t, "", "validate", "--json")
+	for _, f := range v.js["findings"].([]any) {
+		if f.(map[string]any)["code"] == "scope_wider_than_inputs" {
+			t.Errorf("promoting the input should have cleared the warning: %+v", f)
+		}
+	}
+}

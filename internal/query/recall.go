@@ -35,12 +35,12 @@ type Entry struct {
 	Method        string      `json:"method,omitempty"`
 }
 
-func entryFor(a dkf.Assertion) Entry {
+func entryFor(g *store.Graph, a dkf.Assertion) Entry {
 	ctx := a.GetContext()
 	e := Entry{
 		ID: a.ObjectID(), Type: a.ObjectType(), Subject: a.SubjectID(), Content: a.GetContent(), Source: a.GetSource(),
 		Timestamp: dkf.FormatTime(a.GetTimestamp()), Confidence: a.GetConfidence(),
-		Scope: ctx.Scope, Topics: ctx.Topics, Retracted: a.GetRetracted() != nil,
+		Scope: g.EffectiveScope(a.ObjectID()), Topics: ctx.Topics, Retracted: a.GetRetracted() != nil,
 	}
 	if s, ok := a.(*dkf.Synthesis); ok {
 		e.Inputs = s.Inputs
@@ -112,7 +112,7 @@ func Recall(g *store.Graph, opts RecallOptions) []Entry {
 			continue
 		}
 		ctx := a.GetContext()
-		if opts.Scope != "" && ctx.Scope != opts.Scope {
+		if opts.Scope != "" && g.EffectiveScope(a.ObjectID()) != opts.Scope {
 			continue
 		}
 		if !hasAllTopics(ctx.Topics, opts.Topics) {
@@ -139,7 +139,7 @@ func Recall(g *store.Graph, opts RecallOptions) []Entry {
 	}
 	out := make([]Entry, 0, len(ordered))
 	for _, a := range ordered {
-		e := entryFor(a)
+		e := entryFor(g, a)
 		st := stateOf(a.SubjectID())
 		e.Current = st.current == e.ID
 		e.Unsynthesised = !e.Retracted && !e.Current && !st.reconciled[e.ID]

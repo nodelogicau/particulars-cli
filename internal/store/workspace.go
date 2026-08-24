@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -196,7 +197,7 @@ func Init(dir string, cfg Config) (*Workspace, error) {
 }
 
 // allTypes lists every object and record type in load order.
-var allTypes = []dkf.Type{dkf.TypeParticular, dkf.TypeClaim, dkf.TypeSynthesis, dkf.TypeMerge}
+var allTypes = []dkf.Type{dkf.TypeParticular, dkf.TypeClaim, dkf.TypeSynthesis, dkf.TypeMerge, dkf.TypePublish}
 
 func dirFor(t dkf.Type) string {
 	switch t {
@@ -208,6 +209,8 @@ func dirFor(t dkf.Type) string {
 		return "syntheses"
 	case dkf.TypeMerge:
 		return "merges"
+	case dkf.TypePublish:
+		return "publishes"
 	}
 	return ""
 }
@@ -481,6 +484,59 @@ func (w *Workspace) CreateMerge(uriA, uriB, reason string, src dkf.Source, ts ti
 		return nil, err
 	}
 	return m, nil
+}
+
+// CreatePromotion writes a promotion record covering the named claims and
+// syntheses. Promotion may only widen: the scope is compared against each
+// object's ASSERTED scope, not its effective one, so that a record's validity
+// does not depend on the order records were written.
+func (w *Workspace) CreatePromotion(ids []string, scope dkf.Scope, reason string, src dkf.Source, ts time.Time) (*dkf.Promotion, error) {
+	if len(ids) == 0 {
+		return nil, &dkf.Problem{Code: dkf.CodeInvalidPromotion, Field: "claims", Message: "name at least one claim or synthesis to promote"}
+	}
+	if !dkf.ValidScope(scope) {
+		return nil, &dkf.Problem{Code: dkf.CodeInvalidEnum, Field: "scope", Message: fmt.Sprintf("invalid scope %q: must be personal, organisation, or public", scope)}
+	}
+	g, err := w.Load()
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	clean := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		t, err := dkf.TypeOfID(id)
+		if err != nil {
+			return nil, &dkf.Problem{Code: dkf.CodeInvalidID, Field: "claims", Message: fmt.Sprintf("%q is not a valid id", id)}
+		}
+		if t != dkf.TypeClaim && t != dkf.TypeSynthesis {
+			return nil, &dkf.Problem{Code: dkf.CodeInvalidPromotion, Field: "claims", Message: fmt.Sprintf("%s is a %s; only claims and syntheses carry a scope to promote", id, t)}
+		}
+		a := g.Assertion(id)
+		if a == nil {
+			return nil, fmt.Errorf("%s: %w", id, ErrNotFound)
+		}
+		if asserted := a.GetContext().Scope; dkf.ScopeRank(scope) < dkf.ScopeRank(asserted) {
+			return nil, &dkf.Problem{Code: dkf.CodeInvalidPromotion, Field: "scope", Message: fmt.Sprintf(
+				"promotion may only widen: %s is asserted %s, which is wider than %s. Retract the object, or retract a promotion, to reduce exposure", id, asserted, scope)}
+		}
+		clean = append(clean, id)
+	}
+	sort.Strings(clean)
+	pr := &dkf.Promotion{ID: dkf.NewID(dkf.TypePublish), Claims: clean, Scope: scope, Reason: reason, Source: src, Timestamp: ts}
+	if ps := dkf.ValidatePromotion(pr); len(ps) > 0 {
+		return nil, ps
+	}
+	if err := w.Create(pr); err != nil {
+		return nil, err
+	}
+	if err := w.UpsertIndex(pr); err != nil {
+		return nil, err
+	}
+	return pr, nil
 }
 
 // --- low-level writes ----------------------------------------------------
