@@ -15,7 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DKF_WORKSPACE: ${{ github.workspace }}/knowledge
-      PARTICULARS_VERSION: v0.2.0
+      # Pin at or above the version that wrote the workspace. An older binary
+      # does not read record types it predates: it rebuilds index.yaml without
+      # their entries and reports index_stale, failing the job. Object files
+      # degrade gracefully for an older reader; the index does not.
+      PARTICULARS_VERSION: v0.7.0
     steps:
       - uses: actions/checkout@v4
 

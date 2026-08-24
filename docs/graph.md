@@ -136,7 +136,10 @@ human approved, with its provenance and `unresolved` intact.
 
 4. **Add the workflow**: copy
    [`examples/graph-sync.yml`](examples/graph-sync.yml) into the knowledge
-   repository's `.github/workflows/`.
+   repository's `.github/workflows/`. Pin `PARTICULARS_VERSION` at or above the
+   version that wrote the workspace — an older binary cannot see promotion
+   records, so it would export whatever the asserted scopes allow and quietly
+   publish less than you authorised.
 
 Changing the schema later requires reingesting items — run the workflow with the
 `full` input to re-PUT everything.

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Examples: pin `PARTICULARS_VERSION` to v0.7.0 in both workflows (`dkf-check.yml`
+  was still on v0.2.0) and say why the pin is load-bearing. An older binary does
+  not read record types it predates: `dkf-check` rebuilds `index.yaml` without
+  their entries and fails on `index_stale`, and `graph-sync` cannot see promotion
+  records, so it would publish only what the asserted scopes allow — less than was
+  authorised, quietly. Raised upstream as
+  [particulars#16](https://github.com/nodelogicau/particulars/issues/16).
+
 ## v0.7.0 — promotion records and effective scope
 
 - **Promotion records and effective scope.** `particulars publish <id>… --scope <s>`

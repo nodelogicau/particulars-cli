@@ -32,7 +32,10 @@ concurrency: publish-to-copilot   # never two syncs at once
 
 env:
   CONNECTION_ID: particulars
-  PARTICULARS_VERSION: v0.5.0
+  # Pin at or above the version that wrote the workspace: an older binary does
+  # not read newer record types, and would silently export a narrower set —
+  # promotions it cannot see leave their objects at their asserted scope.
+  PARTICULARS_VERSION: v0.7.0
   SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/
 
 jobs:
