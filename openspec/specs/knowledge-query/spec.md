@@ -41,11 +41,19 @@ Recalling claims and syntheses in lineage order with filters, and tracing the pr
 - **THEN** both claims are returned
 
 ### Requirement: Scope filter
-`--scope <s>` SHALL restrict results to objects whose `context.scope` equals `s`.
+`--scope <s>` SHALL restrict results to objects whose **effective** scope equals `s` — the widest scope named by a non-retracted promotion covering the object, or its asserted `context.scope` when none does. The `scope` reported on each entry SHALL be the effective scope. In a workspace with no promotion records this SHALL be identical to filtering on `context.scope`.
 
-#### Scenario: Public only
+#### Scenario: Filtering by scope
 - **WHEN** `recall "Project X" --scope public` is run
-- **THEN** only objects with `context.scope: public` are returned
+- **THEN** only objects whose effective scope is `public` are returned
+
+#### Scenario: A promoted claim becomes visible to a wider filter
+- **WHEN** a claim asserted `personal` is promoted to `organisation` and `recall --scope organisation` is run
+- **THEN** the claim is returned and its reported `scope` is `organisation`
+
+#### Scenario: Topics honour effective scope
+- **WHEN** `topics --scope organisation` is run in a workspace where a `personal` claim carrying topic `billing` has been promoted to `organisation`
+- **THEN** `billing` is counted
 
 ### Requirement: Lineage trace
 `particulars lineage <id> [--depth <n>]` SHALL return the provenance tree rooted at the given claim or synthesis, recursively expanding each synthesis's `inputs` (with their `role` and `weight`) up to `depth` levels (default unlimited). Retracted ancestors SHALL be included and marked `retracted: true`; when a retracted node's block names a `superseded-by`, the node SHALL carry `superseded_by` with that id, which SHALL NOT be expanded as an input. In JSON mode the result SHALL be a nested object; in text mode an indented tree. An unknown id SHALL exit 3.

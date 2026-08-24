@@ -22,19 +22,19 @@ Emitting a workspace as Microsoft Graph connector payloads so that merged, organ
 - **THEN** it succeeds
 
 ### Requirement: Scope governs what leaves the workspace
-Assertions whose `context.scope` is `personal` SHALL NOT be exported, and SHALL NOT contribute to any item's brief, properties, or counts. A particular with no exportable assertions SHALL produce no item. Exported items SHALL carry `acl: [{"type": "everyone", "value": "everyone", "accessType": "grant"}]`. `--scope <s>` SHALL narrow the export further and SHALL NOT be able to widen it to include `personal`.
+Assertions whose **effective** scope is `personal` SHALL NOT be exported, and SHALL NOT contribute to any item's brief, properties, or counts. Effective scope is the widest scope named by a non-retracted promotion covering the object, or its asserted `context.scope` when none does. A particular with no exportable assertions SHALL produce no item. Exported items SHALL carry `acl: [{"type": "everyone", "value": "everyone", "accessType": "grant"}]`. `--scope <s>` SHALL narrow the export further and SHALL NOT be able to widen it to include `personal`. An item's reported `scope` property SHALL be the widest effective scope contributing to it.
 
 #### Scenario: Personal claims are withheld
 - **WHEN** a particular has one `personal` claim and one `organisation` claim and the export runs
 - **THEN** the item's brief contains the organisation claim and no text from the personal claim, and `claimCount` is 1
 
-#### Scenario: Wholly personal particular
-- **WHEN** every claim about a particular is `personal`
-- **THEN** no item is emitted for that particular
+#### Scenario: Promotion makes a personal workspace exportable
+- **WHEN** every assertion about a particular is asserted `personal`, and its current synthesis and claims are promoted to `organisation`
+- **THEN** the export emits an item carrying that belief and those claims, though no object file changed
 
-#### Scenario: Personal cannot be requested
-- **WHEN** `export --format graph --scope personal` is run
-- **THEN** the command exits with code 2 and writes nothing
+#### Scenario: Retracting a promotion withdraws the item
+- **WHEN** the promotion that made a particular's only assertions exportable is retracted
+- **THEN** the next export emits no item for it and its id is absent from the manifest
 
 ### Requirement: Retracted knowledge is never exported
 Retracted claims, syntheses, and merge records SHALL be excluded from every item. A retracted synthesis SHALL NOT be treated as the current belief. Content that was retracted after a previous export SHALL be absent from the next export of that particular.

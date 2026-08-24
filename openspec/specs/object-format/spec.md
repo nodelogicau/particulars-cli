@@ -7,7 +7,7 @@ Identifier scheme, file naming, deterministic YAML serialisation, create-only wr
 ## Requirements
 
 ### Requirement: Identifier format
-Object and record identifiers SHALL have the form `<prefix>_<uuid>` where `prefix` is `par` for particulars, `clm` for claims, `syn` for syntheses, `mrg` for merge records, and `uuid` is a lowercase, hyphenated, canonical UUID version 7 (RFC 9562). Minting SHALL use a monotonic counter so that identifiers minted by one process are strictly increasing in lexical order. On read, the CLI SHALL accept any identifier matching `^(par|clm|syn|mrg)_[A-Za-z0-9-]+$` so that workspaces written by other implementations remain readable.
+Object and record identifiers SHALL have the form `<prefix>_<uuid>` where `prefix` is `par` for particulars, `clm` for claims, `syn` for syntheses, `mrg` for merge records, `pub` for promotion records, and `uuid` is a lowercase, hyphenated, canonical UUID version 7 (RFC 9562). Minting SHALL use a monotonic counter so that identifiers minted by one process are strictly increasing in lexical order. On read, the CLI SHALL accept any identifier matching `^(par|clm|syn|mrg|pub)_[A-Za-z0-9-]+$` so that workspaces written by other implementations remain readable. The canonical pattern SHALL admit every minted prefix, so that an identifier this implementation mints is never reported as `legacy_id`.
 
 #### Scenario: Minted identifier shape
 - **WHEN** a claim is created
@@ -17,13 +17,9 @@ Object and record identifiers SHALL have the form `<prefix>_<uuid>` where `prefi
 - **WHEN** a merge record is created
 - **THEN** its id starts with `mrg_` followed by a canonical lowercase UUIDv7
 
-#### Scenario: Burst minting preserves order
-- **WHEN** ten claims are created within the same millisecond by one process
-- **THEN** their ids sort lexically in creation order
-
-#### Scenario: Foreign identifier accepted on read
-- **WHEN** a workspace contains `claims/clm_01j9xk2p3q4r5s6t.yaml` with a valid body
-- **THEN** `recall` reads it without error and `validate` reports only a `legacy_id` warning for it
+#### Scenario: Promotion identifier shape
+- **WHEN** a promotion record is created
+- **THEN** its id starts with `pub_` followed by a canonical lowercase UUIDv7, and `validate` reports no `legacy_id` warning for it
 
 ### Requirement: File name matches identifier
 Each object file SHALL be named `<id>.yaml` and live in the directory corresponding to its prefix; the `id` and `type` fields inside the file SHALL agree with the file name and directory.
