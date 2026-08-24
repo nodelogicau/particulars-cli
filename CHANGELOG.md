@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Skill: tell agents to show the shape, not just the diff. When writing a branch
+  up for a human, draw each particular touched with `export --format mermaid
+  --subject <thing> --depth 2` and paste it into a fenced block — the reviewer
+  then sees which claim was cited as the antithesis and whether the synthesis
+  became the current belief, which a list of filenames cannot convey. Carries the
+  two cautions with it: a diagram discloses whatever it contains, and CI may
+  already be posting one.
+
 ## v0.6.0 — draw the workspace
 
 - `particulars export --format dot|mermaid` draws the workspace. With

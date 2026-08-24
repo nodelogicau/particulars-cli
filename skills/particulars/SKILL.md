@@ -86,6 +86,7 @@ modifier inside double quotes too, so `"$id:thesis"` silently becomes
 | Which tags exist | `particulars topics ["<thing>"] --json` → `{topics: [{topic, assertions, particulars}]}`; check before inventing a new tag |
 | Why is it believed | `particulars lineage <id> [--depth <n>] --json` → nested tree of inputs with roles |
 | What needs work | `particulars conflicts ["<thing>"] --json` → `{reports: [{particular, current, unsynthesised, stale, priority}]}` |
+| Show the shape | `particulars export --format mermaid --subject "<thing>" [--depth 2] [--include-retracted]` → a diagram to paste into a PR (`--format dot` for Graphviz) |
 | Withdraw | `particulars retract <id> --reason "<why>" [--superseded-by <id>] --json` — claims, syntheses, or merges; append-only, never deletes (`claim retract` is a deprecated alias) |
 | Same thing, two URIs | `particulars particular merge <a> <b> [--reason "<why>"] --json` — either side may be a bare URI with no local particular; undo with `retract <mrg_id>` |
 | Health check | `particulars validate --json`; `particulars index --check --json` |
@@ -139,6 +140,24 @@ acceptance. Commit the object files **and** `index.yaml` (the tool keeps it
 current). If `index.yaml` ever conflicts on merge, run `particulars index` — do
 not resolve it by hand. Do not push or open PRs unless the user's workflow says
 to.
+
+**Show the shape, not just the diff.** When you write a branch up for a human —
+a PR body, a review comment, a summary — draw each particular you touched:
+
+```sh
+particulars export --format mermaid --subject "<thing>" --depth 2
+```
+
+Put the output in a ` ```mermaid ` fence. GitHub and most markdown viewers
+render it, and the reviewer sees what a list of filenames cannot: which claim
+you cited as the antithesis, whether your synthesis actually became the current
+belief, what is still unreconciled. Add `--include-retracted` when the branch
+retracts something, so the `superseded-by` edge is visible.
+
+Two cautions. **A diagram discloses whatever it contains** — check `--scope`
+before pasting one anywhere more public than the workspace itself. And if the
+repository's CI already posts diagrams on pull requests, do not paste your own
+as well.
 
 ## Example session
 
