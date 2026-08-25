@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.8.1 — align with the drift corrections
 
 - Align with the drift corrections applied to DKF in
   [`9388161`](https://github.com/nodelogicau/particulars/commit/9388161), after
