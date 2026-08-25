@@ -24,7 +24,7 @@ func sampleClaim() *Claim {
 	return &Claim{
 		ID: "clm_019196a5-8b4c-7def-8abc-0123456789ac", Subject: "par_019196a5-8b4c-7def-8abc-0123456789ab",
 		Content:   "Project X uses a microservices architecture, with separate\nservices for auth, billing, and core API.\n",
-		Source:    Source{Author: "ben", Harness: "claude", Model: "claude-sonnet-4-6", Document: Document{URI: "https://example.com/docs/architecture.md"}},
+		Source:    Source{Author: "ben", Harness: "claude", Model: "claude-sonnet-4-6", Document: Document{Ref: "https://example.com/docs/architecture.md"}},
 		Context:   Context{Scope: ScopeOrganisation, Topics: []string{"architecture", "distributed-systems"}},
 		Timestamp: ts, Confidence: f(0.9),
 	}
@@ -227,7 +227,7 @@ func TestValidation(t *testing.T) {
 	c := sampleClaim()
 	c.Confidence = f(1.5)
 	c.Context.Scope = "team"
-	c.Source = Source{Document: Document{URI: "x"}}
+	c.Source = Source{Document: Document{Ref: "x"}}
 	ps := ValidateClaim(c)
 	codes := map[string]bool{}
 	for _, p := range ps {
@@ -342,7 +342,7 @@ func TestSourceMinimum(t *testing.T) {
 	if ps := ValidateClaim(c); len(ps) != 0 {
 		t.Errorf("human-only source should be valid: %v", ps)
 	}
-	c.Source = Source{Document: Document{URI: "https://x"}}
+	c.Source = Source{Document: Document{Ref: "https://x"}}
 	if ps := ValidateClaim(c); len(ps) != 1 || ps[0].Field != "source" {
 		t.Errorf("document-only source should fail on source: %v", ps)
 	}
@@ -568,7 +568,7 @@ func TestDocumentUnion(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := obj.(*Claim)
-	if c.Source.Document.URI != "docs/a.md" || c.Source.Document.structured() {
+	if c.Source.Document.Ref != "docs/a.md" || c.Source.Document.structured() {
 		t.Errorf("scalar decode: %+v", c.Source.Document)
 	}
 	if out, _ := Encode(c); string(out) != scalarYAML {
@@ -576,7 +576,7 @@ func TestDocumentUnion(t *testing.T) {
 	}
 
 	// Mapping round-trips, keys in the order uri, hash, quote.
-	c.Source.Document = Document{URI: "docs/a.md", Hash: "sha256:" + strings.Repeat("a", 64), Quote: "the billing service listens on 8443"}
+	c.Source.Document = Document{Ref: "docs/a.md", Hash: "sha256:" + strings.Repeat("a", 64), Quote: "the billing service listens on 8443"}
 	out, err := Encode(c)
 	if err != nil {
 		t.Fatal(err)
@@ -587,7 +587,7 @@ func TestDocumentUnion(t *testing.T) {
 			keys = append(keys, strings.TrimSpace(strings.SplitN(line, ":", 2)[0]))
 		}
 	}
-	if strings.Join(keys, ",") != "uri,hash,quote" {
+	if strings.Join(keys, ",") != "ref,hash,quote" {
 		t.Errorf("document key order: %v\n%s", keys, out)
 	}
 	back, err := Decode(out)
@@ -602,14 +602,14 @@ func TestDocumentUnion(t *testing.T) {
 	}
 
 	// JSON mirrors YAML, so an existing consumer still sees a string.
-	if b, _ := json.Marshal(Document{URI: "docs/a.md"}); string(b) != `"docs/a.md"` {
+	if b, _ := json.Marshal(Document{Ref: "docs/a.md"}); string(b) != `"docs/a.md"` {
 		t.Errorf("scalar JSON: %s", b)
 	}
-	if b, _ := json.Marshal(Document{URI: "u", Quote: "q"}); !strings.HasPrefix(string(b), `{"uri"`) {
+	if b, _ := json.Marshal(Document{Ref: "u", Quote: "q"}); !strings.HasPrefix(string(b), `{"ref"`) {
 		t.Errorf("mapping JSON: %s", b)
 	}
 	var d Document
-	if err := json.Unmarshal([]byte(`"docs/a.md"`), &d); err != nil || d.URI != "docs/a.md" {
+	if err := json.Unmarshal([]byte(`"docs/a.md"`), &d); err != nil || d.Ref != "docs/a.md" {
 		t.Errorf("scalar JSON decode: %v %+v", err, d)
 	}
 	if err := json.Unmarshal([]byte(`{"uri":"u","hash":"sha256:`+strings.Repeat("b", 64)+`"}`), &d); err != nil || d.Hash == "" {
@@ -620,19 +620,24 @@ func TestDocumentUnion(t *testing.T) {
 	for name, doc := range map[string]Document{
 		"hash without uri":  {Hash: "sha256:" + strings.Repeat("a", 64)},
 		"quote without uri": {Quote: "something"},
-		"short hash":        {URI: "u", Hash: "sha256:abc"},
-		"uppercase hash":    {URI: "u", Hash: "sha256:" + strings.Repeat("A", 64)},
-		"unprefixed hash":   {URI: "u", Hash: strings.Repeat("a", 64)},
-		"blank quote":       {URI: "u", Quote: "   "},
+		"short sha256":      {Ref: "u", Hash: "sha256:abc"},
+		"no algorithm":      {Ref: "u", Hash: strings.Repeat("a", 64)},
+		"empty algorithm":   {Ref: "u", Hash: ":" + strings.Repeat("a", 64)},
+		"uppercase hash":    {Ref: "u", Hash: "sha256:" + strings.Repeat("A", 64)},
+		"unprefixed hash":   {Ref: "u", Hash: strings.Repeat("a", 64)},
+		"blank quote":       {Ref: "u", Quote: "   "},
 	} {
 		if ps := doc.Validate("source.document"); len(ps) == 0 {
 			t.Errorf("%s should be rejected", name)
 		}
 	}
 	for name, doc := range map[string]Document{
-		"bare reference": {URI: "chat session 2026-08-22"},
+		"bare reference": {Ref: "chat session 2026-08-22"},
 		"nothing at all": {},
-		"full mapping":   {URI: "u", Hash: "sha256:" + strings.Repeat("f", 64), Quote: "q"},
+		"full mapping":   {Ref: "u", Hash: "sha256:" + strings.Repeat("f", 64), Quote: "q"},
+		// Another implementation's algorithm is accepted, not rejected: a
+		// reader that refused it could not check anything it wrote.
+		"another algorithm": {Ref: "u", Hash: "blake3:" + strings.Repeat("c", 32)},
 	} {
 		if ps := doc.Validate("source.document"); len(ps) != 0 {
 			t.Errorf("%s should be valid: %v", name, ps)
@@ -747,5 +752,43 @@ func TestRetractionKind(t *testing.T) {
 		if ps := ValidateRetracted(r); len(ps) == 0 {
 			t.Errorf("kind %q should be rejected", k)
 		}
+	}
+}
+
+func TestLegacyDocumentURIAccepted(t *testing.T) {
+	// A file written by v0.8.0, before the rename. It can never be rewritten —
+	// appending a retraction is the only permitted modification — so the
+	// reader accepts it in perpetuity and flags it instead.
+	in := "id: clm_01a021ab-18ae-7910-883f-f8b8be27edb0\ntype: claim\nsubject: par_01a021ab-16e6-753f-8e6e-e8b69b25aeb5\ncontent: x\nsource:\n  author: ben\n  document:\n    uri: docs/a.md\n    quote: something quoted\ncontext:\n  scope: personal\ntimestamp: 2026-08-20T09:00:00Z\n"
+	obj, err := Decode([]byte(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := obj.(*Claim).Source.Document
+	if doc.Ref != "docs/a.md" || doc.Quote != "something quoted" {
+		t.Fatalf("legacy uri not read: %+v", doc)
+	}
+	if !doc.LegacyURI() {
+		t.Error("reading a uri key should be recorded so validate can say so")
+	}
+	if ps := doc.Validate("source.document"); len(ps) != 0 {
+		t.Errorf("a legacy document is valid, not invalid: %v", ps)
+	}
+	// Rewriting emits ref, which is why it is not byte-stable — the same
+	// deliberate exception as produced-by.
+	out, err := Encode(obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "    ref: docs/a.md") || strings.Contains(string(out), "uri:") {
+		t.Errorf("the encoder must write ref:\n%s", out)
+	}
+	// ref wins if somehow both are present.
+	both, err := Decode([]byte(strings.Replace(in, "    uri: docs/a.md", "    ref: r.md\n    uri: u.md", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := both.(*Claim).Source.Document; d.Ref != "r.md" || d.LegacyURI() {
+		t.Errorf("ref should win over uri: %+v", d)
 	}
 }

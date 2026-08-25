@@ -12,11 +12,17 @@ source:
   author: ben
   harness: claude
   document:
-    uri: docs/architecture.md
+    ref: docs/architecture.md
     hash: sha256:9f2a…
     quote: |
       In staging, the billing service listens on 443.
 ```
+
+`ref` holds one of three things — a URI, a path resolved against the workspace
+root, or an identifier for something that cannot be fetched at all. That third
+case is why it is not called `uri`: an unfetchable source can still carry a
+quote, and quoting what someone said, with nothing to fetch and no hash, is
+provenance a reviewer can weigh.
 
 A bare reference stays valid and is **not** inferior provenance:
 
@@ -70,7 +76,10 @@ valid, readable, and citable — it is a condition for a reader to resolve.
 ## What the hash is taken over
 
 The document's bytes, **with CRLF normalised to LF, and nothing else
-normalised.**
+normalised.** Writers write `sha256`; a reader accepts any
+`<algorithm>:<digest>` and reports one it does not implement as *unverified*
+rather than invalid — refusing it would leave two conforming implementations
+unable to check each other's hashes.
 
 Line endings differ between checkouts of the same commit, so hashing raw bytes
 would report drift on every claim for anyone on a Windows checkout — the
@@ -111,6 +120,13 @@ mostly URLs will carry many, which is why it is a note and never a warning.
 - **`provenance-failure`** — the source itself was wrong. Every other claim
   citing that document is now worth re-reading.
 
+Drift is reported **alongside** a declared kind, never checked against it. A
+`supersession` over an unchanged document is not suspect: an ADR, an incident
+report, or a commit-pinned URL is *supposed* to stay byte-identical while the
+world moves on. The one sound direction is the opposite — a `defect` against a
+document that has since drifted is reported `defect_unverifiable`, because the
+text the claim is said to have misread is no longer the text you can read.
+
 It is declared, never inferred from `--superseded-by`: a typo-grade defect
 usually *has* a replacement, and a claim retracted because its subject was
 decommissioned usually has none.
@@ -129,12 +145,10 @@ warning: clm_… carries a verbatim quote from docs/architecture.md, so promotin
 Reported, never refused — whether the quoted material may travel is a judgement,
 and the tool's job is to make sure you know you are making it.
 
-## Not implemented
+## A note on `uri`
 
-The spec suggests cross-checking `kind` against drift, treating a
-`supersession` over an unchanged hash as suspect. This implementation does not,
-and [particulars-cli#3](https://github.com/nodelogicau/particulars-cli/issues/3)
-records why: drift is a signal about the *source* joint while supersession is
-the *world* joint, so the check only holds for documents that describe current
-state. A claim sourced from an ADR, an incident report, or a commit-pinned URL
-is *supposed* to be superseded while its document stays byte-identical.
+v0.8.0 wrote `ref` as `uri` for one day. Readers accept it and report
+`legacy_document_uri`. The warning is not tidiness: a file carrying `uri` can
+never be rewritten — appending a retraction is the only permitted modification
+to an existing object — so readers must go on accepting it, and the warning is
+the only way anyone learns it is there.

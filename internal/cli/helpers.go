@@ -34,7 +34,7 @@ type provenanceFlags struct {
 // reading files as needed. The locator flags require --document: a hash or a
 // quote with nothing to point at records evidence for a source we did not name.
 func (a *app) resolveDocument(ws *store.Workspace, f provenanceFlags) (dkf.Document, error) {
-	doc := dkf.Document{URI: strings.TrimSpace(f.document), Hash: strings.TrimSpace(f.documentHash), Quote: f.quote}
+	doc := dkf.Document{Ref: strings.TrimSpace(f.document), Hash: strings.TrimSpace(f.documentHash), Quote: f.quote}
 	if f.quoteFile != "" {
 		if doc.Quote != "" {
 			return doc, usageErr("--quote and --quote-file are alternatives")
@@ -45,7 +45,7 @@ func (a *app) resolveDocument(ws *store.Workspace, f provenanceFlags) (dkf.Docum
 		}
 		doc.Quote = data
 	}
-	if doc.URI == "" {
+	if doc.Ref == "" {
 		for name, set := range map[string]bool{"--document-hash": doc.Hash != "", "--quote": doc.Quote != "", "--hash-document": f.hashDocument} {
 			if set {
 				return doc, usageErr("%s needs --document: there is nothing to point at without it", name)
@@ -57,9 +57,9 @@ func (a *app) resolveDocument(ws *store.Workspace, f provenanceFlags) (dkf.Docum
 		if doc.Hash != "" {
 			return doc, usageErr("--document-hash and --hash-document are alternatives")
 		}
-		path, ok := query.LocalDocumentPath(ws, doc.URI)
+		path, ok := query.LocalDocumentPath(ws, doc.Ref)
 		if !ok {
-			return doc, usageErr("--hash-document needs %s to resolve to a file in the workspace; pass --document-hash if you hashed it elsewhere", doc.URI)
+			return doc, usageErr("--hash-document needs %s to resolve to a file in the workspace; pass --document-hash if you hashed it elsewhere", doc.Ref)
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {

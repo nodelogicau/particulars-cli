@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+- Align with the drift corrections applied to DKF in
+  [`9388161`](https://github.com/nodelogicau/particulars/commit/9388161), after
+  [particulars-cli#3](https://github.com/nodelogicau/particulars-cli/issues/3).
+  **`document.uri` is now `document.ref`**, which holds a URI, a workspace path,
+  *or* an identifier for something unfetchable — the case that decided the
+  rename, since an unfetchable source can still carry a quote and `chat session
+  2026-08-22` in a field called `uri` is a lie. Readers accept `uri` and warn
+  `legacy_document_uri`: such a file can never be rewritten, so the warning is
+  the only way anyone learns it is there.
+- **Retracted objects' documents are now verified**, because the new
+  `defect_unverifiable` finding is about the retraction rather than a live
+  claim: a `defect` declared against a document that has since drifted cannot be
+  checked, since the text the claim is said to have misread is no longer the text
+  a reviewer can read. Drift under a retracted object is reported as an
+  observation rather than a warning.
+- **A supersession is never cross-checked against drift.** The spec's earlier
+  SHOULD is gone and this implementation never shipped it.
+- Hashes accept any `<algorithm>:<digest>`; an algorithm this implementation does
+  not compute is reported *unverified* rather than invalid, so two conforming
+  implementations are never unable to check each other. A digest whose algorithm
+  we do implement is still checked for shape, so a truncated `sha256:abc` is
+  caught as the typo it is.
+
 ## v0.8.0 — verifiable provenance
 
 - **Verifiable provenance.** `source.document` may now be a mapping of `uri`,

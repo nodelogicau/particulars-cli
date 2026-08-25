@@ -1427,7 +1427,7 @@ func TestVerifiableProvenance(t *testing.T) {
 	}
 	id := r.js["claim"].(map[string]any)["id"].(string)
 	doc, ok := r.js["claim"].(map[string]any)["source"].(map[string]any)["document"].(map[string]any)
-	if !ok || doc["uri"] != "docs/a.md" || doc["quote"] != quote {
+	if !ok || doc["ref"] != "docs/a.md" || doc["quote"] != quote {
 		t.Fatalf("document mapping: %#v", doc)
 	}
 	if h, _ := doc["hash"].(string); !strings.HasPrefix(h, "sha256:") || len(h) != 71 {

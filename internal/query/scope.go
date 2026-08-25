@@ -87,7 +87,7 @@ func QuoteDisclosuresForPromotion(g *store.Graph, pr *dkf.Promotion) []string {
 		if doc := a.GetSource().Document; doc.Quote != "" {
 			out = append(out, fmt.Sprintf(
 				"%s carries a verbatim quote from %s, so promoting it to %s publishes that source text in full",
-				id, doc.URI, pr.Scope))
+				id, doc.Ref, pr.Scope))
 		}
 	}
 	sort.Strings(out)

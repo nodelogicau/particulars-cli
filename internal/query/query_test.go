@@ -809,10 +809,10 @@ func TestDocumentVerificationIsOfflineAndAdvisory(t *testing.T) {
 	quote := "In staging, the billing service listens on 443."
 	hash := dkf.HashDocumentBytes([]byte(body))
 
-	verified := f.docClaim(p.ID, "billing listens on 443", dkf.Document{URI: "docs/architecture.md", Hash: hash, Quote: quote}, "")
-	remote := f.docClaim(p.ID, "remote evidence", dkf.Document{URI: "https://example.com/x", Hash: hash, Quote: quote}, "")
-	missing := f.docClaim(p.ID, "vanished file", dkf.Document{URI: "docs/gone.md", Hash: hash}, "")
-	bare := f.docClaim(p.ID, "a conversation", dkf.Document{URI: "chat session 2026-08-22"}, "")
+	verified := f.docClaim(p.ID, "billing listens on 443", dkf.Document{Ref: "docs/architecture.md", Hash: hash, Quote: quote}, "")
+	remote := f.docClaim(p.ID, "remote evidence", dkf.Document{Ref: "https://example.com/x", Hash: hash, Quote: quote}, "")
+	missing := f.docClaim(p.ID, "vanished file", dkf.Document{Ref: "docs/gone.md", Hash: hash}, "")
+	bare := f.docClaim(p.ID, "a conversation", dkf.Document{Ref: "chat session 2026-08-22"}, "")
 	_, _ = f.w.RebuildIndex()
 
 	codesFor := func(id string) []string {
@@ -875,7 +875,7 @@ func TestDocumentVerificationIsOfflineAndAdvisory(t *testing.T) {
 func TestQuotedSourceIsNotedWhenShared(t *testing.T) {
 	f := newFixture(t)
 	p := f.particular("Project X")
-	doc := dkf.Document{URI: "https://example.com/x", Quote: "verbatim source text"}
+	doc := dkf.Document{Ref: "https://example.com/x", Quote: "verbatim source text"}
 	priv := f.docClaim(p.ID, "personal note", doc, dkf.ScopePersonal)
 	org := f.docClaim(p.ID, "shared fact", doc, dkf.ScopeOrganisation)
 	_, _ = f.w.RebuildIndex()
@@ -916,5 +916,161 @@ func TestQuotedSourceIsNotedWhenShared(t *testing.T) {
 	}
 	if !nowNoted {
 		t.Error("promoting a quoted claim should bring the disclosure note with it")
+	}
+}
+
+func TestDefectAgainstDriftedDocumentIsUnverifiable(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	docPath := filepath.Join(f.w.Root, "docs", "a.md")
+	if err := os.MkdirAll(filepath.Dir(docPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "# A\n\nThe service listens on 443.\n\nTail.\n"
+	if err := os.WriteFile(docPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc := dkf.Document{Ref: "docs/a.md", Hash: dkf.HashDocumentBytes([]byte(body)), Quote: "The service listens on 443."}
+	defect := f.docClaim(p.ID, "listens on 443", doc, "")
+	supersede := f.docClaim(p.ID, "also listens on 443", doc, "")
+	_, _ = f.w.RebuildIndex()
+
+	retract := func(id string, kind dkf.RetractionKind) {
+		t.Helper()
+		if _, err := f.w.Retract(id, &dkf.Retracted{Timestamp: ts, Reason: "x", Source: dkf.Source{Author: "ben"}, Kind: kind}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	retract(defect.ID, dkf.KindDefect)
+	retract(supersede.ID, dkf.KindSupersession)
+	_, _ = f.w.RebuildIndex()
+
+	codes := func() map[string][]string {
+		fs, err := Validate(f.w)
+		if err != nil {
+			t.Fatal(err)
+		}
+		g, _ := f.w.Load()
+		out := map[string][]string{}
+		for _, fi := range fs {
+			for _, id := range []string{defect.ID, supersede.ID} {
+				if fi.Path == g.Files[id] {
+					out[id] = append(out[id], fi.Code)
+				}
+			}
+		}
+		return out
+	}
+	// Intact document: nothing to say about either retraction.
+	for id, got := range codes() {
+		if len(got) != 0 {
+			t.Errorf("%s: an unchanged document should produce no findings: %v", id, got)
+		}
+	}
+
+	// Now the document drifts.
+	if err := os.WriteFile(docPath, []byte("# A\n\nThe service listens on 8443.\n\nTail.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := codes()
+	if !contains(got[defect.ID], CodeDefectUnverifiable) {
+		t.Errorf("a defect against a drifted document is unverifiable: %v", got[defect.ID])
+	}
+	// The removed check: a supersession against a changed OR unchanged hash is
+	// never judged. Only the drift observation may appear.
+	if contains(got[supersede.ID], CodeDefectUnverifiable) {
+		t.Errorf("supersession must never be cross-checked: %v", got[supersede.ID])
+	}
+	fs, _ := Validate(f.w)
+	for _, fi := range fs {
+		if fi.Code == CodeQuoteDrift || fi.Code == CodeContextDrift || fi.Code == CodeDefectUnverifiable {
+			if fi.Severity == SeverityError {
+				t.Errorf("no drift finding is ever an error: %+v", fi)
+			}
+		}
+		if fi.Code == CodeQuoteDrift || fi.Code == CodeContextDrift {
+			if fi.Severity != SeverityInfo {
+				t.Errorf("drift under a retracted claim is an observation, got %s", fi.Severity)
+			}
+		}
+	}
+}
+
+func TestUnknownHashAlgorithmIsUnverified(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	docPath := filepath.Join(f.w.Root, "docs", "a.md")
+	if err := os.MkdirAll(filepath.Dir(docPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(docPath, []byte("content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := f.docClaim(p.ID, "x", dkf.Document{Ref: "docs/a.md", Hash: "blake3:" + strings.Repeat("a", 32)}, "")
+	_, _ = f.w.RebuildIndex()
+	fs, err := Validate(f.w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, _ := f.w.Load()
+	var found bool
+	for _, fi := range fs {
+		if fi.Path == g.Files[c.ID] {
+			if fi.Code != CodeUnverifiedDocument || fi.Severity != SeverityInfo {
+				t.Errorf("an unimplemented algorithm is unverified, not invalid: %+v", fi)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected an unverified note for the unknown algorithm")
+	}
+	if fs.HasErrors() {
+		t.Error("another implementation's algorithm must never be an error")
+	}
+}
+
+func contains(hay []string, needle string) bool {
+	for _, h := range hay {
+		if h == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func TestLegacyDocumentURIReportedOnce(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	c := f.docClaim(p.ID, "x", dkf.Document{Ref: "docs/a.md", Quote: "q"}, "")
+	_, _ = f.w.RebuildIndex()
+	// Rewrite the file as v0.8.0 would have: ref becomes uri.
+	path := filepath.Join(f.w.Root, "claims", c.ID+".yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(string(data), "    ref: ", "    uri: ", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fs, err := Validate(f.w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, _ := f.w.Load()
+	var codes []string
+	for _, fi := range fs {
+		if fi.Path == g.Files[c.ID] {
+			codes = append(codes, fi.Code)
+		}
+	}
+	if !contains(codes, CodeLegacyDocumentURI) {
+		t.Errorf("the legacy key should be reported: %v", codes)
+	}
+	if contains(codes, CodeNonCanonical) {
+		t.Errorf("no non_canonical for the same cause, matching legacy_produced_by: %v", codes)
+	}
+	if fs.HasErrors() {
+		t.Error("a legacy document is valid")
 	}
 }

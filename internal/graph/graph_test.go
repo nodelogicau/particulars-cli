@@ -55,7 +55,7 @@ func (f *fixture) claim(subject, content string, o claimOpts) *dkf.Claim {
 		o.at = ts
 	}
 	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: subject, Content: content,
-		Source:  dkf.Source{Author: "ben", Document: dkf.Document{URI: o.document}},
+		Source:  dkf.Source{Author: "ben", Document: dkf.Document{Ref: o.document}},
 		Context: dkf.Context{Scope: o.scope, Topics: o.topics}, Timestamp: o.at, Confidence: o.confidence}
 	if err := f.ws.Create(c); err != nil {
 		f.t.Fatal(err)

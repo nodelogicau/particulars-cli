@@ -53,7 +53,7 @@ func Resolve(defaults dkf.Source, e Explicit, fallbackHarness string) dkf.Source
 		Author:   first(e.Author, os.Getenv(EnvAuthor), defaults.Author),
 		Harness:  first(e.Harness, os.Getenv(EnvHarness), defaults.Harness, fallbackHarness),
 		Model:    first(e.Model, os.Getenv(EnvModel), defaults.Model),
-		Document: dkf.Document{URI: strings.TrimSpace(e.Document), Hash: strings.TrimSpace(e.DocumentHash), Quote: e.Quote},
+		Document: dkf.Document{Ref: strings.TrimSpace(e.Document), Hash: strings.TrimSpace(e.DocumentHash), Quote: e.Quote},
 	}
 }
 

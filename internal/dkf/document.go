@@ -21,23 +21,54 @@ import (
 // scalar form serialises as a scalar, so every claim written before the
 // mapping existed is untouched.
 type Document struct {
-	URI   string `yaml:"uri" json:"uri"`
+	// Ref identifies the source: a URI, a path resolved against the workspace
+	// root, or an identifier for something that cannot be fetched at all —
+	// "chat session 2026-08-22", a recollection, a page behind a login. That
+	// third case is why the field is not called uri: an unfetchable source can
+	// still carry a quote, and quoting what someone said is provenance a
+	// reviewer can weigh.
+	Ref   string `yaml:"ref" json:"ref"`
 	Hash  string `yaml:"hash,omitempty" json:"hash,omitempty"`
 	Quote string `yaml:"quote,omitempty" json:"quote,omitempty"`
+
+	// legacyURI records that this document was read from a file written with
+	// the pre-rename `uri` key, so validate can say so. Such a file can never
+	// be rewritten — appending a retraction is the only permitted
+	// modification — so readers accept it in perpetuity and the warning is the
+	// only way anyone learns it is there.
+	legacyURI bool
 }
 
-// hashPattern is what this implementation writes and accepts.
-var hashPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+// LegacyURI reports whether the document was read from a `uri` key.
+func (d Document) LegacyURI() bool { return d.legacyURI }
+
+// hashPattern accepts any algorithm-prefixed digest. Writers should write
+// sha256; a reader that rejected other algorithms outright would make two
+// conformant implementations unable to check each other's hashes, so an
+// algorithm we do not implement is reported as unverified instead.
+var hashPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*:[0-9a-f]+$`)
+
+// HashAlgorithm is the algorithm prefix of a digest, or "" if malformed.
+func HashAlgorithm(hash string) string {
+	algo, _, ok := strings.Cut(hash, ":")
+	if !ok {
+		return ""
+	}
+	return algo
+}
+
+// AlgorithmSHA256 is the digest this implementation computes.
+const AlgorithmSHA256 = "sha256"
 
 // IsZero reports whether no part of the document is set.
-func (d Document) IsZero() bool { return d.URI == "" && d.Hash == "" && d.Quote == "" }
+func (d Document) IsZero() bool { return d.Ref == "" && d.Hash == "" && d.Quote == "" }
 
 // structured reports whether the mapping form is needed to represent d.
 func (d Document) structured() bool { return d.Hash != "" || d.Quote != "" }
 
 // String returns the reference, which is what every pre-existing consumer of
 // source.document expected to find there.
-func (d Document) String() string { return d.URI }
+func (d Document) String() string { return d.Ref }
 
 // UnmarshalYAML accepts either a scalar reference or the mapping form.
 func (d *Document) UnmarshalYAML(n *yaml.Node) error {
@@ -46,40 +77,58 @@ func (d *Document) UnmarshalYAML(n *yaml.Node) error {
 		if err := n.Decode(&s); err != nil {
 			return err
 		}
-		*d = Document{URI: s}
+		*d = Document{Ref: s}
 		return nil
 	}
-	type plain Document // avoid recursing into this method
-	var p plain
-	if err := n.Decode(&p); err != nil {
+	// The mapping form, accepting `uri` as a legacy alias for `ref`.
+	var raw struct {
+		Ref   string `yaml:"ref"`
+		URI   string `yaml:"uri"`
+		Hash  string `yaml:"hash"`
+		Quote string `yaml:"quote"`
+	}
+	if err := n.Decode(&raw); err != nil {
 		return err
 	}
-	*d = Document(p)
+	*d = Document{Ref: raw.Ref, Hash: raw.Hash, Quote: raw.Quote}
+	if d.Ref == "" && raw.URI != "" {
+		d.Ref, d.legacyURI = raw.URI, true
+	}
 	return nil
 }
 
 // MarshalYAML emits a scalar unless a hash or quote needs carrying.
 func (d Document) MarshalYAML() (any, error) {
 	if !d.structured() {
-		return d.URI, nil
+		return d.Ref, nil
 	}
-	type plain Document
-	return plain(d), nil
+	return struct {
+		Ref   string `yaml:"ref"`
+		Hash  string `yaml:"hash,omitempty"`
+		Quote string `yaml:"quote,omitempty"`
+	}{d.Ref, d.Hash, d.Quote}, nil
 }
 
 // UnmarshalJSON mirrors the YAML behaviour so MCP clients may send either.
 func (d *Document) UnmarshalJSON(b []byte) error {
 	var s string
 	if err := json.Unmarshal(b, &s); err == nil {
-		*d = Document{URI: s}
+		*d = Document{Ref: s}
 		return nil
 	}
-	type plain Document
-	var p plain
-	if err := json.Unmarshal(b, &p); err != nil {
+	var raw struct {
+		Ref   string `json:"ref"`
+		URI   string `json:"uri"`
+		Hash  string `json:"hash"`
+		Quote string `json:"quote"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
-	*d = Document(p)
+	*d = Document{Ref: raw.Ref, Hash: raw.Hash, Quote: raw.Quote}
+	if d.Ref == "" && raw.URI != "" {
+		d.Ref, d.legacyURI = raw.URI, true
+	}
 	return nil
 }
 
@@ -87,10 +136,13 @@ func (d *Document) UnmarshalJSON(b []byte) error {
 // string before this capability existed is still a string.
 func (d Document) MarshalJSON() ([]byte, error) {
 	if !d.structured() {
-		return json.Marshal(d.URI)
+		return json.Marshal(d.Ref)
 	}
-	type plain Document
-	return json.Marshal(plain(d))
+	return json.Marshal(struct {
+		Ref   string `json:"ref"`
+		Hash  string `json:"hash,omitempty"`
+		Quote string `json:"quote,omitempty"`
+	}{d.Ref, d.Hash, d.Quote})
 }
 
 // Validate checks the document's own fields.
@@ -99,13 +151,21 @@ func (d Document) Validate(field string) Problems {
 	if d.IsZero() {
 		return nil
 	}
-	if strings.TrimSpace(d.URI) == "" {
-		ps = append(ps, Problem{Code: CodeInvalidDocument, Field: field + ".uri",
+	if strings.TrimSpace(d.Ref) == "" {
+		ps = append(ps, Problem{Code: CodeInvalidDocument, Field: field + ".ref",
 			Message: "a document that carries a hash or a quote must name what it refers to"})
 	}
-	if d.Hash != "" && !hashPattern.MatchString(d.Hash) {
-		ps = append(ps, Problem{Code: CodeInvalidDocument, Field: field + ".hash",
-			Message: fmt.Sprintf("hash %q must be sha256:<64 lowercase hex digits>", d.Hash)})
+	if d.Hash != "" {
+		switch {
+		case !hashPattern.MatchString(d.Hash):
+			ps = append(ps, Problem{Code: CodeInvalidDocument, Field: field + ".hash",
+				Message: fmt.Sprintf("hash %q must be <algorithm>:<lowercase hex digest>, for example sha256:…", d.Hash)})
+		case HashAlgorithm(d.Hash) == AlgorithmSHA256 && len(d.Hash) != len(AlgorithmSHA256)+1+64:
+			// An algorithm we implement is checked for shape; a truncated
+			// digest is a typo, not another implementation's choice.
+			ps = append(ps, Problem{Code: CodeInvalidDocument, Field: field + ".hash",
+				Message: fmt.Sprintf("hash %q is not a sha256 digest: expected 64 hex digits", d.Hash)})
+		}
 	}
 	if d.Quote != "" && strings.TrimSpace(d.Quote) == "" {
 		ps = append(ps, Problem{Code: CodeInvalidDocument, Field: field + ".quote",
@@ -133,7 +193,7 @@ func HashDocument(r io.Reader) (string, error) {
 // HashDocumentBytes is HashDocument for content already in memory.
 func HashDocumentBytes(data []byte) string {
 	sum := sha256.Sum256([]byte(normaliseNewlines(string(data))))
-	return "sha256:" + hex.EncodeToString(sum[:])
+	return AlgorithmSHA256 + ":" + hex.EncodeToString(sum[:])
 }
 
 // QuoteMatches reports whether quote appears verbatim in document.

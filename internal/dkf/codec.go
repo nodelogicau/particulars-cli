@@ -144,10 +144,10 @@ func sourceNode(s Source) *yaml.Node {
 // claim written before the mapping existed serialises to the same bytes.
 func documentNode(d Document) *yaml.Node {
 	if d.Hash == "" && d.Quote == "" {
-		return scalar(d.URI)
+		return scalar(d.Ref)
 	}
 	m := mapping()
-	addStrAlways(m, "uri", d.URI)
+	addStrAlways(m, "ref", d.Ref)
 	addStr(m, "hash", d.Hash)
 	addStr(m, "quote", d.Quote)
 	return m

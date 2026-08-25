@@ -33,6 +33,11 @@ type DocumentState struct {
 // Verified reports whether the document was checked and nothing had moved.
 func (d DocumentState) Verified() bool { return d.Code == "" }
 
+// Drifted reports whether the document moved under the claim.
+func (d DocumentState) Drifted() bool {
+	return d.Code == CodeContextDrift || d.Code == CodeQuoteDrift
+}
+
 // VerifyDocument checks a claim's document against the workspace, offline.
 //
 // A document is checkable only when it resolves to a file inside the
@@ -46,7 +51,13 @@ func VerifyDocument(ws *store.Workspace, d dkf.Document) DocumentState {
 	if d.Hash == "" && d.Quote == "" {
 		return DocumentState{CodeUnverifiedDocument, "document carries no hash or quote, so nothing can be checked"}
 	}
-	path, ok := LocalDocumentPath(ws, d.URI)
+	if algo := dkf.HashAlgorithm(d.Hash); d.Hash != "" && algo != dkf.AlgorithmSHA256 {
+		// Another implementation's algorithm is a legitimate hash we cannot
+		// compute. Unverified, never invalid — refusing it would mean two
+		// conformant implementations unable to check each other.
+		return DocumentState{CodeUnverifiedDocument, "hash algorithm " + algo + " is not implemented here, so the document is not checked"}
+	}
+	path, ok := LocalDocumentPath(ws, d.Ref)
 	if !ok {
 		return DocumentState{CodeUnverifiedDocument, "document is not a file in this workspace; verification would need a fetch, which validate does not do"}
 	}

@@ -7,7 +7,7 @@ A claim may carry the sentence it rests on:
 ```yaml
 source:
   document:
-    uri: docs/architecture.md
+    ref: docs/architecture.md
     hash: sha256:9f2a…
     quote: |
       In staging, the billing service listens on 443.

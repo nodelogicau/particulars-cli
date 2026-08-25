@@ -87,10 +87,10 @@ func documentFrom(v any) (dkf.Document, error) {
 	case nil:
 		return dkf.Document{}, nil
 	case string:
-		return dkf.Document{URI: t}, nil
+		return dkf.Document{Ref: t}, nil
 	case map[string]any:
 		d := dkf.Document{}
-		for key, target := range map[string]*string{"uri": &d.URI, "hash": &d.Hash, "quote": &d.Quote} {
+		for key, target := range map[string]*string{"uri": &d.Ref, "hash": &d.Hash, "quote": &d.Quote} {
 			if raw, ok := t[key]; ok {
 				sv, ok := raw.(string)
 				if !ok {
@@ -127,7 +127,7 @@ func (s *Server) source(req clientInfoer, in *sourceIn, needHarness bool) (dkf.S
 		if derr != nil {
 			return dkf.Source{}, derr
 		}
-		e.Document, e.DocumentHash, e.Quote = doc.URI, doc.Hash, doc.Quote
+		e.Document, e.DocumentHash, e.Quote = doc.Ref, doc.Hash, doc.Quote
 	}
 	fallback := ""
 	if ci := req.ClientInfo(); ci != nil {

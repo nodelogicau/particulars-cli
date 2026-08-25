@@ -46,8 +46,16 @@ const (
 	CodeDuplicatePromotion = "duplicate_promotion"
 	// CodeQuotedSource: a claim reproduces source text verbatim and is shared
 	// more widely than the author's own notes.
-	CodeQuotedSource   = "quoted_source"
-	CodeInvalidBaseURI = "invalid_base_uri"
+	CodeQuotedSource = "quoted_source"
+	// CodeLegacyDocumentURI: a document mapping was read from the pre-rename
+	// `uri` key. The file can never be rewritten, so a reader accepts it in
+	// perpetuity and this is the only way anyone learns it is there.
+	CodeLegacyDocumentURI = "legacy_document_uri"
+	// CodeDefectUnverifiable: a retraction declares the claim misread its
+	// source, and that source has since changed — so the text the claim is
+	// said to have misread is no longer the text a reviewer can read.
+	CodeDefectUnverifiable = "defect_unverifiable"
+	CodeInvalidBaseURI     = "invalid_base_uri"
 )
 
 // Finding is one validation result.
@@ -99,6 +107,14 @@ func Validate(w *store.Workspace) (Findings, error) {
 		if s, ok := obj.(*dkf.Synthesis); ok && s.LegacyProducedBy {
 			add(SeverityWarning, path, CodeLegacyProducedBy, "provenance was read from a legacy produced-by block; new syntheses write source")
 			continue // its bytes necessarily differ from the canonical form
+		}
+		if a, ok := obj.(dkf.Assertion); ok && a.GetSource().Document.LegacyURI() {
+			// Reported once, by the finding that names the cause: a legacy
+			// `uri` key necessarily differs from the canonical form, and
+			// saying so twice tells the reader nothing the first said.
+			add(SeverityWarning, path, CodeLegacyDocumentURI,
+				"document was read from a legacy `uri` key; new documents write `ref`, which also holds a workspace path or an unfetchable source")
+			continue
 		}
 		if canon, err := dkf.Encode(obj); err == nil && !bytes.Equal(canon, g.Raw[obj.ObjectID()]) {
 			add(SeverityWarning, path, CodeNonCanonical, "file differs from canonical serialisation; rewrite is not required but diffs will be noisier")
@@ -175,20 +191,36 @@ func Validate(w *store.Workspace) (Findings, error) {
 	// resolves to a file in this workspace, and everything else is reported as
 	// not checked rather than as a problem.
 	for _, a := range g.SortedAssertions() {
-		if a.GetRetracted() != nil {
-			continue
-		}
 		doc := a.GetSource().Document
 		if doc.IsZero() {
 			continue
 		}
 		path := g.Files[a.ObjectID()]
-		switch st := VerifyDocument(w, doc); st.Code {
-		case "":
-		case CodeUnverifiedDocument:
+		// Retracted objects are checked too: the unverifiable-defect finding
+		// below is about the retraction, not about a live claim.
+		st := VerifyDocument(w, doc)
+		retracted := a.GetRetracted()
+		switch {
+		case st.Code == "":
+		case st.Code == CodeUnverifiedDocument:
+			add(SeverityInfo, path, st.Code, st.Message)
+		case retracted != nil:
+			// Drift under a withdrawn claim is an observation, not something
+			// to act on — the claim is already gone.
 			add(SeverityInfo, path, st.Code, st.Message)
 		default:
 			add(SeverityWarning, path, st.Code, st.Message)
+		}
+		// Drift is reported alongside a declared kind, never checked against
+		// it — except in the one direction that is a statement about what can
+		// be checked rather than a guess at intent.
+		if retracted != nil && retracted.Kind == dkf.KindDefect && st.Drifted() {
+			add(SeverityInfo, path, CodeDefectUnverifiable, fmt.Sprintf(
+				"retracted as a defect, but %s has changed since the claim was written, so the text it is said to have misread is no longer the text a reviewer can read",
+				doc.Ref))
+		}
+		if retracted != nil {
+			continue
 		}
 		// A quote reproduces its source completely, where a synthesis only
 		// summarises. Say so where the exposure is wider than the author's
@@ -196,7 +228,7 @@ func Validate(w *store.Workspace) (Findings, error) {
 		if doc.Quote != "" && dkf.ScopeRank(g.EffectiveScope(a.ObjectID())) > dkf.ScopeRank(dkf.ScopePersonal) {
 			add(SeverityInfo, path, CodeQuotedSource, fmt.Sprintf(
 				"carries a verbatim quote from %s and is %s, so that source text is disclosed in full",
-				doc.URI, g.EffectiveScope(a.ObjectID())))
+				doc.Ref, g.EffectiveScope(a.ObjectID())))
 		}
 	}
 
