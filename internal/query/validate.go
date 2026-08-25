@@ -14,6 +14,10 @@ import (
 const (
 	SeverityError   = "error"
 	SeverityWarning = "warning"
+	// SeverityInfo records something a reader may want to know that is not a
+	// defect: provenance that could not be machine-checked, for instance.
+	// Notes never affect the exit code.
+	SeverityInfo = "info"
 )
 
 // Finding codes beyond the field-level ones in package dkf.
@@ -40,7 +44,10 @@ const (
 	// same scope. Valid — promotion may only widen, and this widens nothing —
 	// but redundant.
 	CodeDuplicatePromotion = "duplicate_promotion"
-	CodeInvalidBaseURI     = "invalid_base_uri"
+	// CodeQuotedSource: a claim reproduces source text verbatim and is shared
+	// more widely than the author's own notes.
+	CodeQuotedSource   = "quoted_source"
+	CodeInvalidBaseURI = "invalid_base_uri"
 )
 
 // Finding is one validation result.
@@ -163,6 +170,46 @@ func Validate(w *store.Workspace) (Findings, error) {
 			}
 		}
 	}
+
+	// Provenance. Verification is offline: a document is checked only when it
+	// resolves to a file in this workspace, and everything else is reported as
+	// not checked rather than as a problem.
+	for _, a := range g.SortedAssertions() {
+		if a.GetRetracted() != nil {
+			continue
+		}
+		doc := a.GetSource().Document
+		if doc.IsZero() {
+			continue
+		}
+		path := g.Files[a.ObjectID()]
+		switch st := VerifyDocument(w, doc); st.Code {
+		case "":
+		case CodeUnverifiedDocument:
+			add(SeverityInfo, path, st.Code, st.Message)
+		default:
+			add(SeverityWarning, path, st.Code, st.Message)
+		}
+		// A quote reproduces its source completely, where a synthesis only
+		// summarises. Say so where the exposure is wider than the author's
+		// own notes, so a reviewer weighing scope can see it.
+		if doc.Quote != "" && dkf.ScopeRank(g.EffectiveScope(a.ObjectID())) > dkf.ScopeRank(dkf.ScopePersonal) {
+			add(SeverityInfo, path, CodeQuotedSource, fmt.Sprintf(
+				"carries a verbatim quote from %s and is %s, so that source text is disclosed in full",
+				doc.URI, g.EffectiveScope(a.ObjectID())))
+		}
+	}
+
+	// Deliberately absent: the spec SHOULDs cross-checking retracted.kind
+	// against document drift — a supersession over an unchanged hash being
+	// "suspect". Drift is a signal about the source joint and supersession is
+	// the world joint, so the check only holds for documents that describe
+	// current state. Fifteen claims in the reference workspace cite
+	// commit-pinned URLs whose hash cannot change by construction, and every
+	// one would be flagged the day it is superseded — penalising the best
+	// sourcing discipline available. Raised on particulars-cli#3; awaiting a
+	// ruling. If one is wanted, the sound direction is the opposite: a defect
+	// against a drifted document is unverifiable, not suspect.
 
 	// Referential integrity.
 	uriOwners := map[string][]string{}

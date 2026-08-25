@@ -134,7 +134,22 @@ func sourceNode(s Source) *yaml.Node {
 	addStr(m, "author", s.Author)
 	addStr(m, "harness", s.Harness)
 	addStr(m, "model", s.Model)
-	addStr(m, "document", s.Document)
+	if !s.Document.IsZero() {
+		addKV(m, "document", documentNode(s.Document))
+	}
+	return m
+}
+
+// documentNode emits a scalar unless a hash or quote needs carrying, so a
+// claim written before the mapping existed serialises to the same bytes.
+func documentNode(d Document) *yaml.Node {
+	if d.Hash == "" && d.Quote == "" {
+		return scalar(d.URI)
+	}
+	m := mapping()
+	addStrAlways(m, "uri", d.URI)
+	addStr(m, "hash", d.Hash)
+	addStr(m, "quote", d.Quote)
 	return m
 }
 
@@ -150,6 +165,7 @@ func retractedNode(r *Retracted) *yaml.Node {
 	addTime(m, "timestamp", r.Timestamp)
 	addStrAlways(m, "reason", r.Reason)
 	addKV(m, "source", sourceNode(r.Source))
+	addStr(m, "kind", string(r.Kind))
 	addStr(m, "superseded-by", r.SupersededBy)
 	return m
 }

@@ -50,15 +50,15 @@ const (
 // Source records who or what asserted a claim.
 // Spec order: author, harness, model, document.
 type Source struct {
-	Author   string `yaml:"author,omitempty" json:"author,omitempty"`
-	Harness  string `yaml:"harness,omitempty" json:"harness,omitempty"`
-	Model    string `yaml:"model,omitempty" json:"model,omitempty"`
-	Document string `yaml:"document,omitempty" json:"document,omitempty"`
+	Author   string   `yaml:"author,omitempty" json:"author,omitempty"`
+	Harness  string   `yaml:"harness,omitempty" json:"harness,omitempty"`
+	Model    string   `yaml:"model,omitempty" json:"model,omitempty"`
+	Document Document `yaml:"document,omitempty" json:"document,omitempty"`
 }
 
 // IsZero reports whether no source field is set.
 func (s Source) IsZero() bool {
-	return s.Author == "" && s.Harness == "" && s.Model == "" && s.Document == ""
+	return s.Author == "" && s.Harness == "" && s.Model == "" && s.Document.IsZero()
 }
 
 // Context carries scope and topics.
@@ -86,10 +86,34 @@ type ProducedBy struct {
 // Retracted is the append-only retraction block on a claim or synthesis.
 // Order: timestamp, reason, source, superseded-by.
 type Retracted struct {
-	Timestamp    time.Time `yaml:"timestamp" json:"timestamp"`
-	Reason       string    `yaml:"reason" json:"reason"`
-	Source       Source    `yaml:"source" json:"source"`
-	SupersededBy string    `yaml:"superseded-by,omitempty" json:"superseded-by,omitempty"`
+	Timestamp time.Time `yaml:"timestamp" json:"timestamp"`
+	Reason    string    `yaml:"reason" json:"reason"`
+	Source    Source    `yaml:"source" json:"source"`
+	// Kind records why the claim died, at one of the three joints in
+	// claim → source → world. Declared, never inferred from SupersededBy:
+	// that field answers whether anything replaced the claim, which is a
+	// different question — a typo-grade defect routinely carries a
+	// replacement, and a claim retracted because its subject was
+	// decommissioned is a supersession with nothing to point at.
+	Kind         RetractionKind `yaml:"kind,omitempty" json:"kind,omitempty"`
+	SupersededBy string         `yaml:"superseded-by,omitempty" json:"superseded-by,omitempty"`
+}
+
+// RetractionKind is why a claim was retracted.
+type RetractionKind string
+
+const (
+	// KindDefect: the claim misread what its source said.
+	KindDefect RetractionKind = "defect"
+	// KindSupersession: the source was right then, and the world moved on.
+	KindSupersession RetractionKind = "supersession"
+	// KindProvenanceFailure: the source itself was wrong.
+	KindProvenanceFailure RetractionKind = "provenance-failure"
+)
+
+// ValidRetractionKind reports whether k is one of the three joints.
+func ValidRetractionKind(k RetractionKind) bool {
+	return k == KindDefect || k == KindSupersession || k == KindProvenanceFailure
 }
 
 // Particular is a DPARTICULAR: a specific, identifiable thing claims are about.

@@ -73,9 +73,13 @@ command regenerates it from scratch (resolving merge conflicts by rebuild).
 
 func (a *app) validateCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "validate",
+		Use:   "validate [--notes]",
 		Short: "Check the workspace for structural and referential problems",
-		Args:  cobra.NoArgs,
+		Long: `Reports errors (exit 4), warnings, and notes. Notes record something a
+reader may want to know that is not a defect — provenance that could not be
+machine-checked, for instance — and are summarised rather than listed unless
+--notes is given. They are always present in --json.`,
+		Args: cobra.NoArgs,
 		RunE: a.run(func(cmd *cobra.Command, args []string) error {
 			ws, err := a.openWorkspace()
 			if err != nil {
@@ -97,6 +101,7 @@ func (a *app) validateCmd() *cobra.Command {
 			return a.emitFindings(fs)
 		}),
 	}
+	cmd.Flags().BoolVar(&a.showNotes, "notes", false, "list notes instead of only counting them")
 	return cmd
 }
 
@@ -104,19 +109,40 @@ func (a *app) emitFindings(fs query.Findings) error {
 	if fs == nil {
 		fs = query.Findings{}
 	}
-	errs, warns := 0, 0
+	errs, warns, notes := 0, 0, 0
 	for _, f := range fs {
-		if f.Severity == query.SeverityError {
+		switch f.Severity {
+		case query.SeverityError:
 			errs++
-		} else {
+		case query.SeverityInfo:
+			notes++
+		default:
 			warns++
 		}
 	}
-	if err := a.emit(map[string]any{"findings": fs, "errors": errs, "warnings": warns}, func(w io.Writer) {
+	out := map[string]any{"findings": fs, "errors": errs, "warnings": warns}
+	if notes > 0 {
+		out["notes"] = notes
+	}
+	if err := a.emit(out, func(w io.Writer) {
 		for _, f := range fs {
+			// Notes are collapsed into the summary line unless asked for: a
+			// workspace citing mostly remote sources produces one per claim,
+			// which would bury the findings that need acting on. They are
+			// always present in --json.
+			if f.Severity == query.SeverityInfo && !a.showNotes {
+				continue
+			}
 			fmt.Fprintf(w, "%-7s %s  %s: %s\n", f.Severity, f.Path, f.Code, f.Message)
 		}
-		fmt.Fprintf(w, "%s, %s\n", plural(errs, "error"), plural(warns, "warning"))
+		fmt.Fprintf(w, "%s, %s", plural(errs, "error"), plural(warns, "warning"))
+		if notes > 0 {
+			fmt.Fprintf(w, ", %s", plural(notes, "note"))
+			if !a.showNotes {
+				fmt.Fprint(w, " (--notes to list)")
+			}
+		}
+		fmt.Fprintln(w)
 	}); err != nil {
 		return err
 	}

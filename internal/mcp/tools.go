@@ -263,6 +263,7 @@ func (s *Server) knowledgePublish(ctx context.Context, req *sdk.CallToolRequest,
 		return errResult(err), nil, nil
 	}
 	warnings := query.ScopeFindingsForPromotion(g, pr)
+	warnings = append(warnings, query.QuoteDisclosuresForPromotion(g, pr)...)
 	out := map[string]any{"promotion": pr, "path": s.rel(pr.ID)}
 	if len(warnings) > 0 {
 		out["warnings"] = warnings
@@ -334,6 +335,7 @@ type retractIn struct {
 	ClaimID      string    `json:"claim_id" jsonschema:"a claim, synthesis, or merge record id"`
 	Reason       string    `json:"reason" jsonschema:"why it is retracted (required)"`
 	Source       *sourceIn `json:"source,omitempty"`
+	Kind         string    `json:"kind,omitempty" jsonschema:"why it died: defect (the claim misread its source), supersession (the source was right then, the world moved on), or provenance-failure (the source itself was wrong); never inferred from superseded_by"`
 	SupersededBy string    `json:"superseded_by,omitempty" jsonschema:"id of the claim or synthesis that replaces it (not for merges)"`
 }
 
@@ -358,7 +360,10 @@ func (s *Server) claimRetract(ctx context.Context, req *sdk.CallToolRequest, in 
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	r := &dkf.Retracted{Timestamp: time.Now().UTC().Truncate(time.Second), Reason: in.Reason, Source: src, SupersededBy: in.SupersededBy}
+	if in.Kind != "" && !dkf.ValidRetractionKind(dkf.RetractionKind(in.Kind)) {
+		return errResult(apperr.Usage("invalid kind %q: must be defect, supersession, or provenance-failure", in.Kind)), nil, nil
+	}
+	r := &dkf.Retracted{Timestamp: time.Now().UTC().Truncate(time.Second), Reason: in.Reason, Source: src, Kind: dkf.RetractionKind(in.Kind), SupersededBy: in.SupersededBy}
 	updated, err := s.ws.Retract(in.ClaimID, r)
 	if err != nil {
 		return errResult(err), nil, nil

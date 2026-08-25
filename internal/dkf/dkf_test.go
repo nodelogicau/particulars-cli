@@ -2,6 +2,9 @@ package dkf
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -21,7 +24,7 @@ func sampleClaim() *Claim {
 	return &Claim{
 		ID: "clm_019196a5-8b4c-7def-8abc-0123456789ac", Subject: "par_019196a5-8b4c-7def-8abc-0123456789ab",
 		Content:   "Project X uses a microservices architecture, with separate\nservices for auth, billing, and core API.\n",
-		Source:    Source{Author: "ben", Harness: "claude", Model: "claude-sonnet-4-6", Document: "https://example.com/docs/architecture.md"},
+		Source:    Source{Author: "ben", Harness: "claude", Model: "claude-sonnet-4-6", Document: Document{URI: "https://example.com/docs/architecture.md"}},
 		Context:   Context{Scope: ScopeOrganisation, Topics: []string{"architecture", "distributed-systems"}},
 		Timestamp: ts, Confidence: f(0.9),
 	}
@@ -224,7 +227,7 @@ func TestValidation(t *testing.T) {
 	c := sampleClaim()
 	c.Confidence = f(1.5)
 	c.Context.Scope = "team"
-	c.Source = Source{Document: "x"}
+	c.Source = Source{Document: Document{URI: "x"}}
 	ps := ValidateClaim(c)
 	codes := map[string]bool{}
 	for _, p := range ps {
@@ -339,7 +342,7 @@ func TestSourceMinimum(t *testing.T) {
 	if ps := ValidateClaim(c); len(ps) != 0 {
 		t.Errorf("human-only source should be valid: %v", ps)
 	}
-	c.Source = Source{Document: "https://x"}
+	c.Source = Source{Document: Document{URI: "https://x"}}
 	if ps := ValidateClaim(c); len(ps) != 1 || ps[0].Field != "source" {
 		t.Errorf("document-only source should fail on source: %v", ps)
 	}
@@ -475,5 +478,274 @@ func TestPromotionValidation(t *testing.T) {
 	}
 	if !IsRetractableID(NewID(TypePublish)) {
 		t.Error("promotions must be retractable")
+	}
+}
+
+// TestExistingFilesAreByteStable is the guard for the document union: every
+// shape written before it existed must decode and re-encode to identical
+// bytes. Fixtures cover the shapes; DKF_ROUNDTRIP_DIR points it at a real
+// workspace, which is where an unanticipated shape would actually live.
+func TestExistingFilesAreByteStable(t *testing.T) {
+	fixtures := []string{
+		// claim with a bare-string document, the pre-union shape
+		"id: clm_01a021ab-18ae-7910-883f-f8b8be27edb0\ntype: claim\nsubject: par_01a021ab-16e6-753f-8e6e-e8b69b25aeb5\ncontent: Uses Postgres 16.\nsource:\n  author: ben\n  harness: claude\n  document: docs/architecture.md\ncontext:\n  scope: personal\ntimestamp: 2026-08-20T09:00:00Z\nconfidence: 0.9\n",
+		// document with a URL, and no other source fields
+		"id: clm_01a021ab-18c7-7d36-bfbf-a04da42cc81f\ntype: claim\nsubject: par_01a021ab-16e6-753f-8e6e-e8b69b25aeb5\ncontent: A claim with a URL.\nsource:\n  harness: claude\n  document: https://example.com/a/b?c=d#e\ncontext:\n  scope: organisation\ntimestamp: 2026-08-20T09:00:00Z\n",
+		// no document at all
+		"id: clm_01a021ab-18d0-7d36-bfbf-a04da42cc820\ntype: claim\nsubject: par_01a021ab-16e6-753f-8e6e-e8b69b25aeb5\ncontent: No document.\nsource:\n  author: ben\ncontext:\n  scope: personal\ntimestamp: 2026-08-20T09:00:00Z\n",
+		// a document that looks like a path with a line suffix
+		"id: clm_01a021ab-18d9-7d36-bfbf-a04da42cc821\ntype: claim\nsubject: par_01a021ab-16e6-753f-8e6e-e8b69b25aeb5\ncontent: Line-suffixed path.\nsource:\n  author: ben\n  document: src/billing/cron.go:14\ncontext:\n  scope: personal\ntimestamp: 2026-08-20T09:00:00Z\n",
+		// retracted claim, so the retracted block's key order is covered too
+		"id: clm_01a021ab-18e2-7d36-bfbf-a04da42cc822\ntype: claim\nsubject: par_01a021ab-16e6-753f-8e6e-e8b69b25aeb5\ncontent: Withdrawn.\nsource:\n  author: ben\n  document: notes.md\ncontext:\n  scope: personal\ntimestamp: 2026-08-20T09:00:00Z\nretracted:\n  timestamp: 2026-08-21T09:00:00Z\n  reason: wrong\n  source:\n    author: ben\n  superseded-by: clm_01a021ab-18ae-7910-883f-f8b8be27edb0\n",
+	}
+	for i, in := range fixtures {
+		obj, err := Decode([]byte(in))
+		if err != nil {
+			t.Fatalf("fixture %d: decode: %v", i, err)
+		}
+		out, err := Encode(obj)
+		if err != nil {
+			t.Fatalf("fixture %d: encode: %v", i, err)
+		}
+		if string(out) != in {
+			t.Errorf("fixture %d is not byte-stable:\n--- in\n%s\n--- out\n%s", i, in, out)
+		}
+	}
+
+	dir := os.Getenv("DKF_ROUNDTRIP_DIR")
+	if dir == "" {
+		t.Skip("set DKF_ROUNDTRIP_DIR to a workspace to check real files")
+	}
+	var checked, legacy int
+	for _, sub := range []string{"claims", "syntheses", "particulars", "merges", "publishes"} {
+		entries, err := os.ReadDir(filepath.Join(dir, sub))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !strings.HasSuffix(e.Name(), ".yaml") {
+				continue
+			}
+			path := filepath.Join(dir, sub, e.Name())
+			in, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			obj, err := Decode(in)
+			if err != nil {
+				t.Errorf("%s: decode: %v", path, err)
+				continue
+			}
+			out, err := Encode(obj)
+			if err != nil {
+				t.Errorf("%s: encode: %v", path, err)
+				continue
+			}
+			// A legacy produced-by synthesis is deliberately not byte-stable:
+			// the reader maps it to source and the writer emits source, which
+			// is what legacy_produced_by warns about. Everything else must be.
+			if bytes.Contains(in, []byte("produced-by:")) {
+				if bytes.Contains(out, []byte("produced-by:")) {
+					t.Errorf("%s: the encoder must never emit produced-by", path)
+				}
+				legacy++
+				continue
+			}
+			if !bytes.Equal(in, out) {
+				t.Errorf("%s is not byte-stable", path)
+			}
+			checked++
+		}
+	}
+	t.Logf("round-tripped %d real files byte-identically (%d legacy produced-by, rewritten by design) from %s", checked, legacy, dir)
+}
+
+func TestDocumentUnion(t *testing.T) {
+	// Scalar in, scalar out — the shape every existing claim has.
+	scalarYAML := "id: clm_01a021ab-18ae-7910-883f-f8b8be27edb0\ntype: claim\nsubject: par_01a021ab-16e6-753f-8e6e-e8b69b25aeb5\ncontent: x\nsource:\n  author: ben\n  document: docs/a.md\ncontext:\n  scope: personal\ntimestamp: 2026-08-20T09:00:00Z\n"
+	obj, err := Decode([]byte(scalarYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := obj.(*Claim)
+	if c.Source.Document.URI != "docs/a.md" || c.Source.Document.structured() {
+		t.Errorf("scalar decode: %+v", c.Source.Document)
+	}
+	if out, _ := Encode(c); string(out) != scalarYAML {
+		t.Errorf("scalar re-encode differs:\n%s", out)
+	}
+
+	// Mapping round-trips, keys in the order uri, hash, quote.
+	c.Source.Document = Document{URI: "docs/a.md", Hash: "sha256:" + strings.Repeat("a", 64), Quote: "the billing service listens on 8443"}
+	out, err := Encode(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "    ") && strings.Contains(line, ":") {
+			keys = append(keys, strings.TrimSpace(strings.SplitN(line, ":", 2)[0]))
+		}
+	}
+	if strings.Join(keys, ",") != "uri,hash,quote" {
+		t.Errorf("document key order: %v\n%s", keys, out)
+	}
+	back, err := Decode(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := back.(*Claim).Source.Document; got != c.Source.Document {
+		t.Errorf("mapping round trip: %+v", got)
+	}
+	if again, _ := Encode(back); !bytes.Equal(out, again) {
+		t.Error("mapping form is not byte-stable")
+	}
+
+	// JSON mirrors YAML, so an existing consumer still sees a string.
+	if b, _ := json.Marshal(Document{URI: "docs/a.md"}); string(b) != `"docs/a.md"` {
+		t.Errorf("scalar JSON: %s", b)
+	}
+	if b, _ := json.Marshal(Document{URI: "u", Quote: "q"}); !strings.HasPrefix(string(b), `{"uri"`) {
+		t.Errorf("mapping JSON: %s", b)
+	}
+	var d Document
+	if err := json.Unmarshal([]byte(`"docs/a.md"`), &d); err != nil || d.URI != "docs/a.md" {
+		t.Errorf("scalar JSON decode: %v %+v", err, d)
+	}
+	if err := json.Unmarshal([]byte(`{"uri":"u","hash":"sha256:`+strings.Repeat("b", 64)+`"}`), &d); err != nil || d.Hash == "" {
+		t.Errorf("mapping JSON decode: %v %+v", err, d)
+	}
+
+	// Validation.
+	for name, doc := range map[string]Document{
+		"hash without uri":  {Hash: "sha256:" + strings.Repeat("a", 64)},
+		"quote without uri": {Quote: "something"},
+		"short hash":        {URI: "u", Hash: "sha256:abc"},
+		"uppercase hash":    {URI: "u", Hash: "sha256:" + strings.Repeat("A", 64)},
+		"unprefixed hash":   {URI: "u", Hash: strings.Repeat("a", 64)},
+		"blank quote":       {URI: "u", Quote: "   "},
+	} {
+		if ps := doc.Validate("source.document"); len(ps) == 0 {
+			t.Errorf("%s should be rejected", name)
+		}
+	}
+	for name, doc := range map[string]Document{
+		"bare reference": {URI: "chat session 2026-08-22"},
+		"nothing at all": {},
+		"full mapping":   {URI: "u", Hash: "sha256:" + strings.Repeat("f", 64), Quote: "q"},
+	} {
+		if ps := doc.Validate("source.document"); len(ps) != 0 {
+			t.Errorf("%s should be valid: %v", name, ps)
+		}
+	}
+}
+
+func TestHashAndQuoteNormalisation(t *testing.T) {
+	// The same content from a CRLF and an LF checkout hashes identically.
+	lf := "line one\nline two\nline three\n"
+	crlf := "line one\r\nline two\r\nline three\r\n"
+	if HashDocumentBytes([]byte(lf)) != HashDocumentBytes([]byte(crlf)) {
+		t.Error("CRLF and LF forms of the same content must hash the same")
+	}
+	// Everything else is an edit and must change the hash.
+	for name, variant := range map[string]string{
+		"trailing whitespace": "line one \nline two\nline three\n",
+		"missing final line":  "line one\nline two\n",
+		"changed word":        "line one\nline TWO\nline three\n",
+	} {
+		if HashDocumentBytes([]byte(variant)) == HashDocumentBytes([]byte(lf)) {
+			t.Errorf("%s should change the hash", name)
+		}
+	}
+	if h := HashDocumentBytes([]byte(lf)); !hashPattern.MatchString(h) {
+		t.Errorf("hash shape: %q", h)
+	}
+	if got, err := HashDocument(strings.NewReader(crlf)); err != nil || got != HashDocumentBytes([]byte(lf)) {
+		t.Errorf("HashDocument: %v %q", err, got)
+	}
+
+	doc := "Preamble.\n\nIn staging, the billing service listens on 443.\n\n```go\nfunc main() {\n\tx := 1\n}\n```\n"
+	// A block-scalar quote carries a trailing newline that is an artefact of
+	// YAML, not of the source.
+	if !QuoteMatches(doc, "In staging, the billing service listens on 443.\n") {
+		t.Error("a block-scalar quote should match")
+	}
+	if !QuoteMatches(doc, "  In staging, the billing service listens on 443.  ") {
+		t.Error("surrounding whitespace on the quote should be trimmed")
+	}
+	// Internal whitespace is part of what was quoted.
+	if !QuoteMatches(doc, "func main() {\n\tx := 1\n}") {
+		t.Error("an indented code quote should match with its indentation")
+	}
+	if QuoteMatches(doc, "func main() {\nx := 1\n}") {
+		t.Error("internal whitespace must not be normalised away")
+	}
+	// CRLF on either side still matches.
+	if !QuoteMatches(strings.ReplaceAll(doc, "\n", "\r\n"), "In staging, the billing service listens on 443.") {
+		t.Error("a CRLF document should still match an LF quote")
+	}
+	for _, absent := range []string{"In production, the billing service listens on 443.", "", "   "} {
+		if QuoteMatches(doc, absent) {
+			t.Errorf("%q should not match", absent)
+		}
+	}
+}
+
+func TestRetractionKind(t *testing.T) {
+	base := sampleClaim()
+	ts := time.Date(2026, 8, 26, 9, 0, 0, 0, time.UTC)
+	// Key order: timestamp, reason, source, kind, superseded-by.
+	base.Retracted = &Retracted{Timestamp: ts, Reason: "misread the port", Source: Source{Author: "ben"},
+		Kind: KindDefect, SupersededBy: "clm_01a021ab-18ae-7910-883f-f8b8be27edb0"}
+	out, err := Encode(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := string(out[strings.Index(string(out), "retracted:"):])
+	var keys []string
+	for _, line := range strings.Split(block, "\n") {
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && strings.Contains(line, ":") {
+			keys = append(keys, strings.TrimSpace(strings.SplitN(line, ":", 2)[0]))
+		}
+	}
+	if strings.Join(keys, ",") != "timestamp,reason,source,kind,superseded-by" {
+		t.Errorf("retracted key order: %v\n%s", keys, block)
+	}
+	back, err := Decode(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.(*Claim).Retracted.Kind != KindDefect {
+		t.Error("kind lost in round trip")
+	}
+	if again, _ := Encode(back); !bytes.Equal(out, again) {
+		t.Error("a retraction with a kind is not byte-stable")
+	}
+
+	// Optional, and absent stays absent.
+	base.Retracted = &Retracted{Timestamp: ts, Reason: "x", Source: Source{Author: "ben"},
+		SupersededBy: "clm_01a021ab-18ae-7910-883f-f8b8be27edb0"}
+	out, _ = Encode(base)
+	if strings.Contains(string(out), "kind:") {
+		t.Error("no kind key should be emitted when none was declared")
+	}
+	// A replacement must not imply a kind: that is the inference the spec forbids.
+	if k := base.Retracted.Kind; k != "" {
+		t.Errorf("kind must never be inferred from superseded-by, got %q", k)
+	}
+	if ps := ValidateRetracted(base.Retracted); len(ps) != 0 {
+		t.Errorf("a kindless retraction is valid: %v", ps)
+	}
+
+	for _, k := range []RetractionKind{KindDefect, KindSupersession, KindProvenanceFailure} {
+		if !ValidRetractionKind(k) {
+			t.Errorf("%q should be valid", k)
+		}
+	}
+	for _, k := range []RetractionKind{"wrong", "Defect", "supersede", "provenance failure"} {
+		r := &Retracted{Timestamp: ts, Reason: "x", Source: Source{Author: "ben"}, Kind: k}
+		if ps := ValidateRetracted(r); len(ps) == 0 {
+			t.Errorf("kind %q should be rejected", k)
+		}
 	}
 }

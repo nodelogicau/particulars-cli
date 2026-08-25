@@ -66,6 +66,7 @@ meant from a label. Get ids from 'particulars recall <thing> --json'.`,
 				return err
 			}
 			warnings := query.ScopeFindingsForPromotion(g, pr)
+			warnings = append(warnings, query.QuoteDisclosuresForPromotion(g, pr)...)
 			path, _ := ws.Path(pr.ID)
 			out := map[string]any{"promotion": pr, "path": ws.Rel(path)}
 			if len(warnings) > 0 {

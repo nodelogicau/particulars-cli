@@ -24,6 +24,53 @@ const (
 // provenanceFlags are the shared --author/--harness/--model/--document flags.
 type provenanceFlags struct {
 	author, harness, model, document string
+	// documentHash and quote make the document checkable; hashDocument
+	// computes the hash from the local file the document resolves to.
+	documentHash, quote, quoteFile string
+	hashDocument                   bool
+}
+
+// resolveDocument turns the document flags into a dkf.Document, hashing and
+// reading files as needed. The locator flags require --document: a hash or a
+// quote with nothing to point at records evidence for a source we did not name.
+func (a *app) resolveDocument(ws *store.Workspace, f provenanceFlags) (dkf.Document, error) {
+	doc := dkf.Document{URI: strings.TrimSpace(f.document), Hash: strings.TrimSpace(f.documentHash), Quote: f.quote}
+	if f.quoteFile != "" {
+		if doc.Quote != "" {
+			return doc, usageErr("--quote and --quote-file are alternatives")
+		}
+		data, err := a.readContent("", f.quoteFile)
+		if err != nil {
+			return doc, err
+		}
+		doc.Quote = data
+	}
+	if doc.URI == "" {
+		for name, set := range map[string]bool{"--document-hash": doc.Hash != "", "--quote": doc.Quote != "", "--hash-document": f.hashDocument} {
+			if set {
+				return doc, usageErr("%s needs --document: there is nothing to point at without it", name)
+			}
+		}
+		return doc, nil
+	}
+	if f.hashDocument {
+		if doc.Hash != "" {
+			return doc, usageErr("--document-hash and --hash-document are alternatives")
+		}
+		path, ok := query.LocalDocumentPath(ws, doc.URI)
+		if !ok {
+			return doc, usageErr("--hash-document needs %s to resolve to a file in the workspace; pass --document-hash if you hashed it elsewhere", doc.URI)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return doc, notFoundErr("--hash-document: %v", err)
+		}
+		doc.Hash = dkf.HashDocumentBytes(data)
+	}
+	if doc.Quote != "" && strings.TrimSpace(doc.Quote) == "" {
+		return doc, usageErr("--quote is blank; omit it rather than recording nothing")
+	}
+	return doc, nil
 }
 
 func firstNonEmpty(vs ...string) string {
@@ -37,7 +84,8 @@ func firstNonEmpty(vs ...string) string {
 
 // resolveSource applies flag → env → dkf.yaml defaults.
 func resolveSource(ws *store.Workspace, f provenanceFlags) dkf.Source {
-	return prov.Resolve(ws.Config.Defaults.Source, prov.Explicit{Author: f.author, Harness: f.harness, Model: f.model, Document: f.document}, "")
+	return prov.Resolve(ws.Config.Defaults.Source, prov.Explicit{Author: f.author, Harness: f.harness, Model: f.model,
+		Document: f.document, DocumentHash: f.documentHash, Quote: f.quote}, "")
 }
 
 // requireProvenance enforces the format's source minimum (author or harness),

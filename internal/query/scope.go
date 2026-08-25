@@ -69,6 +69,31 @@ func describeScope(g *store.Graph, id string, effective dkf.Scope) string {
 	return fmt.Sprintf("%s, promoted from %s", effective, a.GetContext().Scope)
 }
 
+// QuoteDisclosuresForPromotion names the promoted objects that carry a
+// verbatim quote. A synthesis summarises its inputs; a quote reproduces its
+// source completely, so widening a quoted claim publishes that source text in
+// full. Reported, never refused: whether the quoted material may travel is the
+// promoter's judgement, but they should be told they are making it.
+func QuoteDisclosuresForPromotion(g *store.Graph, pr *dkf.Promotion) []string {
+	if pr == nil {
+		return nil
+	}
+	var out []string
+	for _, id := range pr.Claims {
+		a := g.Assertion(id)
+		if a == nil {
+			continue
+		}
+		if doc := a.GetSource().Document; doc.Quote != "" {
+			out = append(out, fmt.Sprintf(
+				"%s carries a verbatim quote from %s, so promoting it to %s publishes that source text in full",
+				id, doc.URI, pr.Scope))
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // ScopeFindingsForPromotion returns the condition for every synthesis a
 // promotion could have changed: the syntheses it promoted, and every
 // non-retracted synthesis citing anything it covers — because promoting an

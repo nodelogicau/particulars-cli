@@ -16,14 +16,14 @@ import (
 func (a *app) retractCmd() *cobra.Command { return a.buildRetractCmd(false) }
 
 func (a *app) buildRetractCmd(alias bool) *cobra.Command {
-	var reason, supersededBy string
+	var reason, supersededBy, kind string
 	var prov provenanceFlags
 	short := "Mark a claim, synthesis, merge, or promotion retracted (append-only; never deletes)"
 	if alias {
 		short = "Alias of `particulars retract` (kept for compatibility)"
 	}
 	cmd := &cobra.Command{
-		Use:   "retract <id> --reason <text> [--superseded-by <id>] [flags]",
+		Use:   "retract <id> --reason <text> [--kind <k>] [--superseded-by <id>] [flags]",
 		Short: short,
 		Long: `Appends a retracted block to the object's own file; nothing is deleted or
 rewritten. Claims, syntheses, merge records, and promotion records can be
@@ -37,6 +37,9 @@ what an external consumer has already fetched.`,
 			id := args[0]
 			if strings.TrimSpace(reason) == "" {
 				return usageErr("--reason is required")
+			}
+			if kind != "" && !dkf.ValidRetractionKind(dkf.RetractionKind(kind)) {
+				return usageErr("invalid --kind %q: must be defect (the claim misread its source), supersession (the source was right then, the world moved on), or provenance-failure (the source itself was wrong)", kind)
 			}
 			if !dkf.IsRetractableID(id) {
 				return usageErr("%q is not a claim, synthesis, merge, or promotion id", id)
@@ -61,7 +64,7 @@ what an external consumer has already fetched.`,
 			if err := requireProvenance(src, false); err != nil {
 				return err
 			}
-			r := &dkf.Retracted{Timestamp: time.Now().UTC().Truncate(time.Second), Reason: reason, Source: src, SupersededBy: supersededBy}
+			r := &dkf.Retracted{Timestamp: time.Now().UTC().Truncate(time.Second), Reason: reason, Source: src, Kind: dkf.RetractionKind(kind), SupersededBy: supersededBy}
 			updated, err := ws.Retract(id, r)
 			if err != nil {
 				return err
@@ -77,6 +80,7 @@ what an external consumer has already fetched.`,
 			})
 		}),
 	}
+	cmd.Flags().StringVar(&kind, "kind", "", "why it died: defect|supersession|provenance-failure (never inferred from --superseded-by)")
 	cmd.Flags().StringVar(&reason, "reason", "", "why it is retracted (required)")
 	cmd.Flags().StringVar(&supersededBy, "superseded-by", "", "id of the claim or synthesis that replaces it (not for merges)")
 	cmd.Flags().StringVar(&prov.author, "author", "", "who is retracting (default: $DKF_AUTHOR, then dkf.yaml)")

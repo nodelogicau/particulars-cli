@@ -63,6 +63,11 @@ func (a *app) claimAssertCmd() *cobra.Command {
 			if err := requireProvenance(src, false); err != nil {
 				return err
 			}
+			doc, err := a.resolveDocument(ws, prov)
+			if err != nil {
+				return err
+			}
+			src.Document = doc
 			for i, t := range topics {
 				topics[i] = strings.TrimSpace(t)
 				if topics[i] == "" {
@@ -91,7 +96,11 @@ func (a *app) claimAssertCmd() *cobra.Command {
 	cmd.Flags().StringVar(&prov.author, "author", "", "source.author (default: $DKF_AUTHOR, then dkf.yaml)")
 	cmd.Flags().StringVar(&prov.harness, "harness", "", "source.harness (default: $DKF_HARNESS, then dkf.yaml)")
 	cmd.Flags().StringVar(&prov.model, "model", "", "source.model (default: $DKF_MODEL, then dkf.yaml)")
-	cmd.Flags().StringVar(&prov.document, "document", "", "source.document: URI or path of the evidence")
+	cmd.Flags().StringVar(&prov.document, "document", "", "source.document: URI or workspace-relative path of the evidence")
+	cmd.Flags().StringVar(&prov.documentHash, "document-hash", "", "sha256:… of the document as you read it (CRLF normalised to LF)")
+	cmd.Flags().BoolVar(&prov.hashDocument, "hash-document", false, "compute --document-hash from the local file the document resolves to")
+	cmd.Flags().StringVar(&prov.quote, "quote", "", "the sentence in the document that supports this claim, verbatim")
+	cmd.Flags().StringVar(&prov.quoteFile, "quote-file", "", "read the quote from a file, or - for stdin")
 	cmd.Flags().StringVar(&scope, "scope", "", "personal|organisation|public (default: dkf.yaml defaults.scope)")
 	cmd.Flags().StringArrayVar(&topics, "topic", nil, "topic tag (repeatable)")
 	cmd.Flags().StringVar(&confidence, "confidence", "", "confidence in [0, 1]")

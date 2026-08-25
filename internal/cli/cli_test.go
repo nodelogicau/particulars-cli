@@ -1393,3 +1393,153 @@ func TestSynthesisCreateWarnsOnWiderScope(t *testing.T) {
 		}
 	}
 }
+
+func TestVerifiableProvenance(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+	t.Setenv("DKF_WORKSPACE", ws)
+	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
+	run(t, "", "particular", "define", "--label", "Project X", "--json")
+	if err := os.MkdirAll(filepath.Join(ws, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	docPath := filepath.Join(ws, "docs", "a.md")
+	body := "# A\n\nIn staging, the billing service listens on 443.\n\nTail.\n"
+	if err := os.WriteFile(docPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	quote := "In staging, the billing service listens on 443."
+
+	// A bare reference stays a scalar: it is not inferior provenance.
+	bare := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "bare", "--document", "chat session", "--json")
+	if bare.code != 0 {
+		t.Fatalf("bare document: %+v", bare)
+	}
+	if doc := bare.js["claim"].(map[string]any)["source"].(map[string]any)["document"]; doc != "chat session" {
+		t.Errorf("a bare document should stay a string in JSON, got %#v", doc)
+	}
+
+	// The mapping form, with the hash computed locally.
+	r := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "billing listens on 443",
+		"--document", "docs/a.md", "--hash-document", "--quote", quote, "--json")
+	if r.code != 0 {
+		t.Fatalf("verifiable claim: %+v", r)
+	}
+	id := r.js["claim"].(map[string]any)["id"].(string)
+	doc, ok := r.js["claim"].(map[string]any)["source"].(map[string]any)["document"].(map[string]any)
+	if !ok || doc["uri"] != "docs/a.md" || doc["quote"] != quote {
+		t.Fatalf("document mapping: %#v", doc)
+	}
+	if h, _ := doc["hash"].(string); !strings.HasPrefix(h, "sha256:") || len(h) != 71 {
+		t.Errorf("hash shape: %q", h)
+	}
+	if v := run(t, "", "validate", "--json"); v.code != 0 {
+		t.Fatalf("intact document should validate: %+v", v)
+	}
+
+	// Drift is a warning, never a failure.
+	if err := os.WriteFile(docPath, []byte(strings.Replace(body, "Tail.", "Rewritten.", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := run(t, "", "validate", "--json")
+	if v.code != 0 {
+		t.Errorf("drift must not fail validation: %+v", v)
+	}
+	var codes []string
+	for _, f := range v.js["findings"].([]any) {
+		codes = append(codes, f.(map[string]any)["code"].(string))
+	}
+	if !slicesContains(codes, "context_drift") {
+		t.Errorf("expected context_drift, got %v", codes)
+	}
+	if err := os.WriteFile(docPath, []byte("# A\n\nGone.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v = run(t, "", "validate", "--json")
+	codes = nil
+	for _, f := range v.js["findings"].([]any) {
+		codes = append(codes, f.(map[string]any)["code"].(string))
+	}
+	if !slicesContains(codes, "quote_drift") || v.code != 0 {
+		t.Errorf("expected quote_drift and exit 0, got %v / %d", codes, v.code)
+	}
+	// The bare reference is a note, not a warning.
+	for _, f := range v.js["findings"].([]any) {
+		m := f.(map[string]any)
+		if m["code"] == "unverified_document" && m["severity"] != "info" {
+			t.Errorf("unverified_document should be a note: %v", m["severity"])
+		}
+	}
+
+	// Promotion says what a quote discloses.
+	p := run(t, "", "publish", id, "--scope", "organisation", "--json")
+	if p.code != 0 {
+		t.Fatalf("publish: %+v", p)
+	}
+	var told bool
+	for _, w := range p.js["warnings"].([]any) {
+		if strings.Contains(w.(string), "verbatim quote") {
+			told = true
+		}
+	}
+	if !told {
+		t.Errorf("promoting a quoted claim should disclose it: %+v", p.js["warnings"])
+	}
+
+	// Retraction kind.
+	if rr := run(t, "", "retract", id, "--reason", "misread the port", "--kind", "defect", "--json"); rr.code != 0 {
+		t.Fatalf("retract --kind: %+v", rr)
+	}
+	if got := run(t, "", "recall", "Project X", "--include-retracted", "--json"); got.code != 0 {
+		t.Fatalf("recall: %+v", got)
+	}
+	data, err := os.ReadFile(filepath.Join(ws, "claims", id+".yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "  kind: defect\n") {
+		t.Errorf("kind not written:\n%s", data)
+	}
+	if bad := run(t, "", "retract", bare.js["claim"].(map[string]any)["id"].(string), "--reason", "x", "--kind", "typo", "--json"); bad.code != 2 {
+		t.Errorf("an unknown kind should exit 2, got %d", bad.code)
+	}
+}
+
+func slicesContains(hay []string, needle string) bool {
+	for _, h := range hay {
+		if h == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func TestNotesAreCountedNotListed(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+	t.Setenv("DKF_WORKSPACE", ws)
+	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
+	run(t, "", "particular", "define", "--label", "Project X", "--json")
+	for i := 0; i < 3; i++ {
+		run(t, "", "claim", "assert", "--subject", "Project X", "--content", "remote evidence",
+			"--document", "https://example.com/x", "--json")
+	}
+	text := run(t, "", "validate")
+	if strings.Contains(text.stdout, "unverified_document") {
+		t.Errorf("notes should not be listed by default:\n%s", text.stdout)
+	}
+	if !strings.Contains(text.stdout, "3 notes (--notes to list)") {
+		t.Errorf("notes should be counted: %q", text.stdout)
+	}
+	listed := run(t, "", "validate", "--notes")
+	if strings.Count(listed.stdout, "unverified_document") != 3 {
+		t.Errorf("--notes should list them:\n%s", listed.stdout)
+	}
+	j := run(t, "", "validate", "--json")
+	if j.js["notes"].(float64) != 3 || len(j.js["findings"].([]any)) != 3 {
+		t.Errorf("json must always carry notes: %+v", j.js)
+	}
+	if j.code != 0 {
+		t.Errorf("notes must not affect the exit code, got %d", j.code)
+	}
+}

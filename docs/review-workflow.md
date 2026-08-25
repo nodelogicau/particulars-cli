@@ -1,5 +1,33 @@
 # Reviewing agent knowledge through pull requests
 
+## Auditing a claim without leaving the diff
+
+A claim may carry the sentence it rests on:
+
+```yaml
+source:
+  document:
+    uri: docs/architecture.md
+    hash: sha256:9f2a…
+    quote: |
+      In staging, the billing service listens on 443.
+```
+
+The quote is what makes review fast: it is right there in the diff, so checking
+the claim against its source needs no checkout, no fetch, and no tooling. Note
+the word **staging** — that is the kind of qualifier a claim quietly drops, and
+seeing the quote beside the claim is how a reviewer catches it.
+
+`validate` reports `context_drift` when the document changed around a quote that
+is still present, and `quote_drift` when the cited text is gone — so a claim you
+approved last month tells you when the ground moved under it. Neither fails the
+build: they are conditions for a reader to resolve.
+
+A quote also reproduces its source **completely**, where a synthesis only
+summarises. When reviewing a promotion, that is the question to ask: promoting a
+quoted claim publishes the quoted text with it. See
+[provenance.md](provenance.md).
+
 `particulars` has no review state of its own. It leans on git, which already gives
 every DKF workspace version history, authorship, diffs, and a review UI.
 

@@ -23,6 +23,9 @@ const (
 // Explicit holds values supplied directly by a caller (flags or tool args).
 type Explicit struct {
 	Author, Harness, Model, Document string
+	// DocumentHash and Quote make the document checkable; both require
+	// Document and are ignored without it.
+	DocumentHash, Quote string
 }
 
 // placeholder matches an unsubstituted template variable such as
@@ -50,7 +53,7 @@ func Resolve(defaults dkf.Source, e Explicit, fallbackHarness string) dkf.Source
 		Author:   first(e.Author, os.Getenv(EnvAuthor), defaults.Author),
 		Harness:  first(e.Harness, os.Getenv(EnvHarness), defaults.Harness, fallbackHarness),
 		Model:    first(e.Model, os.Getenv(EnvModel), defaults.Model),
-		Document: strings.TrimSpace(e.Document),
+		Document: dkf.Document{URI: strings.TrimSpace(e.Document), Hash: strings.TrimSpace(e.DocumentHash), Quote: e.Quote},
 	}
 }
 

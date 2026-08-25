@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- **Verifiable provenance.** `source.document` may now be a mapping of `uri`,
+  `hash`, and `quote` as well as a bare reference — which stays valid and is not
+  inferior provenance. `claim assert` gains `--document-hash`, `--hash-document`
+  (compute it from the local file), `--quote`, and `--quote-file`. The quote is
+  the point: a reviewer can check a claim against its source **while reading the
+  pull request**, with no tooling and no network.
+- **Drift is two signals.** `validate` reports `context_drift` when the document
+  changed around a quote that is still present, and `quote_drift` when the cited
+  text is gone. Hashing the quote alone would miss a document whose "In staging"
+  became "In production" without touching the quoted words. Neither is ever an
+  error: a claim whose source drifted stays valid, readable, and citable.
+- **A hash is taken over LF-normalised bytes and nothing else.** Line endings
+  differ between checkouts of one commit, so raw bytes would report drift on
+  every claim from a Windows checkout; trailing whitespace is deliberately left
+  alone, because normalising it would blind the check to a class of real edit.
+  The spec leaves this open — the reasoning is on
+  [particulars-cli#3](https://github.com/nodelogicau/particulars-cli/issues/3).
+- **Verification never reaches the network.** A document is checked only when it
+  resolves to a file in the workspace; everything else is `unverified_document`
+  at the new `info` severity, which records that provenance was not
+  machine-checked rather than that anything is wrong. `validate` now prints
+  notes separately from warnings.
+- **`retract --kind defect|supersession|provenance-failure`** records which of
+  the three joints in `claim → source → world` broke. Declared, never inferred
+  from `--superseded-by`. The spec's suggested cross-check of kind against drift
+  is **not** implemented, and `validate` carries a comment saying why.
+- A quote discloses its source completely, where a synthesis summarises — so
+  promoting a quoted claim now says so, and `validate` notes quoted claims shared
+  beyond `personal`.
+- Skill: stop teaching `--document src/billing/cron.go:14`. A line offset rots on
+  the next edit above it; the skill now teaches `--quote`, what to quote, and
+  that a quote travels with the claim when it is promoted.
+
 - Examples: pin `PARTICULARS_VERSION` to v0.7.0 in both workflows (`dkf-check.yml`
   was still on v0.2.0) and say why the pin is load-bearing. An older binary does
   not read record types it predates: `dkf-check` rebuilds `index.yaml` without

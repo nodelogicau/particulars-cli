@@ -186,7 +186,7 @@ pushed by a workflow when a knowledge pull request is merged. See
 | `workspace pointer [dir] [--at D] [--force]` | Write a `.dkf` pointer to an existing workspace |
 | `particular define --label L [--uri U] [--alias A]…` | Create or update a particular; idempotent on URI |
 | `particular resolve <id\|uri\|label\|alias>` | Find particulars (label/alias case-insensitive) |
-| `claim assert --subject P (--content T \| --content-file F\|-) […]` | Record a claim |
+| `claim assert --subject P (--content T \| --content-file F\|-) [--document D] [--hash-document] [--quote Q] […]` | Record a claim, optionally with checkable evidence (see [docs/provenance.md](docs/provenance.md)) |
 | `retract <id> --reason R [--superseded-by id]` | Append a retraction block to a claim, synthesis, or merge (`claim retract` is an alias) |
 | `particular merge <a> <b> [--reason R]` | Declare two URIs the same particular; writes `merges/mrg_….yaml` |
 | `synthesis create --subject P --input id:role[:weight]… --unresolved U […]` | Record a synthesis the agent has reasoned |

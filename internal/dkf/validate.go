@@ -16,6 +16,8 @@ const (
 	CodeConflictingProvenance = "conflicting_provenance"
 	// CodeInvalidMerge: a merge record's uris are malformed.
 	CodeInvalidMerge = "invalid_merge"
+	// CodeInvalidDocument: a source's document mapping is malformed.
+	CodeInvalidDocument = "invalid_document"
 	// CodeInvalidPromotion: a promotion record's claims list is malformed, or
 	// names something that carries no scope.
 	CodeInvalidPromotion = "invalid_promotion"
@@ -169,6 +171,10 @@ func ValidateRetracted(r *Retracted) Problems {
 		ps = append(ps, missing("retracted.reason"))
 	}
 	ps = append(ps, checkSource("retracted.source", r.Source)...)
+	if r.Kind != "" && !ValidRetractionKind(r.Kind) {
+		ps = append(ps, Problem{Code: CodeInvalidEnum, Field: "retracted.kind", Message: fmt.Sprintf(
+			"kind must be defect, supersession, or provenance-failure, got %q", r.Kind)})
+	}
 	if r.SupersededBy != "" && !IsAssertionID(r.SupersededBy) {
 		ps = append(ps, Problem{Code: CodeInvalidID, Field: "retracted.superseded-by", Message: fmt.Sprintf("must reference a claim or synthesis, got %q", r.SupersededBy)})
 	}
@@ -205,10 +211,11 @@ func checkSubject(subject string) Problems {
 
 // checkSource enforces the format's minimum: at least one of author or harness.
 func checkSource(field string, s Source) Problems {
+	var ps Problems
 	if strings.TrimSpace(s.Author) == "" && strings.TrimSpace(s.Harness) == "" {
-		return Problems{{Code: CodeMissingField, Field: field, Message: "source must contain at least one of author or harness"}}
+		ps = append(ps, Problem{Code: CodeMissingField, Field: field, Message: "source must contain at least one of author or harness"})
 	}
-	return nil
+	return append(ps, s.Document.Validate(field+".document")...)
 }
 
 // ValidateMerge checks field-level constraints of a merge record.

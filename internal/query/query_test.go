@@ -777,3 +777,144 @@ func TestPromotionsAreNotKnowledge(t *testing.T) {
 		t.Error("a promotion should not be traceable as provenance")
 	}
 }
+
+// docClaim writes a claim whose source carries the given document.
+func (f *fixture) docClaim(subject, content string, doc dkf.Document, sc dkf.Scope) *dkf.Claim {
+	f.t.Helper()
+	if sc == "" {
+		sc = dkf.ScopePersonal
+	}
+	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: subject, Content: content,
+		Source: dkf.Source{Author: "ben", Document: doc}, Context: dkf.Context{Scope: sc}, Timestamp: ts}
+	if err := f.w.Create(c); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := f.w.UpsertIndex(c); err != nil {
+		f.t.Fatal(err)
+	}
+	return c
+}
+
+func TestDocumentVerificationIsOfflineAndAdvisory(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	docPath := filepath.Join(f.w.Root, "docs", "architecture.md")
+	if err := os.MkdirAll(filepath.Dir(docPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "# Architecture\n\nIn staging, the billing service listens on 443.\n\nOther prose.\n"
+	if err := os.WriteFile(docPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	quote := "In staging, the billing service listens on 443."
+	hash := dkf.HashDocumentBytes([]byte(body))
+
+	verified := f.docClaim(p.ID, "billing listens on 443", dkf.Document{URI: "docs/architecture.md", Hash: hash, Quote: quote}, "")
+	remote := f.docClaim(p.ID, "remote evidence", dkf.Document{URI: "https://example.com/x", Hash: hash, Quote: quote}, "")
+	missing := f.docClaim(p.ID, "vanished file", dkf.Document{URI: "docs/gone.md", Hash: hash}, "")
+	bare := f.docClaim(p.ID, "a conversation", dkf.Document{URI: "chat session 2026-08-22"}, "")
+	_, _ = f.w.RebuildIndex()
+
+	codesFor := func(id string) []string {
+		fs, err := Validate(f.w)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		g, _ := f.w.Load()
+		for _, fi := range fs {
+			if fi.Path == g.Files[id] {
+				out = append(out, fi.Code)
+			}
+		}
+		return out
+	}
+	if got := codesFor(verified.ID); len(got) != 0 {
+		t.Errorf("an intact document should produce no findings: %v", got)
+	}
+	for _, tc := range []struct {
+		id, why string
+	}{{remote.ID, "a remote URI must not be fetched"}, {missing.ID, "a missing file is unverified"}, {bare.ID, "a bare reference is unverified"}} {
+		got := codesFor(tc.id)
+		if len(got) != 1 || got[0] != CodeUnverifiedDocument {
+			t.Errorf("%s: got %v", tc.why, got)
+		}
+	}
+
+	// Context drift: the quote survives, its surroundings do not.
+	edited := strings.Replace(body, "Other prose.", "Rewritten prose.", 1)
+	if err := os.WriteFile(docPath, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := codesFor(verified.ID); len(got) != 1 || got[0] != CodeContextDrift {
+		t.Errorf("context drift: %v", got)
+	}
+	fs, _ := Validate(f.w)
+	if fs.HasErrors() {
+		t.Error("drift must never be an error")
+	}
+	for _, fi := range fs {
+		if fi.Code == CodeContextDrift && fi.Severity != SeverityWarning {
+			t.Errorf("drift should be a warning, got %s", fi.Severity)
+		}
+		if fi.Code == CodeUnverifiedDocument && fi.Severity != SeverityInfo {
+			t.Errorf("unverified should be a note, got %s", fi.Severity)
+		}
+	}
+
+	// Quote drift: the cited sentence is gone.
+	gone := strings.Replace(edited, quote, "In production, the billing service listens on 8443.", 1)
+	if err := os.WriteFile(docPath, []byte(gone), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := codesFor(verified.ID); len(got) != 1 || got[0] != CodeQuoteDrift {
+		t.Errorf("quote drift: %v", got)
+	}
+}
+
+func TestQuotedSourceIsNotedWhenShared(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	doc := dkf.Document{URI: "https://example.com/x", Quote: "verbatim source text"}
+	priv := f.docClaim(p.ID, "personal note", doc, dkf.ScopePersonal)
+	org := f.docClaim(p.ID, "shared fact", doc, dkf.ScopeOrganisation)
+	_, _ = f.w.RebuildIndex()
+
+	noted := map[string]bool{}
+	fs, err := Validate(f.w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, _ := f.w.Load()
+	for _, fi := range fs {
+		if fi.Code == CodeQuotedSource {
+			for _, id := range []string{priv.ID, org.ID} {
+				if fi.Path == g.Files[id] {
+					noted[id] = true
+				}
+			}
+			if fi.Severity != SeverityInfo {
+				t.Errorf("quoted_source should be a note, got %s", fi.Severity)
+			}
+		}
+	}
+	if noted[priv.ID] {
+		t.Error("a personal quote discloses nothing beyond the workspace and should stay quiet")
+	}
+	if !noted[org.ID] {
+		t.Error("an organisation-scoped quote should be noted")
+	}
+	// Promoting the personal one brings it into scope for the note.
+	f.promote(dkf.ScopeOrganisation, priv.ID)
+	fs, _ = Validate(f.w)
+	var nowNoted bool
+	g, _ = f.w.Load()
+	for _, fi := range fs {
+		if fi.Code == CodeQuotedSource && fi.Path == g.Files[priv.ID] {
+			nowNoted = true
+		}
+	}
+	if !nowNoted {
+		t.Error("promoting a quoted claim should bring the disclosure note with it")
+	}
+}

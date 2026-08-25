@@ -163,7 +163,7 @@ func Brief(p *dkf.Particular, kept []dkf.Assertion, cur *dkf.Synthesis, reconcil
 			continue
 		}
 		line := "- " + oneLine(a.GetContent()) + confSuffix(a.GetConfidence())
-		if doc := strings.TrimSpace(a.GetSource().Document); doc != "" {
+		if doc := strings.TrimSpace(a.GetSource().Document.URI); doc != "" {
 			line += " — evidence: " + doc
 		}
 		if cur != nil && !reconciled[a.ObjectID()] {

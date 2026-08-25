@@ -40,6 +40,7 @@ var (
 
 // app holds per-invocation state shared by all commands.
 type app struct {
+	showNotes bool
 	jsonOut   bool
 	workspace string
 	stdin     io.Reader

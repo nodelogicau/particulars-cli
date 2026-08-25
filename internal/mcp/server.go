@@ -71,10 +71,37 @@ func (s *Server) instructions() string {
 
 // sourceIn is the spec's source block as tool input.
 type sourceIn struct {
-	Author   string `json:"author,omitempty" jsonschema:"a person"`
-	Harness  string `json:"harness,omitempty" jsonschema:"the AI harness, if one was involved (defaults to the connected client's name)"`
-	Model    string `json:"model,omitempty" jsonschema:"the model, if known"`
-	Document string `json:"document,omitempty" jsonschema:"what was read to make the assertion: a path, URL, or command"`
+	Author  string `json:"author,omitempty" jsonschema:"a person"`
+	Harness string `json:"harness,omitempty" jsonschema:"the AI harness, if one was involved (defaults to the connected client's name)"`
+	Model   string `json:"model,omitempty" jsonschema:"the model, if known"`
+	// Document is a union: a bare reference, or a mapping of uri/hash/quote.
+	// It is typed as any because the schema the SDK infers from a struct would
+	// reject the string form, and a bare reference must stay valid — it is not
+	// inferior provenance.
+	Document any `json:"document,omitempty" jsonschema:"what was read to make the assertion: a path, URL, or command as a string — or an object with uri, optional hash (sha256:…), and optional quote (the sentence that supports the claim, verbatim)"`
+}
+
+// documentFrom accepts the string or the mapping form of a document.
+func documentFrom(v any) (dkf.Document, error) {
+	switch t := v.(type) {
+	case nil:
+		return dkf.Document{}, nil
+	case string:
+		return dkf.Document{URI: t}, nil
+	case map[string]any:
+		d := dkf.Document{}
+		for key, target := range map[string]*string{"uri": &d.URI, "hash": &d.Hash, "quote": &d.Quote} {
+			if raw, ok := t[key]; ok {
+				sv, ok := raw.(string)
+				if !ok {
+					return d, apperr.Usage("source.document.%s must be a string", key)
+				}
+				*target = sv
+			}
+		}
+		return d, nil
+	}
+	return dkf.Document{}, apperr.Usage("source.document must be a string or an object with uri, hash, and quote")
 }
 
 // contextIn is the spec's context block as tool input.
@@ -96,7 +123,11 @@ func (s *Server) source(req clientInfoer, in *sourceIn, needHarness bool) (dkf.S
 		if in.Model != "" {
 			e.Model = in.Model
 		}
-		e.Document = in.Document
+		doc, derr := documentFrom(in.Document)
+		if derr != nil {
+			return dkf.Source{}, derr
+		}
+		e.Document, e.DocumentHash, e.Quote = doc.URI, doc.Hash, doc.Quote
 	}
 	fallback := ""
 	if ci := req.ClientInfo(); ci != nil {
