@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.8.0 — verifiable provenance
 
 - **Verifiable provenance.** `source.document` may now be a mapping of `uri`,
   `hash`, and `quote` as well as a bare reference — which stays valid and is not
