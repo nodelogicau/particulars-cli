@@ -7,23 +7,21 @@ Asserting claims with provenance and retracting claims or syntheses via an appen
 ## Requirements
 
 ### Requirement: Assert a claim
-`particulars claim assert --subject <particular> (--content <text> | --content-file <path|->) [--author] [--harness] [--model] [--document <uri>] [--scope] [--topic <t>]... [--confidence <0..1>] [--timestamp <rfc3339>]` SHALL write a new claim file with `type: claim`, `subject` set to the resolved particular id, `source` populated from flags/environment/defaults, `context.scope` defaulting to `dkf.yaml` `defaults.scope`, `timestamp` defaulting to the current UTC time, and SHALL update `index.yaml`. The resolved `source` SHALL contain at least one of `author` or `harness`; if neither is available the command SHALL exit 2 naming both `DKF_AUTHOR` and `DKF_HARNESS`. The result SHALL include the full claim.
+`particulars claim assert --subject <particular> (--content <text> | --content-file <path|->) [--author] [--harness] [--model] [--document <uri>] [--document-hash <sha256:…> | --hash-document] [--quote <text> | --quote-file <path|->] [--scope] [--topic <t>]... [--confidence <0..1>] [--timestamp <rfc3339>]` SHALL write a new claim file with `type: claim`, `subject` set to the resolved particular id, `source` populated from flags/environment/defaults, `context.scope` defaulting to `dkf.yaml` `defaults.scope`, `timestamp` defaulting to the current UTC time, and SHALL update `index.yaml`. The resolved `source` SHALL contain at least one of `author` or `harness`; if neither is available the command SHALL exit 2 naming both `DKF_AUTHOR` and `DKF_HARNESS`. The result SHALL include the full claim.
 
-#### Scenario: Minimal assertion
-- **WHEN** `claim assert --subject "Project X" --content "Uses Postgres 16"` is run with `DKF_AUTHOR=agent`
-- **THEN** a new `clm_` file exists with `subject` equal to Project X's id, `source.author: agent`, `context.scope` equal to the workspace default, a current `timestamp`, and `index.yaml` contains an entry for it
+`--document-hash`, `--hash-document`, `--quote`, and `--quote-file` SHALL require `--document` and SHALL be usage errors without it. `--hash-document` SHALL compute the hash from the local file the document resolves to, and SHALL be a usage error when it does not resolve. `--document-hash` and `--hash-document` SHALL be mutually exclusive, as SHALL `--quote` and `--quote-file`.
 
-#### Scenario: Agent-only assertion
-- **WHEN** `claim assert --subject "Project X" --content "x"` is run with `DKF_HARNESS=claude`, no `--author`, no `DKF_AUTHOR`, and no `defaults.source.author`
-- **THEN** the claim is written with `source.harness: claude` and no `author`
+#### Scenario: Claim with evidence
+- **WHEN** `claim assert --subject "Project X" --content "Uses Postgres 16" --document docs/db.md` is run
+- **THEN** a claim file is written whose `source.document` is the scalar `docs/db.md`
 
-#### Scenario: Backdated assertion
-- **WHEN** `claim assert ... --timestamp 2024-08-20T09:00:00Z` is run
-- **THEN** the claim's `timestamp` is `2024-08-20T09:00:00Z` while its id encodes the current time
+#### Scenario: Verifiable claim
+- **WHEN** the same command adds `--hash-document --quote "Postgres 16 in every environment"`
+- **THEN** `source.document` is a mapping carrying `uri`, a `sha256:` hash computed from the local file, and the quote
 
-#### Scenario: No provenance at all
-- **WHEN** `claim assert` is run with no `--author`/`--harness`, no `DKF_AUTHOR`/`DKF_HARNESS`, and no `defaults.source.author`/`harness` in `dkf.yaml`
-- **THEN** the command exits with code 2 and writes nothing
+#### Scenario: Locator without a document
+- **WHEN** `--quote` is given without `--document`
+- **THEN** the command exits 2
 
 ### Requirement: Retract a claim or synthesis
 `particulars retract <id> --reason <text> [--author] [--harness] [--model] [--superseded-by <id>]` SHALL append a `retracted` block containing `timestamp` (current UTC), `reason`, `source` (at least one of `author`/`harness`), and optional `superseded-by` to the existing object file without altering any existing bytes, then re-parse the file to confirm validity, restoring the original bytes on failure. It SHALL update the object's index entry with `retracted: true`. The target MAY be a claim, a synthesis, or a merge record (see `merge-records`). `particulars claim retract` SHALL remain available as an alias with identical behaviour.
