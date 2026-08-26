@@ -189,6 +189,7 @@ func claimNode(c *Claim) *yaml.Node {
 	addKV(m, "source", sourceNode(c.Source))
 	addKV(m, "context", contextNode(c.Context))
 	addTime(m, "timestamp", c.Timestamp)
+	addStr(m, "evidential", string(c.Evidential))
 	addFloat(m, "confidence", c.Confidence)
 	if c.Retracted != nil {
 		addKV(m, "retracted", retractedNode(c.Retracted))

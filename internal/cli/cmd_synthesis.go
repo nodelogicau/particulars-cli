@@ -125,6 +125,9 @@ id), so a backdated synthesis does not displace a newer one.`,
 			if method == "" {
 				method = dkf.DefaultMethod
 			}
+			if !dkf.ValidMethod(method) {
+				return usageErr("invalid --method %q: reconciliation (the inputs disagreed about a fact), qualification (each true in a different context), or positions (no evidence settles this)", method)
+			}
 			s := &dkf.Synthesis{
 				ID: dkf.NewID(dkf.TypeSynthesis), Subject: p.ID, Content: text, Inputs: parsed, Unresolved: unresolved,
 				Source: src, Method: method, Timestamp: ts,
@@ -162,7 +165,7 @@ id), so a backdated synthesis does not displace a newer one.`,
 	cmd.Flags().StringVar(&contentFile, "content-file", "", "read synthesis text from a file, or '-' for piped stdin")
 	cmd.Flags().StringArrayVar(&inputs, "input", nil, "<id>:<thesis|antithesis>[:<primary|qualifying>] (repeatable, required)")
 	cmd.Flags().StringVar(&unresolved, "unresolved", "", "what could not be reconciled (required; \"None identified\" when nothing)")
-	cmd.Flags().StringVar(&method, "method", "", "synthesis method (default "+dkf.DefaultMethod+")")
+	cmd.Flags().StringVar(&method, "method", "", "reconciliation|qualification|positions (default "+dkf.DefaultMethod+")")
 	cmd.Flags().StringVar(&prov.author, "author", "", "source.author (default: $DKF_AUTHOR, then dkf.yaml)")
 	cmd.Flags().StringVar(&prov.harness, "harness", "", "source.harness, required (default: $DKF_HARNESS, then dkf.yaml)")
 	cmd.Flags().StringVar(&prov.model, "model", "", "source.model (default: $DKF_MODEL, then dkf.yaml)")

@@ -163,6 +163,17 @@ func Brief(p *dkf.Particular, kept []dkf.Assertion, cur *dkf.Synthesis, reconcil
 			continue
 		}
 		line := "- " + oneLine(a.GetContent()) + confSuffix(a.GetConfidence())
+		// The register travels with the text: without a marker, a consumer
+		// citing the brief cannot distinguish a fluent position from an
+		// observed fact — which is what the evidential exists for downstream.
+		if c, ok := a.(*dkf.Claim); ok {
+			switch c.Evidential {
+			case dkf.EvidentialHeld:
+				line += " [position]"
+			case "":
+				line += " [undeclared]"
+			}
+		}
 		if doc := strings.TrimSpace(a.GetSource().Document.Ref); doc != "" {
 			line += " — evidence: " + doc
 		}

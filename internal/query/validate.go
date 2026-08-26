@@ -44,6 +44,15 @@ const (
 	// same scope. Valid — promotion may only widen, and this widens nothing —
 	// but redundant.
 	CodeDuplicatePromotion = "duplicate_promotion"
+	// CodeUndeclared: the claim predates the evidential. Not a fourth value
+	// and not a defect — the warrant cannot now be established, and claims
+	// are immutable, so the distinction ages out rather than being migrated.
+	CodeUndeclared = "undeclared"
+	// CodeConfidenceOnUndeclared: a probability whose meaning cannot be
+	// established, because the warrant it would grade is unknown.
+	CodeConfidenceOnUndeclared = "confidence_on_undeclared"
+	// CodeUnknownMethod: a synthesis method outside the closed vocabulary.
+	CodeUnknownMethod = "unknown_method"
 	// CodeQuotedSource: a claim reproduces source text verbatim and is shared
 	// more widely than the author's own notes.
 	CodeQuotedSource = "quoted_source"
@@ -120,6 +129,15 @@ func Validate(w *store.Workspace) (Findings, error) {
 		}
 		if !dkf.IsCanonicalID(obj.ObjectID()) {
 			add(SeverityWarning, path, CodeLegacyID, fmt.Sprintf("id %s is not a canonical UUIDv7; it was written by another implementation", obj.ObjectID()))
+		}
+		if c, ok := obj.(*dkf.Claim); ok && c.Evidential == "" {
+			add(SeverityInfo, path, CodeUndeclared, "warrant undeclared: the claim predates the evidential field and cannot be backfilled")
+			if c.Confidence != nil {
+				add(SeverityInfo, path, CodeConfidenceOnUndeclared, "confidence on an undeclared claim cannot be interpreted: the warrant it would grade is unknown")
+			}
+		}
+		if syn, ok := obj.(*dkf.Synthesis); ok && syn.Method != "" && !dkf.ValidMethod(syn.Method) {
+			add(SeverityWarning, path, CodeUnknownMethod, fmt.Sprintf("method %q is outside the vocabulary (reconciliation, qualification, positions); read leniently", syn.Method))
 		}
 		if s, ok := obj.(*dkf.Synthesis); ok && s.LegacyProducedBy {
 			add(SeverityWarning, path, CodeLegacyProducedBy, "provenance was read from a legacy produced-by block; new syntheses write source")

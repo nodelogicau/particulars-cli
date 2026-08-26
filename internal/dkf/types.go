@@ -129,14 +129,49 @@ type Particular struct {
 // Spec order: id, type, subject, content, source, context, timestamp,
 // confidence, retracted.
 type Claim struct {
-	ID         string     `yaml:"id" json:"id"`
-	Subject    string     `yaml:"subject" json:"subject"`
-	Content    string     `yaml:"content" json:"content"`
-	Source     Source     `yaml:"source" json:"source"`
-	Context    Context    `yaml:"context" json:"context"`
-	Timestamp  time.Time  `yaml:"timestamp" json:"timestamp"`
+	ID        string    `yaml:"id" json:"id"`
+	Subject   string    `yaml:"subject" json:"subject"`
+	Content   string    `yaml:"content" json:"content"`
+	Source    Source    `yaml:"source" json:"source"`
+	Context   Context   `yaml:"context" json:"context"`
+	Timestamp time.Time `yaml:"timestamp" json:"timestamp"`
+	// Evidential is what backs the claim: observed (someone or something
+	// looked), inferred (reasoning from other claims), or held (nothing
+	// external; it is a position). Required on write, with no default —
+	// if absence meant observed, the laziest path would produce the most
+	// authoritative-looking output. Absent on read means the claim predates
+	// the field: the warrant cannot now be established, and validate reports
+	// it as undeclared.
+	Evidential Evidential `yaml:"evidential,omitempty" json:"evidential,omitempty"`
 	Confidence *float64   `yaml:"confidence,omitempty" json:"confidence,omitempty"`
 	Retracted  *Retracted `yaml:"retracted,omitempty" json:"retracted,omitempty"`
+}
+
+// Evidential is what backs a claim.
+type Evidential string
+
+const (
+	EvidentialObserved Evidential = "observed"
+	EvidentialInferred Evidential = "inferred"
+	EvidentialHeld     Evidential = "held"
+)
+
+// ValidEvidential reports whether e is one of the three values. "undeclared"
+// is deliberately not among them: it is a reader's report, never writable.
+func ValidEvidential(e Evidential) bool {
+	return e == EvidentialObserved || e == EvidentialInferred || e == EvidentialHeld
+}
+
+// Synthesis methods name the kind of question a synthesis settled.
+const (
+	MethodReconciliation = "reconciliation" // the inputs disagreed about a fact
+	MethodQualification  = "qualification"  // each true in a different context
+	MethodPositions      = "positions"      // no evidence settles this
+)
+
+// ValidMethod reports whether m is in the closed vocabulary.
+func ValidMethod(m string) bool {
+	return m == MethodReconciliation || m == MethodQualification || m == MethodPositions
 }
 
 // Synthesis is a DSYNTHESIS: a claim derived from thesis/antithesis inputs.

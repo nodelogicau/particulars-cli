@@ -41,7 +41,7 @@ func (f *fixture) particular(label string, aliases ...string) *dkf.Particular {
 
 func (f *fixture) claim(subject, content string, topics ...string) *dkf.Claim {
 	f.t.Helper()
-	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: subject, Content: content, Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: dkf.ScopePersonal, Topics: topics}, Timestamp: ts}
+	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: subject, Content: content, Evidential: dkf.EvidentialObserved, Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: dkf.ScopePersonal, Topics: topics}, Timestamp: ts}
 	if err := f.w.Create(c); err != nil {
 		f.t.Fatal(err)
 	}
@@ -556,7 +556,7 @@ func TestScopeWiderThanInputsWarning(t *testing.T) {
 	p := f.particular("Project X")
 	scoped := func(content string, sc dkf.Scope) *dkf.Claim {
 		c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: content,
-			Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: sc}, Timestamp: ts}
+			Evidential: dkf.EvidentialObserved, Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: sc}, Timestamp: ts}
 		if err := f.w.Create(c); err != nil {
 			t.Fatal(err)
 		}
@@ -641,7 +641,7 @@ func TestScopeWiderThanInputsUsesEffectiveScope(t *testing.T) {
 	p := f.particular("Project X")
 	priv := f.claim(p.ID, "a personal observation")
 	if err := f.w.Create(&dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: "an organisation fact",
-		Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: dkf.ScopeOrganisation}, Timestamp: ts}); err != nil {
+		Evidential: dkf.EvidentialObserved, Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: dkf.ScopeOrganisation}, Timestamp: ts}); err != nil {
 		t.Fatal(err)
 	}
 	s := f.synthesisScoped(p.ID, "reconciled", dkf.ScopeOrganisation, in(priv.ID, dkf.RoleThesis))
@@ -785,7 +785,7 @@ func (f *fixture) docClaim(subject, content string, doc dkf.Document, sc dkf.Sco
 		sc = dkf.ScopePersonal
 	}
 	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: subject, Content: content,
-		Source: dkf.Source{Author: "ben", Document: doc}, Context: dkf.Context{Scope: sc}, Timestamp: ts}
+		Evidential: dkf.EvidentialObserved, Source: dkf.Source{Author: "ben", Document: doc}, Context: dkf.Context{Scope: sc}, Timestamp: ts}
 	if err := f.w.Create(c); err != nil {
 		f.t.Fatal(err)
 	}

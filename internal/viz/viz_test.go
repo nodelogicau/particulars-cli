@@ -38,7 +38,7 @@ func (f *fixture) particular(label string) *dkf.Particular {
 func (f *fixture) claim(p *dkf.Particular, content string) *dkf.Claim {
 	f.t.Helper()
 	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: content,
-		Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: dkf.ScopePersonal}, Timestamp: ts}
+		Evidential: dkf.EvidentialObserved, Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: dkf.ScopePersonal}, Timestamp: ts}
 	if err := f.w.Create(c); err != nil {
 		f.t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func (f *fixture) claim(p *dkf.Particular, content string) *dkf.Claim {
 func (f *fixture) scopedClaim(p *dkf.Particular, content string, sc dkf.Scope) *dkf.Claim {
 	f.t.Helper()
 	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: content,
-		Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: sc}, Timestamp: ts}
+		Evidential: dkf.EvidentialObserved, Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: sc}, Timestamp: ts}
 	if err := f.w.Create(c); err != nil {
 		f.t.Fatal(err)
 	}

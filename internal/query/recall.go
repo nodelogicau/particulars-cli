@@ -18,21 +18,22 @@ type RecallOptions struct {
 
 // Entry is one recalled claim or synthesis, shaped for output.
 type Entry struct {
-	ID            string      `json:"id"`
-	Type          dkf.Type    `json:"type"`
-	Subject       string      `json:"subject"`
-	Content       string      `json:"content"`
-	Source        dkf.Source  `json:"source"`
-	Timestamp     string      `json:"timestamp"`
-	Confidence    *float64    `json:"confidence,omitempty"`
-	Scope         dkf.Scope   `json:"scope"`
-	Topics        []string    `json:"topics,omitempty"`
-	Retracted     bool        `json:"retracted"`
-	Current       bool        `json:"current,omitempty"`
-	Unsynthesised bool        `json:"unsynthesised,omitempty"`
-	Inputs        []dkf.Input `json:"inputs,omitempty"`
-	Unresolved    string      `json:"unresolved,omitempty"`
-	Method        string      `json:"method,omitempty"`
+	ID            string         `json:"id"`
+	Type          dkf.Type       `json:"type"`
+	Subject       string         `json:"subject"`
+	Content       string         `json:"content"`
+	Source        dkf.Source     `json:"source"`
+	Timestamp     string         `json:"timestamp"`
+	Confidence    *float64       `json:"confidence,omitempty"`
+	Evidential    dkf.Evidential `json:"evidential,omitempty"`
+	Scope         dkf.Scope      `json:"scope"`
+	Topics        []string       `json:"topics,omitempty"`
+	Retracted     bool           `json:"retracted"`
+	Current       bool           `json:"current,omitempty"`
+	Unsynthesised bool           `json:"unsynthesised,omitempty"`
+	Inputs        []dkf.Input    `json:"inputs,omitempty"`
+	Unresolved    string         `json:"unresolved,omitempty"`
+	Method        string         `json:"method,omitempty"`
 }
 
 func entryFor(g *store.Graph, a dkf.Assertion) Entry {
@@ -41,6 +42,9 @@ func entryFor(g *store.Graph, a dkf.Assertion) Entry {
 		ID: a.ObjectID(), Type: a.ObjectType(), Subject: a.SubjectID(), Content: a.GetContent(), Source: a.GetSource(),
 		Timestamp: dkf.FormatTime(a.GetTimestamp()), Confidence: a.GetConfidence(),
 		Scope: g.EffectiveScope(a.ObjectID()), Topics: ctx.Topics, Retracted: a.GetRetracted() != nil,
+	}
+	if c, ok := a.(*dkf.Claim); ok {
+		e.Evidential = c.Evidential
 	}
 	if s, ok := a.(*dkf.Synthesis); ok {
 		e.Inputs = s.Inputs

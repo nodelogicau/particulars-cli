@@ -82,7 +82,7 @@ func define(t *testing.T, label string, extra ...string) string {
 
 func assert(t *testing.T, subject, content string, extra ...string) string {
 	t.Helper()
-	r := run(t, "", append([]string{"claim", "assert", "--subject", subject, "--content", content, "--json"}, extra...)...)
+	r := run(t, "", append([]string{"claim", "assert", "--evidential", "observed", "--subject", subject, "--content", content, "--json"}, extra...)...)
 	if r.code != 0 {
 		t.Fatalf("assert: %d %s", r.code, r.stderr)
 	}
@@ -203,7 +203,7 @@ func TestClaimAssert(t *testing.T) {
 	dir := initWS(t)
 	define(t, "Project X")
 	t.Setenv("DKF_HARNESS", "claude")
-	r := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "Uses Postgres 16", "--topic", "db", "--confidence", "0.8", "--json")
+	r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content", "Uses Postgres 16", "--topic", "db", "--confidence", "0.8", "--json")
 	if r.code != 0 {
 		t.Fatalf("assert: %+v", r)
 	}
@@ -221,26 +221,26 @@ func TestClaimAssert(t *testing.T) {
 		t.Error("index not updated")
 	}
 	// Backdated.
-	r = run(t, "", "claim", "assert", "--subject", "Project X", "--content", "old", "--timestamp", "2024-08-20T09:00:00Z", "--json")
+	r = run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content", "old", "--timestamp", "2024-08-20T09:00:00Z", "--json")
 	if r.code != 0 || r.js["claim"].(map[string]any)["timestamp"] != "2024-08-20T09:00:00Z" {
 		t.Errorf("backdated: %+v", r)
 	}
 	// Stdin content.
-	r = run(t, "multi\nline\n", "claim", "assert", "--subject", "Project X", "--content-file", "-", "--json")
+	r = run(t, "multi\nline\n", "claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content-file", "-", "--json")
 	if r.code != 0 || r.js["claim"].(map[string]any)["content"] != "multi\nline\n" {
 		t.Errorf("stdin content: %+v", r)
 	}
 	// Usage errors.
 	for _, args := range [][]string{
-		{"claim", "assert", "--subject", "Project X"},
-		{"claim", "assert", "--subject", "Project X", "--content", "x", "--confidence", "1.5"},
-		{"claim", "assert", "--subject", "Project X", "--content", "x", "--scope", "team"},
+		{"claim", "assert", "--evidential", "observed", "--subject", "Project X"},
+		{"claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content", "x", "--confidence", "1.5"},
+		{"claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content", "x", "--scope", "team"},
 	} {
 		if r := run(t, "", append(args, "--json")...); r.code != 2 {
 			t.Errorf("%v should exit 2, got %d: %s", args, r.code, r.stderr)
 		}
 	}
-	if r := run(t, "", "claim", "assert", "--subject", "Nobody", "--content", "x", "--json"); r.code != 3 {
+	if r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Nobody", "--content", "x", "--json"); r.code != 3 {
 		t.Errorf("unknown subject should exit 3, got %d", r.code)
 	}
 	// No provenance anywhere → exit 2; harness alone is enough.
@@ -251,11 +251,11 @@ func TestClaimAssert(t *testing.T) {
 	t.Setenv("DKF_WORKSPACE", dir2)
 	t.Setenv("DKF_HARNESS", "")
 	define(t, "P")
-	if r := run(t, "", "claim", "assert", "--subject", "P", "--content", "x", "--json"); r.code != 2 {
+	if r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "P", "--content", "x", "--json"); r.code != 2 {
 		t.Errorf("no provenance should exit 2, got %d", r.code)
 	}
 	t.Setenv("DKF_HARNESS", "claude")
-	r = run(t, "", "claim", "assert", "--subject", "P", "--content", "x", "--json")
+	r = run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "P", "--content", "x", "--json")
 	if r.code != 0 {
 		t.Fatalf("agent-only assert: %+v", r)
 	}
@@ -264,7 +264,7 @@ func TestClaimAssert(t *testing.T) {
 	}
 	t.Setenv("DKF_HARNESS", "")
 	t.Setenv("DKF_AUTHOR", "agent")
-	if r := run(t, "", "claim", "assert", "--subject", "P", "--content", "x", "--json"); r.code != 0 || r.js["claim"].(map[string]any)["source"].(map[string]any)["author"] != "agent" {
+	if r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "P", "--content", "x", "--json"); r.code != 0 || r.js["claim"].(map[string]any)["source"].(map[string]any)["author"] != "agent" {
 		t.Errorf("env author: %+v", r)
 	}
 }
@@ -1133,7 +1133,7 @@ func TestExportVisualFormats(t *testing.T) {
 	}
 	claim := func(subject, content string, extra ...string) string {
 		t.Helper()
-		args := append([]string{"claim", "assert", "--subject", subject, "--content", content, "--json"}, extra...)
+		args := append([]string{"claim", "assert", "--evidential", "observed", "--subject", subject, "--content", content, "--json"}, extra...)
 		r := run(t, "", args...)
 		if r.code != 0 {
 			t.Fatalf("assert: %+v", r)
@@ -1269,7 +1269,7 @@ func TestPublishAndEffectiveScope(t *testing.T) {
 	run(t, "", "particular", "define", "--label", "Project X", "--json")
 	claim := func(content string, extra ...string) string {
 		t.Helper()
-		r := run(t, "", append([]string{"claim", "assert", "--subject", "Project X", "--content", content, "--json"}, extra...)...)
+		r := run(t, "", append([]string{"claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content", content, "--json"}, extra...)...)
 		if r.code != 0 {
 			t.Fatalf("assert: %+v", r)
 		}
@@ -1364,7 +1364,7 @@ func TestSynthesisCreateWarnsOnWiderScope(t *testing.T) {
 	t.Setenv("DKF_WORKSPACE", ws)
 	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
 	run(t, "", "particular", "define", "--label", "Project X", "--json")
-	r := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "a personal note", "--json")
+	r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content", "a personal note", "--json")
 	priv := r.js["claim"].(map[string]any)["id"].(string)
 
 	s := run(t, "", "synthesis", "create", "--subject", "Project X", "--input", priv+":thesis",
@@ -1411,7 +1411,7 @@ func TestVerifiableProvenance(t *testing.T) {
 	quote := "In staging, the billing service listens on 443."
 
 	// A bare reference stays a scalar: it is not inferior provenance.
-	bare := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "bare", "--document", "chat session", "--json")
+	bare := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content", "bare", "--document", "chat session", "--json")
 	if bare.code != 0 {
 		t.Fatalf("bare document: %+v", bare)
 	}
@@ -1420,7 +1420,7 @@ func TestVerifiableProvenance(t *testing.T) {
 	}
 
 	// The mapping form, with the hash computed locally.
-	r := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "billing listens on 443",
+	r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content", "billing listens on 443",
 		"--document", "docs/a.md", "--hash-document", "--quote", quote, "--json")
 	if r.code != 0 {
 		t.Fatalf("verifiable claim: %+v", r)
@@ -1521,7 +1521,7 @@ func TestNotesAreCountedNotListed(t *testing.T) {
 	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
 	run(t, "", "particular", "define", "--label", "Project X", "--json")
 	for i := 0; i < 3; i++ {
-		run(t, "", "claim", "assert", "--subject", "Project X", "--content", "remote evidence",
+		run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content", "remote evidence",
 			"--document", "https://example.com/x", "--json")
 	}
 	text := run(t, "", "validate")
@@ -1555,7 +1555,7 @@ func TestCorpusFactWarningsAggregate(t *testing.T) {
 	run(t, "", "particular", "define", "--label", "Project X", "--json")
 	var ids []string
 	for i := 0; i < 2; i++ {
-		r := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "x",
+		r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content", "x",
 			"--document", "docs/a.md", "--quote", "quoted text", "--json")
 		if r.code != 0 {
 			t.Fatalf("assert: %+v", r)

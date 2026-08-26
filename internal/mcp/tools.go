@@ -276,6 +276,7 @@ func (s *Server) knowledgePublish(ctx context.Context, req *sdk.CallToolRequest,
 type assertIn struct {
 	ParticularID string     `json:"particular_id" jsonschema:"the subject: id, URI, label, or alias"`
 	Content      string     `json:"content" jsonschema:"one falsifiable statement"`
+	Evidential   string     `json:"evidential" jsonschema:"what backs the claim (required, no default): observed = someone or something looked; inferred = reasoning from other claims; held = nothing external backs it, it is a position"`
 	Source       *sourceIn  `json:"source,omitempty"`
 	Context      *contextIn `json:"context,omitempty"`
 	Confidence   *float64   `json:"confidence,omitempty" jsonschema:"0..1; 0.9+ seen directly, 0.6-0.8 inferred"`
@@ -284,6 +285,15 @@ type assertIn struct {
 }
 
 func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in assertIn) (*sdk.CallToolResult, any, error) {
+	if !dkf.ValidEvidential(dkf.Evidential(in.Evidential)) {
+		if in.Evidential == "" {
+			return errResult(apperr.Usage("evidential is required and has no default: observed (someone or something looked), inferred (reasoning from other claims), or held (nothing external backs it; it is a position)")), nil, nil
+		}
+		return errResult(apperr.Usage("invalid evidential %q: must be observed, inferred, or held", in.Evidential)), nil, nil
+	}
+	if dkf.Evidential(in.Evidential) == dkf.EvidentialHeld && in.Confidence != nil {
+		return errResult(apperr.Usage("a held claim carries no confidence: a position is not mistaken in the way a probability describes")), nil, nil
+	}
 	if strings.TrimSpace(in.Content) == "" {
 		return errResult(apperr.Usage("content is required")), nil, nil
 	}
@@ -321,7 +331,7 @@ func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in a
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: in.Content, Source: src, Context: dkf.Context{Scope: sc, Topics: topics}, Timestamp: ts, Confidence: conf}
+	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: in.Content, Source: src, Context: dkf.Context{Scope: sc, Topics: topics}, Timestamp: ts, Evidential: dkf.Evidential(in.Evidential), Confidence: conf}
 	if err := s.ws.Create(c); err != nil {
 		return errResult(err), nil, nil
 	}
@@ -388,7 +398,7 @@ type synthesisIn struct {
 	Inputs       []inputIn  `json:"inputs" jsonschema:"thesis/antithesis inputs (at least one)"`
 	Unresolved   string     `json:"unresolved" jsonschema:"what could not be reconciled, or exactly 'None identified'"`
 	Source       *sourceIn  `json:"source,omitempty" jsonschema:"harness is required (defaults to the connected client)"`
-	Method       string     `json:"method,omitempty" jsonschema:"default reconciliation"`
+	Method       string     `json:"method,omitempty" jsonschema:"reconciliation (the inputs disagreed about a fact) | qualification (each true in a different context) | positions (no evidence settles this); default reconciliation"`
 	Context      *contextIn `json:"context,omitempty"`
 	Confidence   *float64   `json:"confidence,omitempty"`
 	Timestamp    string     `json:"timestamp,omitempty" jsonschema:"RFC 3339; current is chosen by timestamp then id"`
@@ -467,6 +477,9 @@ func (s *Server) synthesisCreate(ctx context.Context, req *sdk.CallToolRequest, 
 	method := in.Method
 	if method == "" {
 		method = dkf.DefaultMethod
+	}
+	if !dkf.ValidMethod(method) {
+		return errResult(apperr.Usage("invalid method %q: must be reconciliation, qualification, or positions", method)), nil, nil
 	}
 	syn := &dkf.Synthesis{ID: dkf.NewID(dkf.TypeSynthesis), Subject: p.ID, Content: in.Content, Inputs: parsed, Unresolved: in.Unresolved, Source: src, Method: method, Timestamp: ts, Context: dkf.Context{Scope: sc, Topics: topics}, Confidence: conf}
 	if err := s.ws.Create(syn); err != nil {

@@ -36,7 +36,7 @@ func mkParticular(t *testing.T, w *Workspace, label string) *dkf.Particular {
 
 func mkClaim(t *testing.T, w *Workspace, subject, content string) *dkf.Claim {
 	t.Helper()
-	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: subject, Content: content, Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: dkf.ScopePersonal}, Timestamp: ts}
+	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: subject, Content: content, Evidential: dkf.EvidentialObserved, Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: dkf.ScopePersonal}, Timestamp: ts}
 	if err := w.Create(c); err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +456,7 @@ func TestPointerDiscovery(t *testing.T) {
 func mkScopedClaim(t *testing.T, w *Workspace, subject, content string, sc dkf.Scope) *dkf.Claim {
 	t.Helper()
 	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: subject, Content: content,
-		Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: sc}, Timestamp: ts}
+		Evidential: dkf.EvidentialObserved, Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: sc}, Timestamp: ts}
 	if err := w.Create(c); err != nil {
 		t.Fatal(err)
 	}

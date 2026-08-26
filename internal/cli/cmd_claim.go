@@ -20,7 +20,7 @@ func (a *app) claimCmd() *cobra.Command {
 }
 
 func (a *app) claimAssertCmd() *cobra.Command {
-	var subject, content, contentFile, scope, confidence, timestamp string
+	var subject, content, contentFile, evidential, scope, confidence, timestamp string
 	var topics []string
 	var prov provenanceFlags
 	cmd := &cobra.Command{
@@ -63,6 +63,15 @@ func (a *app) claimAssertCmd() *cobra.Command {
 			if err := requireProvenance(src, false); err != nil {
 				return err
 			}
+			if !dkf.ValidEvidential(dkf.Evidential(evidential)) {
+				if evidential == "" {
+					return usageErr("--evidential is required and has no default: observed (someone or something looked), inferred (reasoning from other claims), or held (nothing external backs it; it is a position)")
+				}
+				return usageErr("invalid --evidential %q: must be observed, inferred, or held", evidential)
+			}
+			if dkf.Evidential(evidential) == dkf.EvidentialHeld && conf != nil {
+				return usageErr("a held claim carries no confidence: a position is not mistaken in the way a probability describes — put how strongly it is held in --content")
+			}
 			doc, err := a.resolveDocument(ws, prov)
 			if err != nil {
 				return err
@@ -76,7 +85,8 @@ func (a *app) claimAssertCmd() *cobra.Command {
 			}
 			c := &dkf.Claim{
 				ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: text, Source: src,
-				Context: dkf.Context{Scope: sc, Topics: topics}, Timestamp: ts, Confidence: conf,
+				Context: dkf.Context{Scope: sc, Topics: topics}, Timestamp: ts,
+				Evidential: dkf.Evidential(evidential), Confidence: conf,
 			}
 			if err := ws.Create(c); err != nil {
 				return err
@@ -96,6 +106,7 @@ func (a *app) claimAssertCmd() *cobra.Command {
 	cmd.Flags().StringVar(&prov.author, "author", "", "source.author (default: $DKF_AUTHOR, then dkf.yaml)")
 	cmd.Flags().StringVar(&prov.harness, "harness", "", "source.harness (default: $DKF_HARNESS, then dkf.yaml)")
 	cmd.Flags().StringVar(&prov.model, "model", "", "source.model (default: $DKF_MODEL, then dkf.yaml)")
+	cmd.Flags().StringVar(&evidential, "evidential", "", "what backs the claim (required): observed|inferred|held")
 	cmd.Flags().StringVar(&prov.document, "document", "", "source.document: URI or workspace-relative path of the evidence")
 	cmd.Flags().StringVar(&prov.documentHash, "document-hash", "", "sha256:… of the document as you read it (CRLF normalised to LF)")
 	cmd.Flags().BoolVar(&prov.hashDocument, "hash-document", false, "compute --document-hash from the local file the document resolves to")

@@ -105,6 +105,41 @@ info    claims/clm_….yaml  unverified_document: document is not a file in this
 That says nothing is known, not that anything is wrong. A workspace citing
 mostly URLs will carry many, which is why it is a note and never a warning.
 
+## What backs a claim
+
+Every new claim declares an `evidential` — required, with no default:
+
+| value | the claim is backed by |
+|---|---|
+| `observed` | someone or something looked |
+| `inferred` | reasoning from other claims |
+| `held` | nothing external; it is a position |
+
+If absence meant `observed`, the laziest path would produce the most
+authoritative-looking output — the same reason `context.scope` is required on
+disk. Claims written before the field existed stay valid and are reported as
+**`undeclared`**: not a fourth value, not writable, and not a synonym for
+`observed` — the warrant cannot now be established, and since claims are
+immutable the distinction ages out rather than being migrated.
+
+`confidence` is the inverse probability that the claim is mistaken. It applies
+to `observed` and `inferred`; **a `held` claim carries none** — the tool refuses
+the combination at write time, and `validate` reports a file carrying both as
+the error `confidence_on_held`. In a format written mostly by agents, a fluent
+unsourced judgement carrying `confidence: 0.9` is the most plausible bad claim
+it will ever hold, and this is the one place the format can catch it
+mechanically.
+
+A synthesis declares no evidential — it is backed by argument from its inputs.
+What varies is `method`: `reconciliation` (the inputs disagreed about a fact),
+`qualification` (each true in a different context), or `positions` (no evidence
+settles this). Two conflicting positions still want a synthesis; the label
+changes what the work is, not whether there is work.
+
+The Graph export's brief carries the register with the text: a `held` claim is
+marked `[position]` and a pre-evidential one `[undeclared]`, so a consumer
+citing the brief can tell a position from an observed fact.
+
 ## What killed a claim
 
 `retract --kind` records which of three joints broke:

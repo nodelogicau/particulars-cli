@@ -16,6 +16,10 @@ const (
 	CodeConflictingProvenance = "conflicting_provenance"
 	// CodeInvalidMerge: a merge record's uris are malformed.
 	CodeInvalidMerge = "invalid_merge"
+	// CodeConfidenceOnHeld: a claim backed by nothing carries a probability
+	// of being mistaken, which is the one assertion of weight without warrant
+	// this format can catch mechanically.
+	CodeConfidenceOnHeld = "confidence_on_held"
 	// CodeInvalidDocument: a source's document mapping is malformed.
 	CodeInvalidDocument = "invalid_document"
 	// CodeInvalidPromotion: a promotion record's claims list is malformed, or
@@ -107,6 +111,17 @@ func ValidateClaim(c *Claim) Problems {
 	ps = append(ps, checkContext(c.Context)...)
 	if c.Timestamp.IsZero() {
 		ps = append(ps, missing("timestamp"))
+	}
+	// Absence is NOT an error: the evidential is required at the write
+	// surfaces, and requiring it here would invalidate every claim written
+	// before the field existed. If present, it must be one of the three.
+	if c.Evidential != "" && !ValidEvidential(c.Evidential) {
+		ps = append(ps, Problem{Code: CodeInvalidEnum, Field: "evidential", Message: fmt.Sprintf("evidential must be observed, inferred, or held, got %q", c.Evidential)})
+	}
+	// The one mechanically checkable rule in this area, wrong wherever it
+	// appears: a position is not on the scale confidence describes.
+	if c.Evidential == EvidentialHeld && c.Confidence != nil {
+		ps = append(ps, Problem{Code: CodeConfidenceOnHeld, Field: "confidence", Message: "a held claim carries no confidence: a position is not mistaken in the way a probability describes"})
 	}
 	ps = append(ps, checkConfidence(c.Confidence)...)
 	if c.Retracted != nil {

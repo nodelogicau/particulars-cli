@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- **BREAKING (writers): every new claim declares what backs it.** `claim assert`
+  and the MCP `claim_assert` require `--evidential observed|inferred|held`, with
+  no default — if absence meant `observed`, the laziest path would produce the
+  most authoritative-looking output. Readers stay lenient: every existing
+  workspace remains valid, its claims reported as `undeclared` in one aggregate
+  line — not a fourth value, and not a synonym for observed; the warrant cannot
+  now be established, and the distinction ages out rather than being migrated.
+  Implements DKF `claim-evidential` (fdab9f9), the last breaking change before
+  v0.1, shaped by this implementation's review on #3 and #4.
+- **`confidence` finally means something**: the inverse probability that the
+  claim is mistaken, defined for `observed` and `inferred` and refused with
+  `held` at write time — a position is not on that scale, and a fluent unsourced
+  judgement carrying `confidence: 0.9` is the most plausible bad claim an
+  agent-written format will ever hold. A file carrying both is the validate
+  error `confidence_on_held`, with the claim still readable everywhere.
+  Confidence on an undeclared claim is a note, never an error. The skill's old
+  calibration rule — `0.9+` seen directly, `0.6–0.8` inferred — was this
+  distinction smuggled into a probability, and is rewritten.
+- **`method` closes to three values**: `reconciliation`, `qualification`,
+  `positions`. A synthesis declares no evidential — it is backed by argument
+  from its inputs. Two conflicting `held` claims still want a synthesis, a
+  `positions` one. Unknown methods in existing files read leniently and warn.
+- **The brief carries the register**: `[position]` on held claims,
+  `[undeclared]` on pre-evidential ones, so Copilot can tell a position from an
+  observed fact. Recall entries carry `evidential` when declared.
+- `index.yaml` **preserves entry types it does not recognise** through rebuilds
+  and incremental updates, and the drift check no longer fails on evidence of a
+  newer conforming writer — implements DKF `db748da`, from this implementation's
+  [particulars#16](https://github.com/nodelogicau/particulars/issues/16), where
+  a stale binary one directory away nearly stripped every `publishes/` row and
+  would then have reported the workspace clean.
 - `validate` text output reports **corpus facts in aggregate**: the legacy
   compatibility markers (`legacy_produced_by`, `legacy_id`,
   `legacy_document_uri`) and every informational note now render as one line

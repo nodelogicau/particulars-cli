@@ -792,3 +792,72 @@ func TestLegacyDocumentURIAccepted(t *testing.T) {
 		t.Errorf("ref should win over uri: %+v", d)
 	}
 }
+
+func TestEvidentialField(t *testing.T) {
+	c := sampleClaim()
+	c.Evidential = EvidentialObserved
+	out, err := Encode(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Between timestamp and confidence, per the spec's field order.
+	text := string(out)
+	ti, ei, ci := strings.Index(text, "\ntimestamp:"), strings.Index(text, "\nevidential:"), strings.Index(text, "\nconfidence:")
+	if ti >= ei || ei >= ci || ei < 0 {
+		t.Errorf("field order timestamp < evidential < confidence violated:\n%s", text)
+	}
+	back, err := Decode(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.(*Claim).Evidential != EvidentialObserved {
+		t.Error("evidential lost in round trip")
+	}
+	if again, _ := Encode(back); !bytes.Equal(out, again) {
+		t.Error("not byte-stable with evidential")
+	}
+	// Absent stays absent: the pre-evidential shape is untouched.
+	c.Evidential = ""
+	out, _ = Encode(c)
+	if strings.Contains(string(out), "evidential") {
+		t.Errorf("no evidential key when none declared:\n%s", out)
+	}
+	// If present it must be one of the three; absence is not an error.
+	if ps := ValidateClaim(c); len(ps) != 0 {
+		t.Errorf("absence is lenient: %v", ps)
+	}
+	c.Evidential = "opinion"
+	if ps := ValidateClaim(c); len(ps) == 0 {
+		t.Error("an unknown evidential must be rejected")
+	}
+	c.Evidential = "undeclared"
+	if ps := ValidateClaim(c); len(ps) == 0 {
+		t.Error("undeclared is a reader's report, never a value")
+	}
+	// held + confidence is the one shared rule, wrong wherever it appears.
+	c.Evidential = EvidentialHeld
+	conf := 0.9
+	c.Confidence = &conf
+	found := false
+	for _, p := range ValidateClaim(c) {
+		if p.Code == CodeConfidenceOnHeld {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("held with confidence must be rejected as confidence_on_held")
+	}
+	c.Confidence = nil
+	if ps := ValidateClaim(c); len(ps) != 0 {
+		t.Errorf("held without confidence is valid: %v", ps)
+	}
+
+	for _, m := range []string{MethodReconciliation, MethodQualification, MethodPositions} {
+		if !ValidMethod(m) {
+			t.Errorf("%q should be valid", m)
+		}
+	}
+	if ValidMethod("consensus") || ValidMethod("") {
+		t.Error("the method vocabulary is closed")
+	}
+}

@@ -140,12 +140,12 @@ func TestSpecToolsRoundTrip(t *testing.T) {
 	if r := h.ok("particular_resolve", map[string]any{"query": "PX"}); id(r, "particular") != pid {
 		t.Error("resolve by alias")
 	}
-	a := h.ok("claim_assert", map[string]any{"particular_id": "Project X", "content": "Uses Postgres", "source": map[string]any{"document": "db.md"}, "context": map[string]any{"topics": []string{"db"}}, "confidence": 0.9})
+	a := h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Project X", "content": "Uses Postgres", "source": map[string]any{"document": "db.md"}, "context": map[string]any{"topics": []string{"db"}}, "confidence": 0.9})
 	aid := id(a, "claim")
 	if a["claim"].(map[string]any)["source"].(map[string]any)["author"] != "ben" {
 		t.Errorf("author default: %v", a)
 	}
-	b := h.ok("claim_assert", map[string]any{"particular_id": pid, "content": "Uses MySQL"})
+	b := h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": pid, "content": "Uses MySQL"})
 	bid := id(b, "claim")
 	rc := h.ok("knowledge_recall", map[string]any{"particular_id": "Project X"})
 	if rc["count"].(float64) != 2 || rc["entries"].([]any)[0].(map[string]any)["unsynthesised"] != true {
@@ -165,7 +165,7 @@ func TestSpecToolsRoundTrip(t *testing.T) {
 	if cf["count"].(float64) != 0 {
 		t.Errorf("no conflicts expected: %v", cf)
 	}
-	c := h.ok("claim_assert", map[string]any{"particular_id": pid, "content": "C"})
+	c := h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": pid, "content": "C"})
 	cid := id(c, "claim")
 	cf = h.ok("conflict_detect", map[string]any{"particular_id": pid})
 	rep := cf["reports"].([]any)[0].(map[string]any)
@@ -192,7 +192,7 @@ func TestSpecToolsRoundTrip(t *testing.T) {
 	}
 	// merge + class-aware recall
 	h.ok("particular_define", map[string]any{"label": "Project X legacy"})
-	h.ok("claim_assert", map[string]any{"particular_id": "Project X legacy", "content": "legacy"})
+	h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Project X legacy", "content": "legacy"})
 	m := h.ok("particular_merge", map[string]any{"uri_a": "Project X", "uri_b": "Project X legacy", "reason": "renamed"})
 	mid := id(m, "merge")
 	rc = h.ok("knowledge_recall", map[string]any{"particular_id": pid})
@@ -230,12 +230,12 @@ func TestSpecToolsRoundTrip(t *testing.T) {
 func TestHandshakeProvenance(t *testing.T) {
 	h := newHarness(t, "claude-ai", "") // no default author anywhere
 	h.ok("particular_define", map[string]any{"label": "P"})
-	a := h.ok("claim_assert", map[string]any{"particular_id": "P", "content": "agent-only"})
+	a := h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "P", "content": "agent-only"})
 	src := a["claim"].(map[string]any)["source"].(map[string]any)
 	if src["harness"] != "claude-ai" || src["author"] != nil {
 		t.Errorf("handshake default: %v", src)
 	}
-	b := h.ok("claim_assert", map[string]any{"particular_id": "P", "content": "override", "source": map[string]any{"harness": "other", "author": "ben"}})
+	b := h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "P", "content": "override", "source": map[string]any{"harness": "other", "author": "ben"}})
 	src = b["claim"].(map[string]any)["source"].(map[string]any)
 	if src["harness"] != "other" || src["author"] != "ben" {
 		t.Errorf("override: %v", src)
@@ -255,7 +255,7 @@ func TestParallelAssertsKeepIndexClean(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			res, err := h.cs.CallTool(context.Background(), &sdk.CallToolParams{Name: "claim_assert", Arguments: map[string]any{"particular_id": "P", "content": "claim"}})
+			res, err := h.cs.CallTool(context.Background(), &sdk.CallToolParams{Name: "claim_assert", Arguments: map[string]any{"particular_id": "P", "content": "claim", "evidential": "observed"}})
 			if err != nil || res.IsError {
 				t.Errorf("assert %d: %v %v", i, err, res)
 			}
