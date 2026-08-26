@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.9.1 — report by condition
 
 - Corpus-fact aggregation classifies **by condition, never by severity**.
   Severity was a proxy, and it aggregated `defect_unverifiable` — a rare,
