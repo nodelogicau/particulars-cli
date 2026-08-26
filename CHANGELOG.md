@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.9.0 — the evidential axis
 
 - **BREAKING (writers): every new claim declares what backs it.** `claim assert`
   and the MCP `claim_assert` require `--evidential observed|inferred|held`, with
