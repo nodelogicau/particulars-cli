@@ -1525,14 +1525,17 @@ func TestNotesAreCountedNotListed(t *testing.T) {
 			"--document", "https://example.com/x", "--json")
 	}
 	text := run(t, "", "validate")
-	if strings.Contains(text.stdout, "unverified_document") {
-		t.Errorf("notes should not be listed by default:\n%s", text.stdout)
+	if strings.Contains(text.stdout, ".yaml  unverified_document") {
+		t.Errorf("notes should not be listed per object by default:\n%s", text.stdout)
+	}
+	if !strings.Contains(text.stdout, "3 objects  unverified_document") {
+		t.Errorf("notes should aggregate to one line per condition: %q", text.stdout)
 	}
 	if !strings.Contains(text.stdout, "3 notes (--notes to list)") {
 		t.Errorf("notes should be counted: %q", text.stdout)
 	}
 	listed := run(t, "", "validate", "--notes")
-	if strings.Count(listed.stdout, "unverified_document") != 3 {
+	if strings.Count(listed.stdout, ".yaml  unverified_document") != 3 {
 		t.Errorf("--notes should list them:\n%s", listed.stdout)
 	}
 	j := run(t, "", "validate", "--json")
@@ -1541,5 +1544,66 @@ func TestNotesAreCountedNotListed(t *testing.T) {
 	}
 	if j.code != 0 {
 		t.Errorf("notes must not affect the exit code, got %d", j.code)
+	}
+}
+
+func TestCorpusFactWarningsAggregate(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+	t.Setenv("DKF_WORKSPACE", ws)
+	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
+	run(t, "", "particular", "define", "--label", "Project X", "--json")
+	var ids []string
+	for i := 0; i < 2; i++ {
+		r := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "x",
+			"--document", "docs/a.md", "--quote", "quoted text", "--json")
+		if r.code != 0 {
+			t.Fatalf("assert: %+v", r)
+		}
+		ids = append(ids, r.js["claim"].(map[string]any)["id"].(string))
+	}
+	// Rewrite both files as v0.8.0 wrote them, so each carries the legacy key.
+	for _, id := range ids {
+		path := filepath.Join(ws, "claims", id+".yaml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(strings.Replace(string(data), "    ref: ", "    uri: ", 1)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	text := run(t, "", "validate")
+	if text.code != 0 {
+		t.Fatalf("validate: %+v", text)
+	}
+	// A corpus fact is one line however many objects carry it.
+	if !strings.Contains(text.stdout, "2 objects  legacy_document_uri") {
+		t.Errorf("legacy warnings should aggregate:\n%s", text.stdout)
+	}
+	if strings.Contains(text.stdout, ".yaml  legacy_document_uri") {
+		t.Errorf("no per-object legacy lines by default:\n%s", text.stdout)
+	}
+	if !strings.Contains(text.stdout, "0 errors, 2 warnings") || !strings.Contains(text.stdout, "(--notes to list)") {
+		t.Errorf("aggregation must not change the counts: %q", text.stdout)
+	}
+	// --notes expands to per-object lines.
+	listed := run(t, "", "validate", "--notes")
+	if strings.Count(listed.stdout, ".yaml  legacy_document_uri") != 2 {
+		t.Errorf("--notes should list each object:\n%s", listed.stdout)
+	}
+	// JSON always carries every finding, unaggregated.
+	j := run(t, "", "validate", "--json")
+	if j.js["warnings"].(float64) != 2 {
+		t.Errorf("json warning count: %+v", j.js)
+	}
+	var perObject int
+	for _, f := range j.js["findings"].([]any) {
+		if f.(map[string]any)["code"] == "legacy_document_uri" {
+			perObject++
+		}
+	}
+	if perObject != 2 {
+		t.Errorf("json should carry both findings, got %d", perObject)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -101,7 +102,7 @@ machine-checked, for instance — and are summarised rather than listed unless
 			return a.emitFindings(fs)
 		}),
 	}
-	cmd.Flags().BoolVar(&a.showNotes, "notes", false, "list notes instead of only counting them")
+	cmd.Flags().BoolVar(&a.showNotes, "notes", false, "list aggregated findings individually: notes, and warnings that record corpus facts (the legacy_* markers)")
 	return cmd
 }
 
@@ -125,22 +126,58 @@ func (a *app) emitFindings(fs query.Findings) error {
 		out["notes"] = notes
 	}
 	if err := a.emit(out, func(w io.Writer) {
+		// Findings about an object list per object, because the object is the
+		// unit of action. Facts about the corpus — the legacy compatibility
+		// markers, and every info-severity observation — aggregate into one
+		// line per condition: they are permanent, unactionable per object,
+		// and a per-object listing would recur on every run forever, burying
+		// the findings that need acting on. --json always carries every one.
+		aggregated := map[string][]query.Finding{}
+		var aggOrder []string
 		for _, f := range fs {
-			// Notes are collapsed into the summary line unless asked for: a
-			// workspace citing mostly remote sources produces one per claim,
-			// which would bury the findings that need acting on. They are
-			// always present in --json.
-			if f.Severity == query.SeverityInfo && !a.showNotes {
+			if !a.showNotes && (f.Severity == query.SeverityInfo || query.IsCorpusFact(f.Code)) {
+				k := f.Severity + "\x00" + f.Code
+				if _, seen := aggregated[k]; !seen {
+					aggOrder = append(aggOrder, k)
+				}
+				aggregated[k] = append(aggregated[k], f)
 				continue
 			}
 			fmt.Fprintf(w, "%-7s %s  %s: %s\n", f.Severity, f.Path, f.Code, f.Message)
 		}
+		// Warnings before observations, then by code, so the line a reader
+		// should weigh first comes first.
+		sort.Slice(aggOrder, func(i, j int) bool {
+			si, sj := aggregated[aggOrder[i]][0], aggregated[aggOrder[j]][0]
+			if si.Severity != sj.Severity {
+				return si.Severity == query.SeverityWarning
+			}
+			return si.Code < sj.Code
+		})
+		for _, k := range aggOrder {
+			group := aggregated[k]
+			f := group[0]
+			fmt.Fprintf(w, "%-7s %s  %s", f.Severity, plural(len(group), "object"), f.Code)
+			// One fact, however many objects carry it: show the message when
+			// every object says the same thing, and just the count when not.
+			uniform := f.Message
+			for _, g := range group[1:] {
+				if g.Message != uniform {
+					uniform = ""
+					break
+				}
+			}
+			if uniform != "" {
+				fmt.Fprintf(w, ": %s", uniform)
+			}
+			fmt.Fprintln(w)
+		}
 		fmt.Fprintf(w, "%s, %s", plural(errs, "error"), plural(warns, "warning"))
 		if notes > 0 {
 			fmt.Fprintf(w, ", %s", plural(notes, "note"))
-			if !a.showNotes {
-				fmt.Fprint(w, " (--notes to list)")
-			}
+		}
+		if len(aggOrder) > 0 {
+			fmt.Fprint(w, " (--notes to list)")
 		}
 		fmt.Fprintln(w)
 	}); err != nil {

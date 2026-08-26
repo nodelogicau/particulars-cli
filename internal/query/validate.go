@@ -80,6 +80,23 @@ func (fs Findings) HasErrors() bool {
 }
 
 // Validate checks the whole workspace. It never writes.
+// IsCorpusFact reports whether a finding code records a fact about the corpus
+// rather than a finding about an object someone might act on. A corpus fact is
+// permanent — the files carrying it can never be rewritten, since appending a
+// retraction is the only modification the format permits — so it can never be
+// cleared, and its discovery value is spent the first time anyone sees it,
+// while a per-object listing recurs on every run forever. Renderers report
+// these in aggregate: one line carrying a count discovers exactly as well as
+// eighty-eight. Info-severity findings are corpus facts by construction and
+// are aggregated by severity rather than being listed here.
+func IsCorpusFact(code string) bool {
+	switch code {
+	case CodeLegacyProducedBy, CodeLegacyID, CodeLegacyDocumentURI:
+		return true
+	}
+	return false
+}
+
 func Validate(w *store.Workspace) (Findings, error) {
 	g, err := w.Load()
 	if err != nil {

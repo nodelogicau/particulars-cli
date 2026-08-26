@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- `validate` text output reports **corpus facts in aggregate**: the legacy
+  compatibility markers (`legacy_produced_by`, `legacy_id`,
+  `legacy_document_uri`) and every informational note now render as one line
+  per condition carrying a count, with `--notes` expanding to per-object lines
+  and `--json` unchanged. A corpus fact is permanent — the files carrying it
+  can never be rewritten — so its discovery value is spent on first sight while
+  a per-object listing recurs on every run forever: six identical legacy lines
+  were wallpaper, and the 88-object `undeclared` report that `claim-evidential`
+  will bring would have been the entire output. Findings about an object —
+  drift, scope, dangling references — still list per object, because the
+  object is the unit of action. From the discussion on
+  [particulars-cli#4](https://github.com/nodelogicau/particulars-cli/issues/4).
+
 ## v0.8.1 — align with the drift corrections
 
 - Align with the drift corrections applied to DKF in
