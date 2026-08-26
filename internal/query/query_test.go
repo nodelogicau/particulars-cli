@@ -1074,3 +1074,55 @@ func TestLegacyDocumentURIReportedOnce(t *testing.T) {
 		t.Error("a legacy document is valid")
 	}
 }
+
+func TestForbiddenAliasIsCaughtByTheNodeWalk(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	// A struct decode silently expands aliases, so only validate's node walk
+	// can see this file for what it is.
+	id := "clm_01a03999-0000-7000-8000-0000000000aa"
+	path := filepath.Join(f.w.Root, "claims", id+".yaml")
+	content := "id: " + id + "\ntype: claim\nsubject: " + p.ID + "\ncontent: &c the same text twice\nsource:\n  author: ben\n  document:\n    ref: notes.md\n    quote: *c\ncontext:\n  scope: personal\ntimestamp: 2026-08-26T09:00:00Z\nevidential: observed\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.w.RebuildIndex()
+
+	// The file reads: the alias expanded into the quote.
+	g, err := f.w.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := g.Assertion(id).(*dkf.Claim)
+	if !ok || c.Source.Document.Quote != "the same text twice" {
+		t.Fatalf("the alias should have expanded on read: %+v", c)
+	}
+	// And validate names it as the error it is.
+	fs, err := Validate(f.w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, fi := range fs {
+		if fi.Code == CodeForbiddenAlias {
+			found = true
+			if fi.Severity != SeverityError {
+				t.Errorf("forbidden_alias is an error, got %s", fi.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Error("an aliased object file should be reported")
+	}
+	// Plain files never trip it.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.w.RebuildIndex()
+	fs, _ = Validate(f.w)
+	for _, fi := range fs {
+		if fi.Code == CodeForbiddenAlias {
+			t.Errorf("no alias in the workspace, yet: %+v", fi)
+		}
+	}
+}

@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **DKF v0.1 is declared** —
+  [nodelogicau/particulars@v0.1](https://github.com/nodelogicau/particulars/tree/v0.1),
+  2026-08-26. This implementation is conformant in full; README and
+  SPEC-FEEDBACK now say "v0.1" rather than "draft", and SPEC-FEEDBACK stands as
+  the record of the nineteen items that got it there.
+- `validate` errors `forbidden_alias` on object files using YAML anchors or
+  aliases — the commitment from
+  [#5](https://github.com/nodelogicau/particulars-cli/issues/5). Only a node
+  walk can see them: a struct decode silently expands aliases, and the file
+  stays readable, so validate is the one place the prohibition can live.
+
 ## v0.9.1 — report by condition
 
 - Corpus-fact aggregation classifies **by condition, never by severity**.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"sort"
 
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
@@ -44,6 +45,13 @@ const (
 	// same scope. Valid — promotion may only widen, and this widens nothing —
 	// but redundant.
 	CodeDuplicatePromotion = "duplicate_promotion"
+	// CodeForbiddenAlias: the object file uses a YAML anchor or alias. The
+	// spec forbids them in object files for the resource-exhaustion reason —
+	// alias expansion is the classic YAML bomb — not for signing: aliases
+	// resolve before the data model exists and never affect a payload. They
+	// are invisible after parsing, so the node walk here is the only place
+	// they can be caught.
+	CodeForbiddenAlias = "forbidden_alias"
 	// CodeUndeclared: the claim predates the evidential. Not a fourth value
 	// and not a defect — the warrant cannot now be established, and claims
 	// are immutable, so the distinction ages out rather than being migrated.
@@ -230,6 +238,20 @@ func Validate(w *store.Workspace) (Findings, error) {
 		}
 	}
 
+	// Anchors and aliases, which only a node walk can see: a struct decode
+	// silently expands them, so the parsed object is indistinguishable from
+	// one written plainly.
+	for _, obj := range g.Objects() {
+		raw, ok := g.Raw[obj.ObjectID()]
+		if !ok {
+			continue
+		}
+		if hasAliasOrAnchor(raw) {
+			add(SeverityError, g.Files[obj.ObjectID()], CodeForbiddenAlias,
+				"YAML anchors and aliases are forbidden in object files; write the value out")
+		}
+	}
+
 	// Provenance. Verification is offline: a document is checked only when it
 	// resolves to a file in this workspace, and everything else is reported as
 	// not checked rather than as a problem.
@@ -396,4 +418,28 @@ func findCycles(g *store.Graph) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// hasAliasOrAnchor reports whether a document uses YAML anchors or aliases.
+func hasAliasOrAnchor(data []byte) bool {
+	var n yaml.Node
+	if err := yaml.Unmarshal(data, &n); err != nil {
+		return false // unparseable files are already reported
+	}
+	var walk func(*yaml.Node) bool
+	walk = func(nd *yaml.Node) bool {
+		if nd == nil {
+			return false
+		}
+		if nd.Kind == yaml.AliasNode || nd.Anchor != "" {
+			return true
+		}
+		for _, c := range nd.Content {
+			if walk(c) {
+				return true
+			}
+		}
+		return false
+	}
+	return walk(&n)
 }

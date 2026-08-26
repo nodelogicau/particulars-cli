@@ -16,8 +16,8 @@ It is built to be driven by an LLM agent and reviewed by humans through git:
 - the binary is static, dependency-free, and does no reasoning of its own. The
   agent reasons; `particulars` stores, indexes, and reports structure.
 
-This is the reference implementation of the DKF v0.1 draft as resolved on
-2026-08-21 ([nodelogicau/particulars@27743db](https://github.com/nodelogicau/particulars/commit/27743db)).
+This is the reference implementation of **DKF v0.1**, declared on 2026-08-26 at
+[nodelogicau/particulars@v0.1](https://github.com/nodelogicau/particulars/tree/v0.1).
 [SPEC-FEEDBACK.md](SPEC-FEEDBACK.md) records what this implementation proposed
 and how each point was decided. v0.2.0 aligns the CLI with those decisions; see
 [CHANGELOG.md](CHANGELOG.md).

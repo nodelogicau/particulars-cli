@@ -114,6 +114,13 @@ Workspace-wide structural, referential, and index-consistency checks with error/
 - **WHEN** a claim carries a quote
 - **THEN** `validate` records that the claim reproduces source text verbatim, so a reviewer weighing its scope can see it
 
+### Requirement: Forbidden aliases
+`validate` SHALL report an error, `forbidden_alias`, for any object file using a YAML anchor or alias. The check runs at the node level, because a struct decode silently expands aliases and the parsed object is indistinguishable from one written plainly; the file remains readable. The prohibition's rationale is resource exhaustion in the file format, not signing: aliases resolve before the data model exists and never affect a signature payload.
+
+#### Scenario: An aliased file is an error
+- **WHEN** an object file uses `&anchor` and `*alias` and `validate` runs
+- **THEN** `forbidden_alias` is reported as an error, and every query verb still reads the file with the alias expanded
+
 ### Requirement: Evidential findings
 `validate` SHALL report: `confidence_on_held` as an **error** when a claim carries both `evidential: held` and `confidence` — the one mechanically checkable rule in this area, and the file stays readable by every query verb; `undeclared` at informational severity for every claim without an `evidential`, aggregated as a corpus fact, since every workspace written before the field existed carries it on every claim and it can never be cleared; `confidence_on_undeclared` at informational severity when an undeclared claim carries `confidence`, whose meaning cannot be established; and `unknown_method` as a warning when a synthesis's `method` is outside the closed vocabulary. An invalid `evidential` value in a file SHALL be an error.
 

@@ -1,9 +1,12 @@
 # Feedback on the DKF v0.1 draft from the `particulars` reference implementation
 
-The [DKF README](https://github.com/nodelogicau/particulars) asked for feedback on
-the object model, field names, and missing cases before v0.1 is declared. These
-are the points where implementing the format forced a decision the draft did not
-make. Each was raised as an issue on 2026-08-21 and **all ten were resolved the
+**DKF v0.1 was declared on 2026-08-26 at
+[nodelogicau/particulars@v0.1](https://github.com/nodelogicau/particulars/tree/v0.1),
+with every item below resolved.** This file is the record of how the draft got
+there: the [DKF README](https://github.com/nodelogicau/particulars) asked for
+feedback on the object model, field names, and missing cases before v0.1 was
+declared, and these are the points where implementing the format forced a
+decision the draft did not make. Each was raised as an issue on 2026-08-21 and **all ten were resolved the
 same day** in [nodelogicau/particulars@27743db](https://github.com/nodelogicau/particulars/commit/27743db);
 the resolution is recorded under each item. particulars-cli v0.2.0 implements the
 resolutions. "We" below means this implementation as it was when the item was raised.
@@ -181,7 +184,8 @@ The `merge-records` spec prose lists fields as "`id`, `type: merge`, `uris`,
 `source`, `timestamp`, and optional `reason`" while the README example writes
 `id, type, uris, reason, source, timestamp`. The reference implementation follows the example (the
 concrete artifact). The prose should be brought into line, or the example
-changed, before v0.1 is declared.
+changed, before v0.1 is declared. *(Resolved: the prose was aligned to the
+example in the #11 round.)*
 
 ## 12. Workspace pointer file (`.dkf`) for discovery from above ([#12](https://github.com/nodelogicau/particulars/issues/12))
 
