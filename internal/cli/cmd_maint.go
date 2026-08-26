@@ -127,15 +127,16 @@ func (a *app) emitFindings(fs query.Findings) error {
 	}
 	if err := a.emit(out, func(w io.Writer) {
 		// Findings about an object list per object, because the object is the
-		// unit of action. Facts about the corpus — the legacy compatibility
-		// markers, and every info-severity observation — aggregate into one
-		// line per condition: they are permanent, unactionable per object,
-		// and a per-object listing would recur on every run forever, burying
-		// the findings that need acting on. --json always carries every one.
+		// unit of action — whatever their severity: defect_unverifiable is a
+		// note, and it still names one retraction worth opening. Facts about
+		// the corpus aggregate into one line per condition: permanent,
+		// unactionable per object, and a per-object listing would recur on
+		// every run forever, burying the findings that need acting on.
+		// --json always carries every one.
 		aggregated := map[string][]query.Finding{}
 		var aggOrder []string
 		for _, f := range fs {
-			if !a.showNotes && (f.Severity == query.SeverityInfo || query.IsCorpusFact(f.Code)) {
+			if !a.showNotes && query.IsCorpusFact(f.Code) {
 				k := f.Severity + "\x00" + f.Code
 				if _, seen := aggregated[k]; !seen {
 					aggOrder = append(aggOrder, k)

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Corpus-fact aggregation classifies **by condition, never by severity**.
+  Severity was a proxy, and it aggregated `defect_unverifiable` — a rare,
+  per-object finding a reviewer wants the path for — along with the wallpaper.
+  Now `defect_unverifiable`, drift under a retracted object, and
+  `quoted_source` list per object at info severity, while `undeclared`,
+  `confidence_on_undeclared`, and `unverified_document` aggregate. Surfaced by
+  the spec's `condition-reporting` capability, which classifies an unverifiable
+  defect as a finding about an object; the mismatch is the answer to the second
+  question on [#4](https://github.com/nodelogicau/particulars-cli/issues/4).
+
 ## v0.9.0 — the evidential axis
 
 - **BREAKING (writers): every new claim declares what backs it.** `claim assert`

@@ -96,11 +96,19 @@ func (fs Findings) HasErrors() bool {
 // cleared, and its discovery value is spent the first time anyone sees it,
 // while a per-object listing recurs on every run forever. Renderers report
 // these in aggregate: one line carrying a count discovers exactly as well as
-// eighty-eight. Info-severity findings are corpus facts by construction and
-// are aggregated by severity rather than being listed here.
+// eighty-eight.
+//
+// The classification is by condition, never by severity: severity was tried as
+// a proxy and it aggregated defect_unverifiable — a rare, per-object finding a
+// reviewer wants the path for — along with the wallpaper. A condition that
+// straddles the line is classified by whether an object-level action exists,
+// and over-listing errs toward visibility (the spec's condition-reporting
+// rule): defect_unverifiable, drift under a retracted object, and
+// quoted_source all name one file worth opening, so they list.
 func IsCorpusFact(code string) bool {
 	switch code {
-	case CodeLegacyProducedBy, CodeLegacyID, CodeLegacyDocumentURI:
+	case CodeLegacyProducedBy, CodeLegacyID, CodeLegacyDocumentURI,
+		CodeUndeclared, CodeConfidenceOnUndeclared, CodeUnverifiedDocument:
 		return true
 	}
 	return false

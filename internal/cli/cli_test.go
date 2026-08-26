@@ -1607,3 +1607,35 @@ func TestCorpusFactWarningsAggregate(t *testing.T) {
 		t.Errorf("json should carry both findings, got %d", perObject)
 	}
 }
+
+func TestPerObjectNotesAreListed(t *testing.T) {
+	// Classification is by condition, not severity: an info finding about a
+	// specific object — a defect that cannot be verified — lists with its
+	// path, while corpus facts of the same severity aggregate.
+	ws := t.TempDir()
+	t.Chdir(ws)
+	t.Setenv("DKF_WORKSPACE", ws)
+	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
+	run(t, "", "particular", "define", "--label", "T", "--json")
+	if err := os.MkdirAll(filepath.Join(ws, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := filepath.Join(ws, "docs", "a.md")
+	if err := os.WriteFile(doc, []byte("Listens on 443.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "T", "--content", "443",
+		"--document", "docs/a.md", "--hash-document", "--quote", "Listens on 443.", "--json")
+	id := r.js["claim"].(map[string]any)["id"].(string)
+	run(t, "", "retract", id, "--reason", "misread", "--kind", "defect", "--json")
+	if err := os.WriteFile(doc, []byte("Listens on 8443.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	text := run(t, "", "validate")
+	if !strings.Contains(text.stdout, id+".yaml  defect_unverifiable") {
+		t.Errorf("defect_unverifiable must list per object with its path:\n%s", text.stdout)
+	}
+	if !strings.Contains(text.stdout, id+".yaml  quote_drift") {
+		t.Errorf("drift under a retracted object still names the object:\n%s", text.stdout)
+	}
+}
