@@ -98,3 +98,10 @@ With `--manifest <path>`, the export SHALL write the exported item ids, one per 
 #### Scenario: Particular drops out of scope
 - **WHEN** a particular's only organisation claim is retracted and the export is re-run with a manifest
 - **THEN** the new manifest omits that particular's id while the previous manifest contains it
+
+### Requirement: The brief marks the warrant
+A `held` claim rendered in an item's brief SHALL be marked as a position, and a claim whose warrant is undeclared SHALL be marked as such, inline where the existing unsynthesised marker appears; `observed` and `inferred` claims render unmarked. This is what the evidential exists for downstream: without the marker, a consumer citing the brief cannot distinguish a fluent position from an observed fact.
+
+#### Scenario: A position in the brief
+- **WHEN** an exported particular's supporting claims include one with `evidential: held`
+- **THEN** that line carries a position marker and no confidence, and the observed claims' lines are unmarked
