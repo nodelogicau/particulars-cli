@@ -625,3 +625,82 @@ func TestPromotionIndexEntry(t *testing.T) {
 		t.Errorf("index should be current after rebuild: %+v %v", diff, err)
 	}
 }
+
+func TestUnknownIndexEntriesSurvive(t *testing.T) {
+	w := newWS(t)
+	p := mkParticular(t, w, "Project X")
+	mkClaim(t, w, p.ID, "hello")
+
+	// A newer conforming writer adds an entry type this implementation has
+	// never heard of. Inject it as that writer would: in ascending-id order.
+	future := "  - id: sig_01b00000-0000-7000-8000-000000000001\n    type: signature\n    signer: did:example:ben\n    payload: canonical-yaml\n"
+	data, err := os.ReadFile(w.IndexPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(w.IndexPath(), append(data, []byte(future)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reading ignores it: no consumer sees it among the typed entries.
+	idx, _, err := w.ReadIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range idx.Entries {
+		if e.ID == "sig_01b00000-0000-7000-8000-000000000001" {
+			t.Fatal("an unknown type must not surface as a typed entry")
+		}
+	}
+	if len(idx.Unknown) != 1 {
+		t.Fatalf("unknown rows preserved: got %d", len(idx.Unknown))
+	}
+
+	// The check does not fail on evidence of a newer writer.
+	d, err := w.CheckIndex()
+	if err != nil || !d.Clean() {
+		t.Fatalf("unknown entries are never drift: %+v %v", d, err)
+	}
+
+	// A rebuild preserves it, unchanged, in ascending-id order.
+	if _, err := w.RebuildIndex(); err != nil {
+		t.Fatal(err)
+	}
+	rebuilt, err := os.ReadFile(w.IndexPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rebuilt), "type: signature") || !strings.Contains(string(rebuilt), "signer: did:example:ben") {
+		t.Fatalf("rebuild dropped or altered the unknown entry:\n%s", rebuilt)
+	}
+	sigPos := strings.Index(string(rebuilt), "id: sig_")
+	parPos := strings.Index(string(rebuilt), "id: par_")
+	if sigPos < parPos {
+		t.Errorf("sig_ sorts after par_ in ascending-id order:\n%s", rebuilt)
+	}
+
+	// An incremental update carries it through too.
+	c2 := mkClaim(t, w, p.ID, "another")
+	after, _ := os.ReadFile(w.IndexPath())
+	if !strings.Contains(string(after), "type: signature") || !strings.Contains(string(after), c2.ID) {
+		t.Fatalf("upsert must add the new entry and keep the unknown one:\n%s", after)
+	}
+	// And a rebuild is idempotent over it.
+	if _, err := w.RebuildIndex(); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := os.ReadFile(w.IndexPath())
+	if !bytes.Equal(after, again) {
+		t.Errorf("rebuild is not idempotent with an unknown entry present:\n%s\n---\n%s", after, again)
+	}
+
+	// Real drift still fails: delete the claim's entry by rebuilding from a
+	// graph, then hand-removing a row.
+	trimmed := strings.Replace(string(again), "  - id: "+c2.ID+"\n", "  - id: "+c2.ID+"-gone\n", 1)
+	if err := os.WriteFile(w.IndexPath(), []byte(trimmed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if d, _ := w.CheckIndex(); d.Clean() {
+		t.Error("a genuinely stale index must still fail the check")
+	}
+}

@@ -22,6 +22,70 @@ const IndexFile = "index.yaml"
 type Index struct {
 	Format  string  `yaml:"format"`
 	Entries []Entry `yaml:"entries"`
+	// Unknown holds entries whose type this implementation does not
+	// recognise, preserved as raw nodes: a future record type must survive a
+	// rebuild unchanged, or an older tool turns a read-compatibility gap into
+	// data loss in the cache. Kept apart from Entries so every consumer
+	// ignores them without knowing they exist.
+	Unknown []*yaml.Node `yaml:"-"`
+}
+
+// knownEntryType reports whether a type string is one this implementation
+// maintains itself. Anything else is a newer conforming writer's row.
+func knownEntryType(t string) bool {
+	switch dkf.Type(t) {
+	case dkf.TypeParticular, dkf.TypeClaim, dkf.TypeSynthesis, dkf.TypeMerge, dkf.TypePublish:
+		return true
+	}
+	return false
+}
+
+// nodeField returns the scalar value for a key in a mapping node.
+func nodeField(n *yaml.Node, key string) string {
+	if n == nil || n.Kind != yaml.MappingNode {
+		return ""
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value == key {
+			return n.Content[i+1].Value
+		}
+	}
+	return ""
+}
+
+// UnmarshalYAML splits entries into the typed rows this implementation
+// maintains and the raw rows it merely preserves. It walks the node tree
+// directly rather than decoding through a struct: yaml.v3 does not populate
+// []*yaml.Node struct fields, and preservation wants the document's own
+// nodes anyway, so the row survives byte-faithfully.
+func (idx *Index) UnmarshalYAML(n *yaml.Node) error {
+	idx.Format, idx.Entries, idx.Unknown = "", nil, nil
+	if n.Kind != yaml.MappingNode {
+		return fmt.Errorf("index: expected a mapping, got kind %v", n.Kind)
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		k, v := n.Content[i], n.Content[i+1]
+		switch k.Value {
+		case "format":
+			idx.Format = v.Value
+		case "entries":
+			if v.Kind != yaml.SequenceNode {
+				continue
+			}
+			for _, en := range v.Content {
+				if !knownEntryType(nodeField(en, "type")) {
+					idx.Unknown = append(idx.Unknown, en)
+					continue
+				}
+				var e Entry
+				if err := en.Decode(&e); err != nil {
+					return err
+				}
+				idx.Entries = append(idx.Entries, e)
+			}
+		}
+	}
+	return nil
 }
 
 // Entry is one index row. Field order is the on-disk order.
@@ -117,6 +181,9 @@ func EncodeIndex(idx *Index) ([]byte, error) {
 	if err := root.Encode(idx); err != nil {
 		return nil, err
 	}
+	if len(idx.Unknown) > 0 {
+		spliceUnknown(&root, idx.Unknown)
+	}
 	bareTimestamps(&root)
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
@@ -128,6 +195,29 @@ func EncodeIndex(idx *Index) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// spliceUnknown merges preserved rows into the encoded entries sequence in
+// ascending-id order — the canonical order the file already uses.
+func spliceUnknown(root *yaml.Node, unknown []*yaml.Node) {
+	doc := root
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+	var seq *yaml.Node
+	for i := 0; i+1 < len(doc.Content); i += 2 {
+		if doc.Content[i].Value == "entries" {
+			seq = doc.Content[i+1]
+		}
+	}
+	if seq == nil || seq.Kind != yaml.SequenceNode {
+		return
+	}
+	merged := append(append([]*yaml.Node{}, seq.Content...), unknown...)
+	sort.SliceStable(merged, func(i, j int) bool {
+		return nodeField(merged[i], "id") < nodeField(merged[j], "id")
+	})
+	seq.Content = merged
 }
 
 // bareTimestamps re-tags `timestamp` values so they render unquoted, matching
@@ -184,6 +274,14 @@ func (w *Workspace) RebuildIndex() (*Index, error) {
 		return nil, err
 	}
 	idx := BuildIndex(g)
+	// A rebuild regenerates every row this implementation maintains and
+	// preserves the rest: a newer writer's entry types must survive an older
+	// tool's rebuild. A committed index that cannot be parsed at all — git
+	// conflict markers, say — is replaced wholesale, which is what a rebuild
+	// over a broken file is for.
+	if prev, _, rerr := w.ReadIndex(); rerr == nil {
+		idx.Unknown = prev.Unknown
+	}
 	if err := w.WriteIndex(idx); err != nil {
 		return nil, err
 	}
@@ -226,10 +324,6 @@ func (w *Workspace) CheckIndex() (IndexDiff, error) {
 		return IndexDiff{}, err
 	}
 	want := BuildIndex(g)
-	wantBytes, err := EncodeIndex(want)
-	if err != nil {
-		return IndexDiff{}, err
-	}
 	var d IndexDiff
 	d.Missing, d.Extra, d.Changed = []string{}, []string{}, []string{}
 	got, gotBytes, err := w.ReadIndex()
@@ -239,6 +333,14 @@ func (w *Workspace) CheckIndex() (IndexDiff, error) {
 		}
 		d.BytesDiffer = true
 		return d, nil
+	}
+	// The expectation is what a rebuild would actually write, which preserves
+	// the committed index's unknown entry types — so evidence of a newer
+	// conforming writer is never drift, and a check never fails on it.
+	want.Unknown = got.Unknown
+	wantBytes, err := EncodeIndex(want)
+	if err != nil {
+		return IndexDiff{}, err
 	}
 	d.BytesDiffer = !bytes.Equal(wantBytes, gotBytes)
 	gotBy := map[string]Entry{}
