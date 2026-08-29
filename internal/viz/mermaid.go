@@ -38,6 +38,16 @@ func Mermaid(m *Model) string {
 			fmt.Fprintf(&b, "  %s %s %s\n", e.From, arrow, e.To)
 		}
 	}
+	// Truncated labels carry their full text as a hover tooltip. The callback
+	// form of the click statement is the one tooltip syntax Mermaid has ever
+	// had; with no such function defined a click does nothing, and renderers
+	// that strip interactivity (GitHub) parse and ignore the line.
+	for _, n := range m.Nodes {
+		if n.Tooltip == "" {
+			continue
+		}
+		fmt.Fprintf(&b, "  click %s callback \"%s\"\n", n.ID, mermaidTooltip(n.Tooltip))
+	}
 	// One class per state, applied by listing members — assigning a class per
 	// node line would repeat the definition and bloat the diff.
 	for _, st := range []State{StateCurrent, StateUnsynthesised, StateStale, StateRetracted} {
@@ -121,5 +131,12 @@ func mermaidQuote(s string) string {
 // quote both terminate the label.
 func mermaidEdgeLabel(s string) string {
 	r := strings.NewReplacer("|", "/", "\"", "”", "\n", " ", "\r", " ")
+	return r.Replace(s)
+}
+
+// mermaidTooltip sanitises tooltip text, where a quote terminates the string
+// with no escape. Tooltips render as plain text, so no entities here.
+func mermaidTooltip(s string) string {
+	r := strings.NewReplacer("\"", "”", "\n", " ", "\r", " ")
 	return r.Replace(s)
 }

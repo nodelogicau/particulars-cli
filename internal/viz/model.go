@@ -50,6 +50,7 @@ type Node struct {
 	Kind     Kind
 	State    State
 	Label    string // the human-readable text, unescaped
+	Tooltip  string // the full text when Label was truncated, else empty
 	Foreign  bool   // an input about a particular outside the view
 	Weight   int    // map view: non-retracted assertions about this particular
 	Priority int    // map view: conflict priority
@@ -219,6 +220,17 @@ func Truncate(s string, n int) string {
 		return s
 	}
 	return strings.TrimRight(string(r[:n]), " ") + "…"
+}
+
+// clip returns the node label and, when truncation dropped anything, the full
+// text for renderers that can carry it as a tooltip. Whitespace-only changes
+// yield no tooltip: a tooltip repeating its label tells the reader nothing.
+func clip(s string, n int) (label, tooltip string) {
+	label = Truncate(s, n)
+	if full := strings.Join(strings.Fields(s), " "); full != label {
+		return label, full
+	}
+	return label, ""
 }
 
 // plural renders a count with its noun, so a map node reads "1 claim" rather

@@ -1,6 +1,7 @@
 package viz
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -318,6 +319,44 @@ func TestMapView(t *testing.T) {
 	}
 }
 
+func TestTruncatedLabelsCarryTooltips(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	long := strings.TrimSpace(strings.Repeat("all work and no play ", 5))
+	c := f.claim(p, long)
+	brief := f.claim(p, "fits in full")
+
+	m := Lineage(f.graph(), p, Options{})
+	n := nodeFor(m, c.ID)
+	if n.Tooltip != long {
+		t.Errorf("truncated node should carry the full text: %q", n.Tooltip)
+	}
+	if !strings.HasSuffix(n.Label, "…") {
+		t.Errorf("label should still be truncated: %q", n.Label)
+	}
+	if b := nodeFor(m, brief.ID); b.Tooltip != "" {
+		t.Errorf("untruncated node must not carry a tooltip: %q", b.Tooltip)
+	}
+
+	mm := Mermaid(m)
+	if want := fmt.Sprintf("  click %s callback \"%s\"\n", n.ID, long); !strings.Contains(mm, want) {
+		t.Errorf("mermaid should attach the full text as a tooltip:\n%s", mm)
+	}
+	if strings.Contains(mm, "click "+nodeFor(m, brief.ID).ID+" ") {
+		t.Errorf("mermaid must not emit a click line for an untruncated label:\n%s", mm)
+	}
+
+	d := DOT(m)
+	if want := fmt.Sprintf("tooltip=\"%s\"", long); !strings.Contains(d, want) {
+		t.Errorf("DOT should attach the full text as a tooltip:\n%s", d)
+	}
+	for _, line := range strings.Split(d, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), nodeFor(m, brief.ID).ID+" [") && strings.Contains(line, "tooltip=") {
+			t.Errorf("DOT must not emit a tooltip for an untruncated label: %s", line)
+		}
+	}
+}
+
 // A label containing every character that means something to one of the two
 // formats. Neither renderer may let it break out of its delimiter.
 const hostile = `He said "stop" <now> | ` + "`code`" + ` & {braces} [brackets] \back\ 100% —— ünïcödé`
@@ -348,6 +387,12 @@ func TestRenderersEscapeHostileLabels(t *testing.T) {
 			// label early and leave the rest as syntax.
 			if strings.Count(line, `"`) != 2 {
 				t.Errorf("mermaid label does not have exactly two quotes: %s", line)
+			}
+		}
+		// A tooltip string has the same two-quote budget as a label.
+		for _, line := range strings.Split(mm, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "click ") && strings.Count(line, `"`) != 2 {
+				t.Errorf("mermaid tooltip does not have exactly two quotes: %s", line)
 			}
 		}
 		// A pipe delimits an edge label, so on an edge line they must pair up;

@@ -68,6 +68,10 @@ func dotAttrs(n Node) string {
 	if n.Foreign {
 		a = append(a, "peripheries=2")
 	}
+	// The full text of a truncated label, shown on hover in SVG output.
+	if n.Tooltip != "" {
+		a = append(a, "tooltip="+dotQuote(n.Tooltip))
+	}
 	if len(a) == 0 {
 		return ""
 	}

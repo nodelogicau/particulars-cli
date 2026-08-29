@@ -95,10 +95,12 @@ func Lineage(g *store.Graph, p *dkf.Particular, o Options) *Model {
 		if a == nil || !o.visible(g, a) {
 			continue
 		}
-		b.node(id, kindOf(a), state[id], Truncate(a.GetContent(), o.labelChars()))
+		label, tooltip := clip(a.GetContent(), o.labelChars())
+		b.node(id, kindOf(a), state[id], label)
 		if a.GetRetracted() != nil {
-			b.node(id, kindOf(a), StateRetracted, Truncate(a.GetContent(), o.labelChars()))
+			b.node(id, kindOf(a), StateRetracted, label)
 		}
+		b.mark(id, func(n *Node) { n.Tooltip = tooltip })
 		if !inClass[a.SubjectID()] {
 			b.mark(id, func(n *Node) { n.Foreign = true })
 		}

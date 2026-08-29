@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Truncated labels carry their full text as a hover tooltip in both drawing
+  formats: Mermaid via the `click … callback "…"` statement — the one tooltip
+  syntax Mermaid has ever had — and DOT via the `tooltip` attribute, which SVG
+  output renders as the node's hover text. Renderers that strip interactivity
+  (GitHub) parse and ignore the Mermaid line; nothing is emitted for labels
+  that fit whole.
 - **DKF v0.1 is declared** —
   [nodelogicau/particulars@v0.1](https://github.com/nodelogicau/particulars/tree/v0.1),
   2026-08-26. This implementation is conformant in full; README and
