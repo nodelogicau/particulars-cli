@@ -1,13 +1,7 @@
 # Changelog
 
-## Unreleased
+## v0.10.0 — DKF v0.1
 
-- Truncated labels carry their full text as a hover tooltip in both drawing
-  formats: Mermaid via the `click … callback "…"` statement — the one tooltip
-  syntax Mermaid has ever had — and DOT via the `tooltip` attribute, which SVG
-  output renders as the node's hover text. Renderers that strip interactivity
-  (GitHub) parse and ignore the Mermaid line; nothing is emitted for labels
-  that fit whole.
 - **DKF v0.1 is declared** —
   [nodelogicau/particulars@v0.1](https://github.com/nodelogicau/particulars/tree/v0.1),
   2026-08-26. This implementation is conformant in full; README and
@@ -18,6 +12,12 @@
   [#5](https://github.com/nodelogicau/particulars-cli/issues/5). Only a node
   walk can see them: a struct decode silently expands aliases, and the file
   stays readable, so validate is the one place the prohibition can live.
+- Truncated labels carry their full text as a hover tooltip in both drawing
+  formats: Mermaid via the `click … callback "…"` statement — the one tooltip
+  syntax Mermaid has ever had — and DOT via the `tooltip` attribute, which SVG
+  output renders as the node's hover text. Renderers that strip interactivity
+  (GitHub) parse and ignore the Mermaid line; nothing is emitted for labels
+  that fit whole.
 
 ## v0.9.1 — report by condition
 
