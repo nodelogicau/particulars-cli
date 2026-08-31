@@ -335,8 +335,8 @@ conflicts on it, run `particulars index` rather than resolving by hand.
 
 Implemented: the eight non-federation tools from the DKF spec plus `particular_merge`
 — as CLI verbs and as MCP tools (`serve --mcp`) — and `init`, `index`, `validate`,
-`topics`, `skill`, `workspace`. Not yet: `feed_index`, `knowledge_publish`, signing,
-and a hosted/HTTP server.
+`topics`, `skill`, `workspace`, `publish`. Not yet: `feed_index`, signing, and a
+hosted/HTTP server.
 
 ## Development
 

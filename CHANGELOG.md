@@ -1,5 +1,61 @@
 # Changelog
 
+## v0.11.0 — authors are particulars
+
+- **`source.author` is a particular reference** — id, URI, or bare name —
+  resolved when a file is read: an id exactly, a URI through merge classes, a
+  name by label or alias. Defining a particular with alias `ben` attributes
+  every existing `author: ben` object retroactively, no file changing; a value
+  that resolves to nothing is unresolved, never invalid. Implements DKF
+  [`source-as-particular`](https://github.com/nodelogicau/particulars/tree/main/openspec/changes/archive/2026-08-31-source-as-particular)
+  (a8118ab) as corrected by
+  [`attribution-review-round`](https://github.com/nodelogicau/particulars/tree/main/openspec/changes/archive/2026-08-31-attribution-review-round)
+  (6fb4c74) and
+  [`index-drift-retraction`](https://github.com/nodelogicau/particulars/tree/main/openspec/changes/archive/2026-09-01-index-drift-retraction)
+  (c1cf25e) — the round this implementation's review on
+  [#7](https://github.com/nodelogicau/particulars-cli/issues/7) produced
+  (upstream #17–#22, SPEC-FEEDBACK items 16–22).
+- **Writers prefer the URI.** A unique match is written as the particular's
+  `uri`, freezing a resolution that was unambiguous at write time; an unknown
+  `par_` id exits 3; an explicitly passed name matching several particulars
+  exits 2 with the candidates; an ambiguous or unknown default is written
+  unchanged with a `warnings` entry in the result; an unknown URI is written
+  unchanged — it is the right identity of someone defined elsewhere. Applies to
+  every verb that writes a `source` and to the MCP tools, where a per-call
+  author is explicit and `serve --author` is a default. Nothing mints a
+  person's particular: define them once, with the URI they choose.
+- **`--document-author`** (`source.document.author`) records who produced what
+  was read — the reportative case, without a fourth evidential: "Jane said X" is
+  a claim you asserted, `observed`, whose document is her utterance. Written
+  after `ref`; the mapping is `ref`, `author`, `hash`, `quote`. The MCP document
+  mapping is now keyed by `ref` with `uri` as the legacy alias, fixing a defect
+  where only `uri` was read.
+- **`recall --author <who>`** returns what a particular's merge class asserted
+  or is reported for, each entry carrying `relations` — `asserted`,
+  `reported`, or both, never collapsed; usable alone or with a subject. Over
+  MCP as `knowledge_recall.author`.
+- **`validate`** reports `author_unresolved` (info) and `author_ambiguous`
+  (warning, with candidates) as corpus facts, one aggregate line per value;
+  `orphan_particular` no longer fires on a particular that anything is asserted
+  by or reported from.
+- **`index.yaml`** carries `author` and `document-author` as written; rebuilds
+  and incremental updates preserve entry *fields* they do not recognise, in
+  place, as they already preserved entry types; and the drift check tolerates a
+  presence difference in a field mirroring an immutable property (`scope`,
+  `topics`, `timestamp`, `author`, `document-author`) so a committed index that
+  predates the new fields passes unrebuilt — while `retracted` is never masked,
+  so a retraction after the index was committed still fails it.
+- **URI resolution reaches through merge records** everywhere a particular is
+  referenced, and matches that are all one merge class collapse to one instead
+  of reading as ambiguous.
+- `--workspace` and `$DKF_WORKSPACE` **follow a `.dkf` pointer** one hop, as
+  discovery does, so an MCP host that hands the server its project directory
+  (Crush's `$PWD`) works either way; a directory with neither file now says so.
+  Fixes [#6](https://github.com/nodelogicau/particulars-cli/issues/6);
+  `docs/mcp.md` gains a Crush section.
+- Skill: who told you goes in `--document-author`, not the content; pass
+  `--author` only when it differs from the default.
+
 ## v0.10.0 — DKF v0.1
 
 - **DKF v0.1 is declared** —
