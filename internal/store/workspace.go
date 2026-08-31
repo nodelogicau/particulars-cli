@@ -62,18 +62,10 @@ func DiscoverWith(explicit string) (*Workspace, *Resolution, error) {
 		if placeholderPath.MatchString(strings.TrimSpace(explicit)) {
 			return nil, nil, fmt.Errorf("%w: %s is an unsubstituted template variable — the host did not fill it in; set the workspace in the client's configuration", ErrNoWorkspace, explicit)
 		}
-		w, err := Open(explicit)
-		if err != nil {
-			return nil, nil, err
-		}
-		return w, &Resolution{Root: w.Root, Via: "flag"}, nil
+		return openExplicit(explicit, "flag")
 	}
 	if env := os.Getenv(EnvWorkspace); env != "" {
-		w, err := Open(env)
-		if err != nil {
-			return nil, nil, err
-		}
-		return w, &Resolution{Root: w.Root, Via: "env"}, nil
+		return openExplicit(env, "env")
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -107,6 +99,42 @@ func DiscoverWith(explicit string) (*Workspace, *Resolution, error) {
 		}
 		dir = parent
 	}
+}
+
+// openExplicit resolves a directory named by --workspace or $DKF_WORKSPACE.
+// The directory is the workspace when it holds dkf.yaml; otherwise a .dkf
+// pointer in it is followed, one hop, exactly as discovery would. An MCP host
+// that hands us its project directory (crush's "$PWD", Claude Code's cwd) is
+// thereby treated the same whether it arrives as an explicit path or as the
+// working directory — the pointer convention exists for precisely that case.
+func openExplicit(dir, via string) (*Workspace, *Resolution, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := os.Stat(filepath.Join(abs, ConfigFile)); err == nil {
+		w, err := Open(abs)
+		if err != nil {
+			return nil, nil, err
+		}
+		return w, &Resolution{Root: w.Root, Via: via}, nil
+	}
+	pointer := filepath.Join(abs, PointerFile)
+	target, ok, perr := readPointer(pointer)
+	if perr != nil {
+		return nil, nil, perr
+	}
+	if !ok {
+		return nil, nil, fmt.Errorf("%w (no %s or %s in %s)", ErrNoWorkspace, ConfigFile, PointerFile, abs)
+	}
+	if _, err := os.Stat(filepath.Join(target, ConfigFile)); err != nil {
+		return nil, nil, fmt.Errorf("%w: %s points at %s, which has no %s", ErrNoWorkspace, pointer, target, ConfigFile)
+	}
+	w, err := Open(target)
+	if err != nil {
+		return nil, nil, err
+	}
+	return w, &Resolution{Root: w.Root, Via: "pointer", Pointer: pointer}, nil
 }
 
 // readPointer parses a .dkf file. ok is false when the file does not exist.

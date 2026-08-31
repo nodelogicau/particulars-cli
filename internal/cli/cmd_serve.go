@@ -21,7 +21,8 @@ func (a *app) serveCmd() *cobra.Command {
 		Short: "Serve this workspace to an MCP client over stdio",
 		Long: `Runs a Model Context Protocol server bound to one workspace (resolved as every
 verb does: --workspace, $DKF_WORKSPACE, then dkf.yaml/.dkf discovery from the
-working directory). Tools follow the DKF specification's names; results equal
+working directory; an explicit directory may hold a .dkf pointer instead of
+dkf.yaml). Tools follow the DKF specification's names; results equal
 the CLI's --json output. Stdout carries only the protocol; diagnostics go to
 stderr. Configure a second workspace as a second server entry in your client.`,
 		Args: cobra.NoArgs,

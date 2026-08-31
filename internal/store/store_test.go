@@ -412,6 +412,23 @@ func TestPointerDiscovery(t *testing.T) {
 	if err != nil || realpath(w.Root) != realpath(ws.Root) || res.Via != "pointer" || realpath(res.Pointer) != realpath(filepath.Join(repo, PointerFile)) {
 		t.Errorf("pointer discovery: %v %+v", err, res)
 	}
+	// An explicit path — flag or env — follows a pointer too (#6: crush hands
+	// the server its project directory as $DKF_WORKSPACE).
+	if w, res, err := DiscoverWith(repo); err != nil || realpath(w.Root) != realpath(ws.Root) || res.Via != "pointer" || realpath(res.Pointer) != realpath(filepath.Join(repo, PointerFile)) {
+		t.Errorf("explicit flag via pointer: %v %+v", err, res)
+	}
+	t.Setenv(EnvWorkspace, repo)
+	if w, res, err := DiscoverWith(""); err != nil || realpath(w.Root) != realpath(ws.Root) || res.Via != "pointer" {
+		t.Errorf("env via pointer: %v %+v", err, res)
+	}
+	t.Setenv(EnvWorkspace, "")
+	if _, res, err := DiscoverWith(ws.Root); err != nil || res.Via != "flag" || res.Pointer != "" {
+		t.Errorf("explicit root stays via flag: %v %+v", err, res)
+	}
+	bare := t.TempDir()
+	if _, _, err := DiscoverWith(bare); !errors.Is(err, ErrNoWorkspace) || !strings.Contains(err.Error(), PointerFile) || !strings.Contains(err.Error(), bare) {
+		t.Errorf("explicit dir with neither file should name both: %v", err)
+	}
 	// dkf.yaml beats a pointer in the same directory.
 	both := t.TempDir()
 	_, _ = Init(both, NewConfig())

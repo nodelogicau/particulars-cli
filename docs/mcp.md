@@ -102,10 +102,33 @@ pointer at the repo root — and no `--workspace` is needed:
 }
 ```
 
+### Crush
+
+In a `crushrc` (Crush's Bash-based config). Crush spawns the server in the
+project directory with its own environment inherited, so — as with Claude Code —
+discovery finds the workspace and nothing more is needed:
+
+```bash
+mcp add particulars --type stdio --command particulars --args serve --args --mcp
+```
+
+Do not add `--env DKF_WORKSPACE "$PWD"`: `$PWD` is the project, and through
+v0.10.0 an explicit path had to be the workspace root itself, so a project that
+reaches its workspace through a `.dkf` pointer made the server exit before the
+handshake — Crush reported it as `calling "initialize": … EOF`
+([#6](https://github.com/nodelogicau/particulars-cli/issues/6)). Explicit paths
+now follow a pointer, but the line remains redundant.
+
 ### Cursor and others
 
 Any client that launches stdio servers: command `particulars`, args
 `serve --mcp [--workspace <dir>]`.
+
+`--workspace` and `$DKF_WORKSPACE` accept either the workspace root or a
+directory holding a `.dkf` pointer to it, so a host may pass its project
+directory. A server that exits before answering `initialize` (clients report
+`EOF` or "connection closed") almost always could not resolve a workspace; run
+the same command by hand from the same directory to see the message.
 
 ## What the model is told
 

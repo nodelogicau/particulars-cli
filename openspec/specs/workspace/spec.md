@@ -44,6 +44,17 @@ Creation and discovery of a DKF workspace: `init`, the `dkf.yaml` marker/config 
 - **WHEN** `dkf.yaml` is edited to `base-uri: https://example.com/particulars` and `recall` is run
 - **THEN** the command exits with code 1 and the error names `dkf.yaml`
 
+### Requirement: Explicit workspace path
+When `--workspace <dir>` or `$DKF_WORKSPACE` is given, the CLI SHALL use that directory as the workspace root if it contains `dkf.yaml`; otherwise, if it contains a `.dkf` pointer file, it SHALL resolve the pointer exactly as discovery does — one hop, target MUST contain `dkf.yaml` — and report the resolution as `pointer`. A directory containing neither SHALL fail with exit code 5 naming the directory and both file names.
+
+#### Scenario: Explicit path holding a pointer
+- **WHEN** `/repo/.dkf` contains `knowledge`, `/repo/knowledge/dkf.yaml` exists, and a verb is run with `--workspace /repo` (or `DKF_WORKSPACE=/repo`)
+- **THEN** the verb operates on `/repo/knowledge` and `particulars workspace --json` reports `via: "pointer"` with `pointer` set to `/repo/.dkf`
+
+#### Scenario: Explicit path with neither file
+- **WHEN** `--workspace /empty` names a directory with no `dkf.yaml` and no `.dkf`
+- **THEN** the command exits with code 5 and the message names `/empty`, `dkf.yaml`, and `.dkf`
+
 ### Requirement: Upward workspace discovery
 When no explicit workspace is given, the CLI SHALL search the current directory and each ancestor in turn. At each directory it SHALL use that directory as the workspace root if it contains `dkf.yaml`; otherwise, if it contains a `.dkf` pointer file, it SHALL resolve the pointer's first non-blank, non-comment line as a path (relative to the pointer's directory, or absolute) and use that directory, which MUST contain `dkf.yaml`. A pointer whose target lacks `dkf.yaml` SHALL fail with exit code 5 naming both the pointer and the target. Pointers SHALL NOT chain.
 

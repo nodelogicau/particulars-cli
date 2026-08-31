@@ -268,7 +268,9 @@ write their report to stdout *and* the error envelope to stderr on exit 4.
 
 **Workspace selection:** `--workspace <dir>`, else `$DKF_WORKSPACE`, else the nearest
 ancestor directory containing `dkf.yaml` — or a `.dkf` pointer file whose first line
-is the path to the workspace. `particulars workspace` shows what was resolved and how.
+is the path to the workspace. An explicit directory may likewise be either the
+workspace root or one holding a `.dkf` pointer to it. `particulars workspace` shows
+what was resolved and how.
 
 A workspace kept in a subdirectory of a repository (the `knowledge/` convention) is
 invisible to upward discovery from the repo root; a pointer fixes that:
