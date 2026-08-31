@@ -186,11 +186,11 @@ pushed by a workflow when a knowledge pull request is merged. See
 | `workspace pointer [dir] [--at D] [--force]` | Write a `.dkf` pointer to an existing workspace |
 | `particular define --label L [--uri U] [--alias A]…` | Create or update a particular; idempotent on URI |
 | `particular resolve <id\|uri\|label\|alias>` | Find particulars (label/alias case-insensitive) |
-| `claim assert --subject P (--content T \| --content-file F\|-) --evidential observed\|inferred\|held [--document D] [--hash-document] [--quote Q] […]` | Record a claim with its warrant, optionally with checkable evidence (see [docs/provenance.md](docs/provenance.md)) |
+| `claim assert --subject P (--content T \| --content-file F\|-) --evidential observed\|inferred\|held [--author A] [--document D] [--document-author W] [--hash-document] [--quote Q] […]` | Record a claim with its warrant, optionally with checkable evidence; `--document-author` names who produced what was read (see [docs/provenance.md](docs/provenance.md)) |
 | `retract <id> --reason R [--superseded-by id]` | Append a retraction block to a claim, synthesis, or merge (`claim retract` is an alias) |
 | `particular merge <a> <b> [--reason R]` | Declare two URIs the same particular; writes `merges/mrg_….yaml` |
 | `synthesis create --subject P --input id:role[:weight]… --unresolved U […]` | Record a synthesis the agent has reasoned |
-| `recall [P] [--topic T]… [--scope S] [--include-retracted] [--limit N]` | Claims and syntheses in lineage order; current synthesis marked |
+| `recall [P] [--author W] [--topic T]… [--scope S] [--include-retracted] [--limit N]` | Claims and syntheses in lineage order; current synthesis marked. `--author` returns what a particular asserted or is reported for, labelled `relations` |
 | `topics [P] [--scope S] [--include-retracted]` | Topics in use, with assertion and particular counts |
 | `lineage <id> [--depth N]` | Provenance tree of a claim or synthesis |
 | `conflicts [P] [--fail-on-conflicts]` | Unsynthesised claims and stale syntheses per particular |
@@ -288,6 +288,19 @@ case it is machine-specific and should stay out of git.
 `.dkf` is an implementation extension; spec-conformant readers still find the
 workspace by walking up from inside it. `workspace.base-uri`, if set, must end in
 `/` (`init` adds it if missing).
+
+**Authors are particular references.** `source.author` (and a document's `author`)
+may be a particular id, URI, or bare name; readers resolve names by label or
+alias at read time, so defining a particular with alias `ben` retroactively
+attributes every claim already carrying `author: ben`, no file changing. Writers
+prefer the URI: a value resolving to exactly one particular is written as that
+particular's `uri` — the identifier that survives leaving the workspace, frozen
+at the moment it was unambiguous. An unknown `par_` id is refused; an explicitly
+given ambiguous name is refused with the candidates; an ambiguous or unknown
+default is written unchanged (and `validate` aggregates it). People are defined
+deliberately — `init` never mints the author's particular; run
+`particular define --label "Ben Fortuna" --uri <chosen-uri> --alias ben` once,
+with the URI its owner is willing to be cited under.
 
 **Provenance defaults** for `source.author`, `harness`, `model`: explicit flag, then
 `$DKF_AUTHOR` / `$DKF_HARNESS` / `$DKF_MODEL`, then `dkf.yaml`:

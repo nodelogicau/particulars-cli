@@ -14,10 +14,10 @@ import (
 func (a *app) recallCmd() *cobra.Command {
 	var includeRetracted bool
 	var limit int
-	var scope string
+	var scope, author string
 	var topics []string
 	cmd := &cobra.Command{
-		Use:   "recall [<particular>] [--topic <t>]... [--scope <s>] [--include-retracted] [--limit <n>]",
+		Use:   "recall [<particular>] [--author <who>] [--topic <t>]... [--scope <s>] [--include-retracted] [--limit <n>]",
 		Short: "Retrieve claims and syntheses in lineage order",
 		Long: `Returns claims and syntheses about a particular (by id, uri, label, or alias)
 and/or carrying every given --topic, oldest first so that inputs precede the
@@ -25,8 +25,8 @@ syntheses that cite them. The most recent non-retracted synthesis about a
 particular is marked current. --limit keeps the most recent N.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: a.run(func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 && len(topics) == 0 {
-				return usageErr("pass a particular, one or more --topic, or both")
+			if len(args) == 0 && len(topics) == 0 && author == "" {
+				return usageErr("pass a particular, one or more --topic, --author, or a combination")
 			}
 			ws, err := a.openWorkspace()
 			if err != nil {
@@ -52,8 +52,18 @@ particular is marked current. --limit keeps the most recent N.`,
 				}
 				opts.Scope = dkf.Scope(scope)
 			}
+			if author != "" {
+				p, err := resolveSubject(g, author)
+				if err != nil {
+					return err
+				}
+				opts.Author = p.ID
+			}
 			entries := query.Recall(g, opts)
 			out := map[string]any{"entries": entries, "count": len(entries)}
+			if opts.Author != "" {
+				out["author"] = opts.Author
+			}
 			if opts.Subject != "" {
 				out["subject"] = opts.Subject
 				if class := g.ClassOf(opts.Subject); len(class) > 1 {
@@ -79,6 +89,9 @@ particular is marked current. --limit keeps the most recent N.`,
 					if e.Retracted {
 						flags += " [retracted]"
 					}
+					for _, r := range e.Relations {
+						flags += " [" + r + "]"
+					}
 					if opts.Subject != "" && e.Subject != opts.Subject {
 						flags += " [subject " + e.Subject + "]"
 					}
@@ -97,6 +110,7 @@ particular is marked current. --limit keeps the most recent N.`,
 	cmd.Flags().BoolVar(&includeRetracted, "include-retracted", false, "include retracted claims and syntheses")
 	cmd.Flags().IntVar(&limit, "limit", 0, "keep only the most recent N entries")
 	cmd.Flags().StringVar(&scope, "scope", "", "only entries with this scope")
+	cmd.Flags().StringVar(&author, "author", "", "only entries asserted by or reported from this particular (id, uri, label, or alias)")
 	cmd.Flags().StringArrayVar(&topics, "topic", nil, "only entries carrying this topic (repeatable; all must match)")
 	return cmd
 }

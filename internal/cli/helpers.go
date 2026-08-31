@@ -24,6 +24,9 @@ const (
 // provenanceFlags are the shared --author/--harness/--model/--document flags.
 type provenanceFlags struct {
 	author, harness, model, document string
+	// documentAuthor is who produced what was read — a particular reference,
+	// distinct from author, who read it.
+	documentAuthor string
 	// documentHash and quote make the document checkable; hashDocument
 	// computes the hash from the local file the document resolves to.
 	documentHash, quote, quoteFile string
@@ -33,8 +36,8 @@ type provenanceFlags struct {
 // resolveDocument turns the document flags into a dkf.Document, hashing and
 // reading files as needed. The locator flags require --document: a hash or a
 // quote with nothing to point at records evidence for a source we did not name.
-func (a *app) resolveDocument(ws *store.Workspace, f provenanceFlags) (dkf.Document, error) {
-	doc := dkf.Document{Ref: strings.TrimSpace(f.document), Hash: strings.TrimSpace(f.documentHash), Quote: f.quote}
+func (a *app) resolveDocument(ws *store.Workspace, g *store.Graph, f provenanceFlags) (dkf.Document, error) {
+	doc := dkf.Document{Ref: strings.TrimSpace(f.document), Author: strings.TrimSpace(f.documentAuthor), Hash: strings.TrimSpace(f.documentHash), Quote: f.quote}
 	if f.quoteFile != "" {
 		if doc.Quote != "" {
 			return doc, usageErr("--quote and --quote-file are alternatives")
@@ -46,7 +49,7 @@ func (a *app) resolveDocument(ws *store.Workspace, f provenanceFlags) (dkf.Docum
 		doc.Quote = data
 	}
 	if doc.Ref == "" {
-		for name, set := range map[string]bool{"--document-hash": doc.Hash != "", "--quote": doc.Quote != "", "--hash-document": f.hashDocument} {
+		for name, set := range map[string]bool{"--document-hash": doc.Hash != "", "--quote": doc.Quote != "", "--hash-document": f.hashDocument, "--document-author": doc.Author != ""} {
 			if set {
 				return doc, usageErr("%s needs --document: there is nothing to point at without it", name)
 			}
@@ -70,6 +73,13 @@ func (a *app) resolveDocument(ws *store.Workspace, f provenanceFlags) (dkf.Docum
 	if doc.Quote != "" && strings.TrimSpace(doc.Quote) == "" {
 		return doc, usageErr("--quote is blank; omit it rather than recording nothing")
 	}
+	if doc.Author != "" {
+		written, _, err := query.ResolveAuthorForWrite(g, doc.Author, true, "--document-author")
+		if err != nil {
+			return doc, err
+		}
+		doc.Author = written
+	}
 	return doc, nil
 }
 
@@ -82,10 +92,23 @@ func firstNonEmpty(vs ...string) string {
 	return ""
 }
 
-// resolveSource applies flag → env → dkf.yaml defaults.
-func resolveSource(ws *store.Workspace, f provenanceFlags) dkf.Source {
-	return prov.Resolve(ws.Config.Defaults.Source, prov.Explicit{Author: f.author, Harness: f.harness, Model: f.model,
-		Document: f.document, DocumentHash: f.documentHash, Quote: f.quote}, "")
+// resolveSource applies flag → env → dkf.yaml defaults, then resolves the
+// author reference for writing: a defined particular is written as its uri.
+// The flag is explicit — an ambiguous name given there is refused — while a
+// name from the environment or dkf.yaml is a default, written unchanged with
+// a warning in the result when ambiguous.
+func (a *app) resolveSource(ws *store.Workspace, g *store.Graph, f provenanceFlags) (dkf.Source, error) {
+	src := prov.Resolve(ws.Config.Defaults.Source, prov.Explicit{Author: f.author, Harness: f.harness, Model: f.model,
+		Document: f.document, DocumentAuthor: f.documentAuthor, DocumentHash: f.documentHash, Quote: f.quote}, "")
+	written, ambiguous, err := query.ResolveAuthorForWrite(g, src.Author, strings.TrimSpace(f.author) != "", "--author")
+	if err != nil {
+		return src, err
+	}
+	if len(ambiguous) > 0 {
+		a.warnings = append(a.warnings, fmt.Sprintf("author %q matches %s and is written unchanged; add an alias or a merge, or set the default to a URI", src.Author, strings.Join(ambiguous, ", ")))
+	}
+	src.Author = written
+	return src, nil
 }
 
 // requireProvenance enforces the format's source minimum (author or harness),
@@ -157,7 +180,7 @@ func parseTimestamp(s string) (time.Time, error) {
 
 // resolveSubject finds exactly one particular for a query.
 func resolveSubject(g *store.Graph, q string) (*dkf.Particular, error) {
-	matches := query.Resolve(g, q)
+	matches := query.Collapse(g, query.Resolve(g, q))
 	switch len(matches) {
 	case 0:
 		return nil, notFoundErr("no particular matches %q", q)

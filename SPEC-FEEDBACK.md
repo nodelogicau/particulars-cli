@@ -35,6 +35,31 @@ discovery, and the MCP server; they are open upstream as
 running the Graph export against real knowledge and is open as
 [#15](https://github.com/nodelogicau/particulars/issues/15).
 
+Items 16–22 are the post-v0.1 record. Item 16 (unknown index entry types)
+was adopted in the `preserve-unknown-index-entries` round. Items 17–21 were
+raised on 2026-08-31 from reviewing the `source-as-particular` spec change
+against this implementation
+([particulars-cli#7](https://github.com/nodelogicau/particulars-cli/issues/7));
+all five were adopted the same day in
+[`attribution-review-round`](https://github.com/nodelogicau/particulars/tree/main/openspec/changes/archive/2026-08-31-attribution-review-round):
+`author_ambiguous` reclassified as an aggregate corpus fact
+([#17](https://github.com/nodelogicau/particulars/issues/17)), the
+freeze argument added to the writer-URI rule
+([#18](https://github.com/nodelogicau/particulars/issues/18)), writer
+strictness — refuse an unknown id and an explicitly ambiguous name
+([#19](https://github.com/nodelogicau/particulars/issues/19)), the recall
+relation label as a set
+([#20](https://github.com/nodelogicau/particulars/issues/20)), and the
+index drift tolerance for MAY fields
+([#21](https://github.com/nodelogicau/particulars/issues/21)). Item 22 —
+the #21 tolerance exempted `retracted: true`, whose absence means *false*,
+blinding the drift check to the one mutation an immutable object permits —
+was raised 2026-08-31 and adopted 2026-09-01 in
+[`index-drift-retraction`](https://github.com/nodelogicau/particulars/tree/main/openspec/changes/archive/2026-09-01-index-drift-retraction)
+([#22](https://github.com/nodelogicau/particulars/issues/22)): tolerance by
+immutability of the mirrored property, symmetric, with rebuilds preserving
+unknown entry fields. This CLI implements the whole round.
+
 ## 1. Identifier format: `<prefix>_<uuidv7>` ([#1](https://github.com/nodelogicau/particulars/issues/1))
 
 **Spec today:** examples like `par_01j9xk2p3q4r5s6t` (a truncated ULID); "ID

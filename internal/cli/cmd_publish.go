@@ -51,7 +51,14 @@ meant from a label. Get ids from 'particulars recall <thing> --json'.`,
 			if err != nil {
 				return err
 			}
-			src := resolveSource(ws, prov)
+			gAuth, err := ws.Load()
+			if err != nil {
+				return err
+			}
+			src, err := a.resolveSource(ws, gAuth, prov)
+			if err != nil {
+				return err
+			}
 			if err := requireProvenance(src, false); err != nil {
 				return err
 			}

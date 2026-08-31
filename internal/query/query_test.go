@@ -296,6 +296,7 @@ func codes(fs Findings) map[string]int {
 func TestValidateClean(t *testing.T) {
 	f := newFixture(t)
 	p := f.particular("Project X")
+	f.particular("Ben", "ben") // the claims' author resolves; nothing is unresolved
 	a := f.claim(p.ID, "A")
 	f.synthesis(p.ID, "S", in(a.ID, dkf.RoleThesis))
 	fs, err := Validate(f.w)
@@ -798,6 +799,7 @@ func (f *fixture) docClaim(subject, content string, doc dkf.Document, sc dkf.Sco
 func TestDocumentVerificationIsOfflineAndAdvisory(t *testing.T) {
 	f := newFixture(t)
 	p := f.particular("Project X")
+	f.particular("Ben", "ben")
 	docPath := filepath.Join(f.w.Root, "docs", "architecture.md")
 	if err := os.MkdirAll(filepath.Dir(docPath), 0o755); err != nil {
 		t.Fatal(err)
@@ -922,6 +924,7 @@ func TestQuotedSourceIsNotedWhenShared(t *testing.T) {
 func TestDefectAgainstDriftedDocumentIsUnverifiable(t *testing.T) {
 	f := newFixture(t)
 	p := f.particular("Project X")
+	f.particular("Ben", "ben")
 	docPath := filepath.Join(f.w.Root, "docs", "a.md")
 	if err := os.MkdirAll(filepath.Dir(docPath), 0o755); err != nil {
 		t.Fatal(err)
@@ -999,6 +1002,7 @@ func TestDefectAgainstDriftedDocumentIsUnverifiable(t *testing.T) {
 func TestUnknownHashAlgorithmIsUnverified(t *testing.T) {
 	f := newFixture(t)
 	p := f.particular("Project X")
+	f.particular("Ben", "ben")
 	docPath := filepath.Join(f.w.Root, "docs", "a.md")
 	if err := os.MkdirAll(filepath.Dir(docPath), 0o755); err != nil {
 		t.Fatal(err)
@@ -1123,6 +1127,81 @@ func TestForbiddenAliasIsCaughtByTheNodeWalk(t *testing.T) {
 	for _, fi := range fs {
 		if fi.Code == CodeForbiddenAlias {
 			t.Errorf("no alias in the workspace, yet: %+v", fi)
+		}
+	}
+}
+
+func TestResolveAuthorAndWriterRule(t *testing.T) {
+	f := newFixture(t)
+	ben := f.particular("Ben Fortuna", "ben")
+	f.particular("Ben Smith", "ben") // a second ben: the name is ambiguous
+	jane := f.particular("Jane")
+	g, _ := f.w.Load()
+	if p, cands := ResolveAuthor(g, "jane"); p == nil || p.ID != jane.ID || cands != nil {
+		t.Errorf("unique name resolves: %v %v", p, cands)
+	}
+	if p, cands := ResolveAuthor(g, "ben"); p != nil || len(cands) != 2 {
+		t.Errorf("ambiguous name resolves to none, with candidates: %v %v", p, cands)
+	}
+	if p, _ := ResolveAuthor(g, ben.URI); p == nil || p.ID != ben.ID {
+		t.Error("uri resolves to its particular")
+	}
+	if w, _, err := ResolveAuthorForWrite(g, "jane", true, "--author"); err != nil || w != jane.URI {
+		t.Errorf("a unique name writes the uri: %q %v", w, err)
+	}
+	if _, _, err := ResolveAuthorForWrite(g, "ben", true, "--author"); err == nil {
+		t.Error("an explicitly given ambiguous name must be refused")
+	}
+	if w, amb, err := ResolveAuthorForWrite(g, "ben", false, "--author"); err != nil || w != "ben" || len(amb) != 2 {
+		t.Errorf("a default ambiguous name is written unchanged with candidates: %q %v %v", w, amb, err)
+	}
+	if _, _, err := ResolveAuthorForWrite(g, "par_01a00000-0000-7000-8000-000000000001", true, "--author"); err == nil {
+		t.Error("an id naming no particular must be refused")
+	}
+	orcid := "https://orcid.org/0000-0002-1825-0097"
+	if w, _, err := ResolveAuthorForWrite(g, orcid, true, "--author"); err != nil || w != orcid {
+		t.Errorf("an unknown uri is written unchanged: %q %v", w, err)
+	}
+}
+
+func TestRecallByAuthorRelations(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	ben := f.particular("Ben", "ben")
+	jane := f.particular("Jane", "jane")
+	a := f.claim(p.ID, "asserted by ben") // fixture claims carry author: ben
+	r := f.docClaim(p.ID, "reported from jane", dkf.Document{Ref: "conversation with Jane", Author: "jane"}, "")
+	self := f.docClaim(p.ID, "ben quoting ben", dkf.Document{Ref: "notes", Author: ben.URI}, "")
+	f.merge(ben.URI, "urn:test:ben")
+	viaURN := f.docClaim(p.ID, "attributed through a merge", dkf.Document{Ref: "x", Author: "urn:test:ben"}, "")
+	g, _ := f.w.Load()
+
+	rels := map[string][]string{}
+	for _, e := range Recall(g, RecallOptions{Author: ben.ID}) {
+		rels[e.ID] = e.Relations
+	}
+	if len(rels) != 4 {
+		t.Fatalf("recall by ben: %+v", rels)
+	}
+	want := map[string][]string{
+		a.ID:      {"asserted"},
+		r.ID:      {"asserted"},
+		self.ID:   {"asserted", "reported"},
+		viaURN.ID: {"asserted", "reported"}, // the URN reaches ben through the merge
+	}
+	for id, w := range want {
+		if got := rels[id]; strings.Join(got, ",") != strings.Join(w, ",") {
+			t.Errorf("%s relations = %v, want %v", id, got, w)
+		}
+	}
+	janes := Recall(g, RecallOptions{Author: jane.ID})
+	if len(janes) != 1 || janes[0].ID != r.ID || strings.Join(janes[0].Relations, ",") != "reported" {
+		t.Errorf("recall by jane: %+v", janes)
+	}
+	// Without the filter, entries carry no relations.
+	for _, e := range Recall(g, RecallOptions{Subject: p.ID}) {
+		if e.Relations != nil {
+			t.Errorf("%s carries relations without an author filter", e.ID)
 		}
 	}
 }

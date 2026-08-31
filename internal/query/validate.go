@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -34,11 +35,18 @@ const (
 	CodeIndexMissing      = "index_missing"
 	CodeStaleSynthesis    = "stale_synthesis"
 	CodeOrphanParticular  = "orphan_particular"
-	CodeNonCanonical      = "non_canonical"
-	CodeLegacyProducedBy  = "legacy_produced_by"
-	CodeLegacyID          = "legacy_id"
-	CodeUnknownMergeURI   = "unknown_merge_uri"
-	CodeDuplicateMerge    = "duplicate_merge"
+	// CodeAuthorUnresolved / CodeAuthorAmbiguous: an author value that
+	// resolves to no particular, or a bare name matching several. Both are
+	// facts about the corpus, aggregated per value: the action that clears
+	// each — define the particular, or add an alias or merge — is at the
+	// workspace and clears every occurrence at once.
+	CodeAuthorUnresolved = "author_unresolved"
+	CodeAuthorAmbiguous  = "author_ambiguous"
+	CodeNonCanonical     = "non_canonical"
+	CodeLegacyProducedBy = "legacy_produced_by"
+	CodeLegacyID         = "legacy_id"
+	CodeUnknownMergeURI  = "unknown_merge_uri"
+	CodeDuplicateMerge   = "duplicate_merge"
 	// CodePromotionOfRetracted: a live promotion covers a withdrawn object. It
 	// grants nothing, but it usually means the retraction came after.
 	CodePromotionOfRetracted = "promotion_of_retracted"
@@ -117,7 +125,8 @@ func (fs Findings) HasErrors() bool {
 func IsCorpusFact(code string) bool {
 	switch code {
 	case CodeLegacyProducedBy, CodeLegacyID, CodeLegacyDocumentURI,
-		CodeUndeclared, CodeConfidenceOnUndeclared, CodeUnverifiedDocument:
+		CodeUndeclared, CodeConfidenceOnUndeclared, CodeUnverifiedDocument,
+		CodeAuthorUnresolved, CodeAuthorAmbiguous:
 		return true
 	}
 	return false
@@ -309,12 +318,48 @@ func Validate(w *store.Workspace) (Findings, error) {
 	// ruling. If one is wanted, the sound direction is the opposite: a defect
 	// against a drifted document is unverifiable, not suspect.
 
+	// Author references, resolved best-effort and leniently: unresolved and
+	// ambiguous are facts about the corpus, one aggregate line per value in
+	// text output. attributed collects every class something is asserted by
+	// or reported from, which exempts a person's particular from
+	// orphan_particular below.
+	attributed := map[string]bool{}
+	authorRef := func(path, value string) {
+		if strings.TrimSpace(value) == "" {
+			return
+		}
+		p, candidates := ResolveAuthor(g, value)
+		switch {
+		case p != nil:
+			for _, id := range g.ClassOf(p.ID) {
+				attributed[id] = true
+			}
+		case len(candidates) > 0:
+			add(SeverityWarning, path, CodeAuthorAmbiguous, fmt.Sprintf(
+				"author %q is ambiguous; it matches %s — add an alias or a merge, or write a URI", value, strings.Join(candidates, ", ")))
+		default:
+			add(SeverityInfo, path, CodeAuthorUnresolved, fmt.Sprintf(
+				"author %q matches no particular; defining one attributes every object carrying it", value))
+		}
+	}
+	for _, a := range g.SortedAssertions() {
+		src := a.GetSource()
+		authorRef(g.Files[a.ObjectID()], src.Author)
+		authorRef(g.Files[a.ObjectID()], src.Document.Author)
+	}
+	for _, m := range g.SortedMerges() {
+		authorRef(g.Files[m.ID], m.Source.Author)
+	}
+	for _, pr := range g.SortedPromotions() {
+		authorRef(g.Files[pr.ID], pr.Source.Author)
+	}
+
 	// Referential integrity.
 	uriOwners := map[string][]string{}
 	for _, p := range g.SortedParticulars() {
 		uriOwners[p.URI] = append(uriOwners[p.URI], p.ID)
-		if len(g.BySubject[p.ID]) == 0 {
-			add(SeverityWarning, g.Files[p.ID], CodeOrphanParticular, fmt.Sprintf("particular %s has no claims", p.ID))
+		if len(g.BySubject[p.ID]) == 0 && !attributed[p.ID] {
+			add(SeverityWarning, g.Files[p.ID], CodeOrphanParticular, fmt.Sprintf("particular %s has no claims and nothing attributed to it", p.ID))
 		}
 	}
 	for uri, ids := range uriOwners {

@@ -81,6 +81,14 @@ func (idx *Index) UnmarshalYAML(n *yaml.Node) error {
 				if err := en.Decode(&e); err != nil {
 					return err
 				}
+				for i := 0; i+1 < len(en.Content); i += 2 {
+					if !knownEntryFields[en.Content[i].Value] {
+						e.Unknown = append(e.Unknown, en.Content[i], en.Content[i+1])
+					}
+				}
+				if e.Unknown != nil {
+					e.raw = en
+				}
 				idx.Entries = append(idx.Entries, e)
 			}
 		}
@@ -96,13 +104,79 @@ type Entry struct {
 	URIs []string `yaml:"uris,omitempty" json:"uris,omitempty"`
 	// Claims is the set a promotion covers. With Scope it lets a consumer
 	// compute effective scope from index.yaml alone, without opening files.
-	Claims    []string `yaml:"claims,omitempty" json:"claims,omitempty"`
-	Subject   string   `yaml:"subject,omitempty" json:"subject,omitempty"`
-	Scope     string   `yaml:"scope,omitempty" json:"scope,omitempty"`
-	Topics    []string `yaml:"topics,omitempty" json:"topics,omitempty"`
-	Timestamp string   `yaml:"timestamp,omitempty" json:"timestamp,omitempty"`
-	Inputs    []string `yaml:"inputs,omitempty" json:"inputs,omitempty"`
-	Retracted bool     `yaml:"retracted,omitempty" json:"retracted,omitempty"`
+	Claims  []string `yaml:"claims,omitempty" json:"claims,omitempty"`
+	Subject string   `yaml:"subject,omitempty" json:"subject,omitempty"`
+	// Author and DocumentAuthor mirror the object's source.author and
+	// source.document.author AS WRITTEN — never resolved — so an author
+	// filter can find its candidates without opening claim files.
+	Author         string   `yaml:"author,omitempty" json:"author,omitempty"`
+	DocumentAuthor string   `yaml:"document-author,omitempty" json:"document-author,omitempty"`
+	Scope          string   `yaml:"scope,omitempty" json:"scope,omitempty"`
+	Topics         []string `yaml:"topics,omitempty" json:"topics,omitempty"`
+	Timestamp      string   `yaml:"timestamp,omitempty" json:"timestamp,omitempty"`
+	Inputs         []string `yaml:"inputs,omitempty" json:"inputs,omitempty"`
+	Retracted      bool     `yaml:"retracted,omitempty" json:"retracted,omitempty"`
+	// Unknown preserves fields a newer writer put on this entry, as
+	// alternating key/value nodes — the field-level twin of Index.Unknown: a
+	// rebuild is of the workspace, not of one tool's view of it, and
+	// stripping a column an older tool does not know would silently degrade
+	// the cache. raw is the committed entry's own mapping node, kept so the
+	// unknown fields can be re-emitted in their committed positions.
+	Unknown []*yaml.Node `yaml:"-" json:"-"`
+	raw     *yaml.Node
+}
+
+// knownEntryFields is the on-disk field set this implementation writes.
+var knownEntryFields = map[string]bool{
+	"id": true, "type": true, "uri": true, "uris": true, "claims": true,
+	"subject": true, "author": true, "document-author": true, "scope": true,
+	"topics": true, "timestamp": true, "inputs": true, "retracted": true,
+}
+
+// MarshalYAML emits the known fields in struct order. An entry carrying
+// fields from a newer writer is re-emitted on the committed entry's own key
+// skeleton — regenerated values in the committed order, unknown fields in
+// their committed positions — so that preservation is byte-faithful and a
+// drift check never reports a newer writer's column as a difference.
+func (e Entry) MarshalYAML() (any, error) {
+	type plain Entry
+	var n yaml.Node
+	if err := n.Encode(plain(e)); err != nil {
+		return nil, err
+	}
+	if len(e.Unknown) == 0 {
+		return &n, nil
+	}
+	if e.raw == nil {
+		n.Content = append(n.Content, e.Unknown...)
+		return &n, nil
+	}
+	fresh := map[string]*yaml.Node{}
+	var order []string
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		fresh[n.Content[i].Value] = n.Content[i+1]
+		order = append(order, n.Content[i].Value)
+	}
+	key := func(v string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v} }
+	merged := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	seen := map[string]bool{}
+	for i := 0; i+1 < len(e.raw.Content); i += 2 {
+		k, v := e.raw.Content[i], e.raw.Content[i+1]
+		if !knownEntryFields[k.Value] {
+			merged.Content = append(merged.Content, k, v)
+			continue
+		}
+		if nv, ok := fresh[k.Value]; ok {
+			merged.Content = append(merged.Content, key(k.Value), nv)
+			seen[k.Value] = true
+		}
+	}
+	for _, k := range order {
+		if !seen[k] {
+			merged.Content = append(merged.Content, key(k), fresh[k])
+		}
+	}
+	return merged, nil
 }
 
 // EntryFor derives the index row for an object.
@@ -127,15 +201,18 @@ func EntryFor(obj dkf.Object) Entry {
 		// of the files. Effective scope is derived by combining these entries
 		// with the promotion entries, which is why promotions carry claims.
 		ctx := o.GetContext()
+		src := o.GetSource()
 		e := Entry{
-			ID:        o.ObjectID(),
-			Type:      o.ObjectType(),
-			Subject:   o.SubjectID(),
-			Scope:     string(ctx.Scope),
-			Topics:    ctx.Topics,
-			Timestamp: dkf.FormatTime(o.GetTimestamp()),
-			Inputs:    o.InputIDs(),
-			Retracted: o.GetRetracted() != nil,
+			ID:             o.ObjectID(),
+			Type:           o.ObjectType(),
+			Subject:        o.SubjectID(),
+			Author:         src.Author,
+			DocumentAuthor: src.Document.Author,
+			Scope:          string(ctx.Scope),
+			Topics:         ctx.Topics,
+			Timestamp:      dkf.FormatTime(o.GetTimestamp()),
+			Inputs:         o.InputIDs(),
+			Retracted:      o.GetRetracted() != nil,
 		}
 		if o.GetTimestamp().IsZero() {
 			e.Timestamp = ""
@@ -159,10 +236,13 @@ func (idx *Index) sort() {
 	sort.Slice(idx.Entries, func(i, j int) bool { return idx.Entries[i].ID < idx.Entries[j].ID })
 }
 
-// Upsert inserts or replaces an entry by id.
+// Upsert inserts or replaces an entry by id, carrying across any unknown
+// fields the committed entry held: an incremental update must not strip what
+// a rebuild is required to preserve.
 func (idx *Index) Upsert(e Entry) {
 	for i := range idx.Entries {
 		if idx.Entries[i].ID == e.ID {
+			e.Unknown, e.raw = idx.Entries[i].Unknown, idx.Entries[i].raw
 			idx.Entries[i] = e
 			idx.sort()
 			return
@@ -281,6 +361,16 @@ func (w *Workspace) RebuildIndex() (*Index, error) {
 	// over a broken file is for.
 	if prev, _, rerr := w.ReadIndex(); rerr == nil {
 		idx.Unknown = prev.Unknown
+		byID := map[string]Entry{}
+		for _, pe := range prev.Entries {
+			if pe.Unknown != nil {
+				byID[pe.ID] = pe
+			}
+		}
+		for i := range idx.Entries {
+			pe := byID[idx.Entries[i].ID]
+			idx.Entries[i].Unknown, idx.Entries[i].raw = pe.Unknown, pe.raw
+		}
 	}
 	if err := w.WriteIndex(idx); err != nil {
 		return nil, err
@@ -335,18 +425,50 @@ func (w *Workspace) CheckIndex() (IndexDiff, error) {
 		return d, nil
 	}
 	// The expectation is what a rebuild would actually write, which preserves
-	// the committed index's unknown entry types — so evidence of a newer
-	// conforming writer is never drift, and a check never fails on it.
+	// the committed index's unknown entry types and unknown entry fields — so
+	// evidence of a newer conforming writer is never drift, and a check never
+	// fails on it.
 	want.Unknown = got.Unknown
+	gotBy := map[string]Entry{}
+	for _, e := range got.Entries {
+		gotBy[e.ID] = e
+	}
+	// Tolerance by immutability: a MAY field mirroring an immutable property
+	// of the object — scope, topics, timestamp, author, document-author —
+	// that is absent from the committed entry can only mean the committed
+	// index's writer predated the field, because the object cannot have
+	// changed; it is masked from the rebuilt entry before comparing.
+	// retracted is never masked: it mirrors the one mutable property, its
+	// absence means false, and an object retracted after the index was
+	// committed must fail the check.
+	for i := range want.Entries {
+		ge, ok := gotBy[want.Entries[i].ID]
+		if !ok {
+			continue
+		}
+		we := &want.Entries[i]
+		we.Unknown, we.raw = ge.Unknown, ge.raw
+		if ge.Scope == "" {
+			we.Scope = ""
+		}
+		if len(ge.Topics) == 0 {
+			we.Topics = nil
+		}
+		if ge.Timestamp == "" {
+			we.Timestamp = ""
+		}
+		if ge.Author == "" {
+			we.Author = ""
+		}
+		if ge.DocumentAuthor == "" {
+			we.DocumentAuthor = ""
+		}
+	}
 	wantBytes, err := EncodeIndex(want)
 	if err != nil {
 		return IndexDiff{}, err
 	}
 	d.BytesDiffer = !bytes.Equal(wantBytes, gotBytes)
-	gotBy := map[string]Entry{}
-	for _, e := range got.Entries {
-		gotBy[e.ID] = e
-	}
 	wantBy := map[string]Entry{}
 	for _, e := range want.Entries {
 		wantBy[e.ID] = e

@@ -59,7 +59,10 @@ func (a *app) claimAssertCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			src := resolveSource(ws, prov)
+			src, err := a.resolveSource(ws, g, prov)
+			if err != nil {
+				return err
+			}
 			if err := requireProvenance(src, false); err != nil {
 				return err
 			}
@@ -72,7 +75,7 @@ func (a *app) claimAssertCmd() *cobra.Command {
 			if dkf.Evidential(evidential) == dkf.EvidentialHeld && conf != nil {
 				return usageErr("a held claim carries no confidence: a position is not mistaken in the way a probability describes — put how strongly it is held in --content")
 			}
-			doc, err := a.resolveDocument(ws, prov)
+			doc, err := a.resolveDocument(ws, g, prov)
 			if err != nil {
 				return err
 			}
@@ -103,11 +106,12 @@ func (a *app) claimAssertCmd() *cobra.Command {
 	cmd.Flags().StringVar(&subject, "subject", "", "particular id, uri, label, or alias (required)")
 	cmd.Flags().StringVar(&content, "content", "", "claim text")
 	cmd.Flags().StringVar(&contentFile, "content-file", "", "read claim text from a file, or '-' for piped stdin")
-	cmd.Flags().StringVar(&prov.author, "author", "", "source.author (default: $DKF_AUTHOR, then dkf.yaml)")
+	cmd.Flags().StringVar(&prov.author, "author", "", "source.author: a particular id, uri, or name (default: $DKF_AUTHOR, then dkf.yaml)")
 	cmd.Flags().StringVar(&prov.harness, "harness", "", "source.harness (default: $DKF_HARNESS, then dkf.yaml)")
 	cmd.Flags().StringVar(&prov.model, "model", "", "source.model (default: $DKF_MODEL, then dkf.yaml)")
 	cmd.Flags().StringVar(&evidential, "evidential", "", "what backs the claim (required): observed|inferred|held")
 	cmd.Flags().StringVar(&prov.document, "document", "", "source.document: URI or workspace-relative path of the evidence")
+	cmd.Flags().StringVar(&prov.documentAuthor, "document-author", "", "who produced what was read (id, uri, or name of a particular) — for testimony: who told you")
 	cmd.Flags().StringVar(&prov.documentHash, "document-hash", "", "sha256:… of the document as you read it (CRLF normalised to LF)")
 	cmd.Flags().BoolVar(&prov.hashDocument, "hash-document", false, "compute --document-hash from the local file the document resolves to")
 	cmd.Flags().StringVar(&prov.quote, "quote", "", "the sentence in the document that supports this claim, verbatim")

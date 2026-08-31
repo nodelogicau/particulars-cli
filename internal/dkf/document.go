@@ -27,9 +27,14 @@ type Document struct {
 	// third case is why the field is not called uri: an unfetchable source can
 	// still carry a quote, and quoting what someone said is provenance a
 	// reviewer can weigh.
-	Ref   string `yaml:"ref" json:"ref"`
-	Hash  string `yaml:"hash,omitempty" json:"hash,omitempty"`
-	Quote string `yaml:"quote,omitempty" json:"quote,omitempty"`
+	Ref string `yaml:"ref" json:"ref"`
+	// Author names who produced what was read — a particular reference (id,
+	// URI, or bare name), distinct from source.author, who read it. It sits
+	// after ref because it identifies the source, and identification precedes
+	// verification.
+	Author string `yaml:"author,omitempty" json:"author,omitempty"`
+	Hash   string `yaml:"hash,omitempty" json:"hash,omitempty"`
+	Quote  string `yaml:"quote,omitempty" json:"quote,omitempty"`
 
 	// legacyURI records that this document was read from a file written with
 	// the pre-rename `uri` key, so validate can say so. Such a file can never
@@ -61,10 +66,12 @@ func HashAlgorithm(hash string) string {
 const AlgorithmSHA256 = "sha256"
 
 // IsZero reports whether no part of the document is set.
-func (d Document) IsZero() bool { return d.Ref == "" && d.Hash == "" && d.Quote == "" }
+func (d Document) IsZero() bool {
+	return d.Ref == "" && d.Author == "" && d.Hash == "" && d.Quote == ""
+}
 
 // structured reports whether the mapping form is needed to represent d.
-func (d Document) structured() bool { return d.Hash != "" || d.Quote != "" }
+func (d Document) structured() bool { return d.Author != "" || d.Hash != "" || d.Quote != "" }
 
 // String returns the reference, which is what every pre-existing consumer of
 // source.document expected to find there.
@@ -82,31 +89,33 @@ func (d *Document) UnmarshalYAML(n *yaml.Node) error {
 	}
 	// The mapping form, accepting `uri` as a legacy alias for `ref`.
 	var raw struct {
-		Ref   string `yaml:"ref"`
-		URI   string `yaml:"uri"`
-		Hash  string `yaml:"hash"`
-		Quote string `yaml:"quote"`
+		Ref    string `yaml:"ref"`
+		URI    string `yaml:"uri"`
+		Author string `yaml:"author"`
+		Hash   string `yaml:"hash"`
+		Quote  string `yaml:"quote"`
 	}
 	if err := n.Decode(&raw); err != nil {
 		return err
 	}
-	*d = Document{Ref: raw.Ref, Hash: raw.Hash, Quote: raw.Quote}
+	*d = Document{Ref: raw.Ref, Author: raw.Author, Hash: raw.Hash, Quote: raw.Quote}
 	if d.Ref == "" && raw.URI != "" {
 		d.Ref, d.legacyURI = raw.URI, true
 	}
 	return nil
 }
 
-// MarshalYAML emits a scalar unless a hash or quote needs carrying.
+// MarshalYAML emits a scalar unless an author, hash, or quote needs carrying.
 func (d Document) MarshalYAML() (any, error) {
 	if !d.structured() {
 		return d.Ref, nil
 	}
 	return struct {
-		Ref   string `yaml:"ref"`
-		Hash  string `yaml:"hash,omitempty"`
-		Quote string `yaml:"quote,omitempty"`
-	}{d.Ref, d.Hash, d.Quote}, nil
+		Ref    string `yaml:"ref"`
+		Author string `yaml:"author,omitempty"`
+		Hash   string `yaml:"hash,omitempty"`
+		Quote  string `yaml:"quote,omitempty"`
+	}{d.Ref, d.Author, d.Hash, d.Quote}, nil
 }
 
 // UnmarshalJSON mirrors the YAML behaviour so MCP clients may send either.
@@ -117,15 +126,16 @@ func (d *Document) UnmarshalJSON(b []byte) error {
 		return nil
 	}
 	var raw struct {
-		Ref   string `json:"ref"`
-		URI   string `json:"uri"`
-		Hash  string `json:"hash"`
-		Quote string `json:"quote"`
+		Ref    string `json:"ref"`
+		URI    string `json:"uri"`
+		Author string `json:"author"`
+		Hash   string `json:"hash"`
+		Quote  string `json:"quote"`
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
-	*d = Document{Ref: raw.Ref, Hash: raw.Hash, Quote: raw.Quote}
+	*d = Document{Ref: raw.Ref, Author: raw.Author, Hash: raw.Hash, Quote: raw.Quote}
 	if d.Ref == "" && raw.URI != "" {
 		d.Ref, d.legacyURI = raw.URI, true
 	}
@@ -139,10 +149,11 @@ func (d Document) MarshalJSON() ([]byte, error) {
 		return json.Marshal(d.Ref)
 	}
 	return json.Marshal(struct {
-		Ref   string `json:"ref"`
-		Hash  string `json:"hash,omitempty"`
-		Quote string `json:"quote,omitempty"`
-	}{d.Ref, d.Hash, d.Quote})
+		Ref    string `json:"ref"`
+		Author string `json:"author,omitempty"`
+		Hash   string `json:"hash,omitempty"`
+		Quote  string `json:"quote,omitempty"`
+	}{d.Ref, d.Author, d.Hash, d.Quote})
 }
 
 // Validate checks the document's own fields.
@@ -153,7 +164,7 @@ func (d Document) Validate(field string) Problems {
 	}
 	if strings.TrimSpace(d.Ref) == "" {
 		ps = append(ps, Problem{Code: CodeInvalidDocument, Field: field + ".ref",
-			Message: "a document that carries a hash or a quote must name what it refers to"})
+			Message: "a document that carries an author, a hash, or a quote must name what it refers to"})
 	}
 	if d.Hash != "" {
 		switch {

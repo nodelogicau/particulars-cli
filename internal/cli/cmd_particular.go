@@ -159,7 +159,10 @@ operate over. Undo a merge with 'particulars retract <mrg_id>'.`,
 			if g.MergeBetween(uriA, uriB) != nil {
 				return usageErr("%s and %s are already joined by %s", uriA, uriB, g.MergeBetween(uriA, uriB).ID)
 			}
-			src := resolveSource(ws, prov)
+			src, err := a.resolveSource(ws, g, prov)
+			if err != nil {
+				return err
+			}
 			if err := requireProvenance(src, false); err != nil {
 				return err
 			}

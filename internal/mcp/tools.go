@@ -215,7 +215,7 @@ func (s *Server) particularMerge(ctx context.Context, req *sdk.CallToolRequest, 
 	if m := g.MergeBetween(ua, ub); m != nil {
 		return errResult(apperr.Usage("%s and %s are already joined by %s", ua, ub, m.ID)), nil, nil
 	}
-	src, err := s.source(req, in.Source, false)
+	src, err := s.source(g, req, in.Source, false)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
@@ -250,7 +250,11 @@ func (s *Server) knowledgePublish(ctx context.Context, req *sdk.CallToolRequest,
 			return errResult(apperr.Usage("%q is not a claim or synthesis id; promotion names objects by id, never by label", id)), nil, nil
 		}
 	}
-	src, err := s.source(req, in.Source, false)
+	gAuth, err := s.ws.Load()
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	src, err := s.source(gAuth, req, in.Source, false)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
@@ -327,7 +331,7 @@ func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in a
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	src, err := s.source(req, in.Source, false)
+	src, err := s.source(g, req, in.Source, false)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
@@ -366,7 +370,11 @@ func (s *Server) claimRetract(ctx context.Context, req *sdk.CallToolRequest, in 
 			return errResult(apperr.NotFound("superseded_by %s does not exist", in.SupersededBy)), nil, nil
 		}
 	}
-	src, err := s.source(req, in.Source, false)
+	gAuth, err := s.ws.Load()
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	src, err := s.source(gAuth, req, in.Source, false)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
@@ -470,7 +478,7 @@ func (s *Server) synthesisCreate(ctx context.Context, req *sdk.CallToolRequest, 
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	src, err := s.source(req, in.Source, true)
+	src, err := s.source(g, req, in.Source, true)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
@@ -500,6 +508,7 @@ type recallIn struct {
 	Topics           []string `json:"topics,omitempty" jsonschema:"all must match"`
 	IncludeRetracted bool     `json:"include_retracted,omitempty"`
 	Limit            int      `json:"limit,omitempty" jsonschema:"keep the most recent N in lineage order"`
+	Author           string   `json:"author,omitempty" jsonschema:"objects asserted by or reported from this particular (id, URI, label, or alias), each labelled with its relations"`
 }
 
 func (s *Server) knowledgeRecall(ctx context.Context, req *sdk.CallToolRequest, in recallIn) (*sdk.CallToolResult, any, error) {
@@ -507,8 +516,8 @@ func (s *Server) knowledgeRecall(ctx context.Context, req *sdk.CallToolRequest, 
 	if subject == "" {
 		subject = in.Query
 	}
-	if subject == "" && len(in.Topics) == 0 {
-		return errResult(apperr.Usage("pass particular_id (or query), topics, or both")), nil, nil
+	if subject == "" && len(in.Topics) == 0 && in.Author == "" {
+		return errResult(apperr.Usage("pass particular_id (or query), topics, author, or a combination")), nil, nil
 	}
 	g, err := s.load()
 	if err != nil {
@@ -532,6 +541,14 @@ func (s *Server) knowledgeRecall(ctx context.Context, req *sdk.CallToolRequest, 
 		if class := g.ClassOf(p.ID); len(class) > 1 {
 			out["class"] = class
 		}
+	}
+	if in.Author != "" {
+		p, err := resolveOne(g, in.Author)
+		if err != nil {
+			return errResult(err), nil, nil
+		}
+		opts.Author = p.ID
+		out["author"] = p.ID
 	}
 	entries := query.Recall(g, opts)
 	out["entries"], out["count"] = entries, len(entries)

@@ -138,6 +138,11 @@ func (a *app) emitFindings(fs query.Findings) error {
 		for _, f := range fs {
 			if !a.showNotes && query.IsCorpusFact(f.Code) {
 				k := f.Severity + "\x00" + f.Code
+				if f.Code == query.CodeAuthorUnresolved || f.Code == query.CodeAuthorAmbiguous {
+					// One aggregate line per author value: these messages are
+					// constructed uniform per value, so the message keys the group.
+					k += "\x00" + f.Message
+				}
 				if _, seen := aggregated[k]; !seen {
 					aggOrder = append(aggOrder, k)
 				}

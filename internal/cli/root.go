@@ -48,6 +48,11 @@ type app struct {
 	stderr    io.Writer
 	// stdinIsTerminal is consulted before reading stdin; the CLI never reads a TTY.
 	stdinIsTerminal func() bool
+	// warnings collects advisory notes raised while a verb runs — an
+	// ambiguous default author written unchanged, say. emit carries them in
+	// the result as "warnings" (so --json stays machine-readable: stderr is
+	// reserved for the error envelope) and prints them to stderr in text mode.
+	warnings []string
 }
 
 // Execute runs the CLI with the given arguments and streams, returning the
@@ -106,6 +111,10 @@ func (a *app) printError(ee *ExitError) {
 
 // emit writes the command result: JSON when --json, otherwise via text.
 func (a *app) emit(v any, text func(w io.Writer)) error {
+	if m, ok := v.(map[string]any); ok && len(a.warnings) > 0 {
+		existing, _ := m["warnings"].([]string)
+		m["warnings"] = append(existing, a.warnings...)
+	}
 	if a.jsonOut {
 		enc := json.NewEncoder(a.stdout)
 		enc.SetIndent("", "  ")
@@ -113,6 +122,9 @@ func (a *app) emit(v any, text func(w io.Writer)) error {
 		return enc.Encode(v)
 	}
 	text(a.stdout)
+	for _, w := range a.warnings {
+		fmt.Fprintf(a.stderr, "warning: %s\n", w)
+	}
 	return nil
 }
 

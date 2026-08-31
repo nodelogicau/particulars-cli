@@ -581,6 +581,7 @@ func TestSynthesisSourceAndLegacy(t *testing.T) {
 	run(t, "", "init", dir2, "--author", "ben", "--json")
 	t.Setenv("DKF_WORKSPACE", dir2)
 	pid := define(t, "P")
+	define(t, "Ben") // the default author resolves, so no author_unresolved note below
 	x := assert(t, "P", "x")
 	if r := run(t, "", "synthesis", "create", "--subject", "P", "--content", "S", "--input", x+":thesis", "--unresolved", "n", "--author", "ben", "--json"); r.code != 2 || !strings.Contains(r.stderr, "DKF_HARNESS") {
 		t.Errorf("author-only synthesis should exit 2 naming DKF_HARNESS: %+v", r)
@@ -1520,6 +1521,7 @@ func TestNotesAreCountedNotListed(t *testing.T) {
 	t.Setenv("DKF_WORKSPACE", ws)
 	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
 	run(t, "", "particular", "define", "--label", "Project X", "--json")
+	run(t, "", "particular", "define", "--label", "Ben", "--alias", "ben", "--json")
 	for i := 0; i < 3; i++ {
 		run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content", "remote evidence",
 			"--document", "https://example.com/x", "--json")
@@ -1637,5 +1639,63 @@ func TestPerObjectNotesAreListed(t *testing.T) {
 	}
 	if !strings.Contains(text.stdout, id+".yaml  quote_drift") {
 		t.Errorf("drift under a retracted object still names the object:\n%s", text.stdout)
+	}
+}
+
+func TestClaimAssertAuthorResolution(t *testing.T) {
+	initWS(t)
+	define(t, "Project X")
+	define(t, "Ben", "--alias", "ben", "--uri", "https://github.com/benfortuna")
+	r := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "x", "--evidential", "held",
+		"--document", "conversation with Ben, 2026-09-01", "--document-author", "ben", "--json")
+	if r.code != 0 {
+		t.Fatalf("assert: %+v", r)
+	}
+	src := r.js["claim"].(map[string]any)["source"].(map[string]any)
+	if src["author"] != "https://github.com/benfortuna" {
+		t.Errorf("the default author should be written as the uri: %v", src)
+	}
+	doc := src["document"].(map[string]any)
+	if doc["ref"] != "conversation with Ben, 2026-09-01" || doc["author"] != "https://github.com/benfortuna" {
+		t.Errorf("document should carry ref then the resolved author: %v", doc)
+	}
+	rc := run(t, "", "recall", "--author", "ben", "--json")
+	es := rc.js["entries"].([]any)
+	if len(es) != 1 {
+		t.Fatalf("recall --author: %+v", rc.js)
+	}
+	rels := es[0].(map[string]any)["relations"].([]any)
+	if len(rels) != 2 || rels[0] != "asserted" || rels[1] != "reported" {
+		t.Errorf("relations: %v", rels)
+	}
+	if r := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "y", "--evidential", "held",
+		"--author", "par_01a00000-0000-7000-8000-000000000001", "--json"); r.code != 3 {
+		t.Errorf("an unknown author id should exit 3: %+v", r)
+	}
+	if r := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "y", "--evidential", "held",
+		"--document-author", "jane", "--json"); r.code != 2 {
+		t.Errorf("--document-author needs --document: %+v", r)
+	}
+	define(t, "Ben Smith", "--alias", "ben")
+	if r := run(t, "", "claim", "assert", "--subject", "Project X", "--content", "y", "--evidential", "held",
+		"--author", "ben", "--json"); r.code != 2 || !strings.Contains(r.stderr, "ambiguous") {
+		t.Errorf("an explicit ambiguous author should exit 2 with candidates: %+v", r)
+	}
+	// The default author is now ambiguous: written unchanged, noted on stderr.
+	r = run(t, "", "claim", "assert", "--subject", "Project X", "--content", "z", "--evidential", "held", "--json")
+	if r.code != 0 {
+		t.Fatalf("default-ambiguous assert should still write: %+v", r)
+	}
+	src = r.js["claim"].(map[string]any)["source"].(map[string]any)
+	if src["author"] != "ben" {
+		t.Errorf("a default ambiguous author is written unchanged: %v", src)
+	}
+	if ws, _ := r.js["warnings"].([]any); len(ws) != 1 || !strings.Contains(ws[0].(string), "matches") {
+		t.Errorf("expected a result warning about the ambiguous default: %+v", r.js)
+	}
+	// validate aggregates the ambiguity per value, with candidates.
+	v := run(t, "", "validate")
+	if !strings.Contains(v.stdout, "author_ambiguous") || strings.Count(v.stdout, "author_ambiguous") != 1 {
+		t.Errorf("one aggregate author_ambiguous line: %q", v.stdout)
 	}
 }

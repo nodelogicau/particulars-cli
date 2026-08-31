@@ -32,6 +32,14 @@ type Graph struct {
 
 	byURI   map[string]*dkf.Particular
 	classOf map[string][]string // particular id -> sorted member ids (incl. self)
+	// uriRoot maps every URI seen — particular URIs and merge-record URIs —
+	// to its merge-class root, and classByRoot maps a root to the sorted
+	// particular ids in the class. Together they answer the readers' rule
+	// that a URI resolves "including through non-retracted merge records":
+	// a URI with no particular of its own still reaches the class a merge
+	// joined it to.
+	uriRoot     map[string]string
+	classByRoot map[string][]string
 	// effective holds the widest scope any non-retracted promotion grants an
 	// object. Absent means "no promotion covers it", not "personal".
 	effective map[string]dkf.Scope
@@ -211,6 +219,38 @@ func (g *Graph) buildClasses() {
 			g.classOf[id] = ids
 		}
 	}
+	g.uriRoot, g.classByRoot = map[string]string{}, members
+	for _, p := range g.Particulars {
+		g.uriRoot[p.URI] = find(p.URI)
+	}
+	for _, m := range g.Merges {
+		if m.Retracted != nil || len(m.URIs) != 2 {
+			continue
+		}
+		for _, u := range m.URIs {
+			g.uriRoot[u] = find(u)
+		}
+	}
+}
+
+// MergedURIOwners returns the particulars in the merge class containing uri,
+// sorted by id — empty when the URI appears on no particular and in no
+// non-retracted merge. This is how a URI resolves "through merge records": a
+// URN merged with an ORCID reaches the ORCID's particular though no file
+// carries the URN as its uri.
+func (g *Graph) MergedURIOwners(uri string) []*dkf.Particular {
+	root, ok := g.uriRoot[uri]
+	if !ok {
+		return nil
+	}
+	ids := g.classByRoot[root]
+	out := make([]*dkf.Particular, 0, len(ids))
+	for _, id := range ids {
+		if p := g.Particulars[id]; p != nil {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // ClassOf returns the sorted ids of every particular in id's merge

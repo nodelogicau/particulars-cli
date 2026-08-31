@@ -14,26 +14,34 @@ type RecallOptions struct {
 	Scope            dkf.Scope // "" means any
 	IncludeRetracted bool
 	Limit            int // keep the most recent N in lineage order; <=0 means all
+	// Author restricts to objects asserted by or reported from this
+	// particular's merge class (a resolved particular id). Each returned
+	// entry then carries Relations.
+	Author string
 }
 
 // Entry is one recalled claim or synthesis, shaped for output.
 type Entry struct {
-	ID            string         `json:"id"`
-	Type          dkf.Type       `json:"type"`
-	Subject       string         `json:"subject"`
-	Content       string         `json:"content"`
-	Source        dkf.Source     `json:"source"`
-	Timestamp     string         `json:"timestamp"`
-	Confidence    *float64       `json:"confidence,omitempty"`
-	Evidential    dkf.Evidential `json:"evidential,omitempty"`
-	Scope         dkf.Scope      `json:"scope"`
-	Topics        []string       `json:"topics,omitempty"`
-	Retracted     bool           `json:"retracted"`
-	Current       bool           `json:"current,omitempty"`
-	Unsynthesised bool           `json:"unsynthesised,omitempty"`
-	Inputs        []dkf.Input    `json:"inputs,omitempty"`
-	Unresolved    string         `json:"unresolved,omitempty"`
-	Method        string         `json:"method,omitempty"`
+	ID         string         `json:"id"`
+	Type       dkf.Type       `json:"type"`
+	Subject    string         `json:"subject"`
+	Content    string         `json:"content"`
+	Source     dkf.Source     `json:"source"`
+	Timestamp  string         `json:"timestamp"`
+	Confidence *float64       `json:"confidence,omitempty"`
+	Evidential dkf.Evidential `json:"evidential,omitempty"`
+	Scope      dkf.Scope      `json:"scope"`
+	Topics     []string       `json:"topics,omitempty"`
+	Retracted  bool           `json:"retracted"`
+	// Relations labels an author-filtered result with how it matched:
+	// asserted (source.author) and/or reported (source.document.author) —
+	// one object can be both, and the two are never collapsed.
+	Relations     []string    `json:"relations,omitempty"`
+	Current       bool        `json:"current,omitempty"`
+	Unsynthesised bool        `json:"unsynthesised,omitempty"`
+	Inputs        []dkf.Input `json:"inputs,omitempty"`
+	Unresolved    string      `json:"unresolved,omitempty"`
+	Method        string      `json:"method,omitempty"`
 }
 
 func entryFor(g *store.Graph, a dkf.Assertion) Entry {
@@ -110,6 +118,14 @@ func Recall(g *store.Graph, opts RecallOptions) []Entry {
 	} else {
 		candidates = g.SortedAssertions()
 	}
+	var authorClass map[string]bool
+	if opts.Author != "" {
+		authorClass = map[string]bool{}
+		for _, id := range g.ClassOf(opts.Author) {
+			authorClass[id] = true
+		}
+	}
+	relations := map[string][]string{}
 	var filtered []dkf.Assertion
 	for _, a := range candidates {
 		if !opts.IncludeRetracted && a.GetRetracted() != nil {
@@ -121,6 +137,13 @@ func Recall(g *store.Graph, opts RecallOptions) []Entry {
 		}
 		if !hasAllTopics(ctx.Topics, opts.Topics) {
 			continue
+		}
+		if authorClass != nil {
+			rels := relationsOf(g, a, authorClass)
+			if len(rels) == 0 {
+				continue
+			}
+			relations[a.ObjectID()] = rels
 		}
 		filtered = append(filtered, a)
 	}
@@ -144,6 +167,7 @@ func Recall(g *store.Graph, opts RecallOptions) []Entry {
 	out := make([]Entry, 0, len(ordered))
 	for _, a := range ordered {
 		e := entryFor(g, a)
+		e.Relations = relations[e.ID]
 		st := stateOf(a.SubjectID())
 		e.Current = st.current == e.ID
 		e.Unsynthesised = !e.Retracted && !e.Current && !st.reconciled[e.ID]
@@ -204,4 +228,20 @@ func LineageOrder(as []dkf.Assertion) []dkf.Assertion {
 		}
 	}
 	return out
+}
+
+// relationsOf reports how an assertion relates to an author class: asserted
+// when its source.author resolves into the class, reported when its
+// source.document.author does. Both can hold at once — Ben recording his own
+// earlier remark — and the two are never collapsed.
+func relationsOf(g *store.Graph, a dkf.Assertion, class map[string]bool) []string {
+	var rels []string
+	src := a.GetSource()
+	if p, _ := ResolveAuthor(g, src.Author); p != nil && class[p.ID] {
+		rels = append(rels, "asserted")
+	}
+	if p, _ := ResolveAuthor(g, src.Document.Author); p != nil && class[p.ID] {
+		rels = append(rels, "reported")
+	}
+	return rels
 }

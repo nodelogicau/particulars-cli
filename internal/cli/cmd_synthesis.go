@@ -118,7 +118,10 @@ id), so a backdated synthesis does not displace a newer one.`,
 			if err != nil {
 				return err
 			}
-			src := resolveSource(ws, prov)
+			src, err := a.resolveSource(ws, g, prov)
+			if err != nil {
+				return err
+			}
 			if err := requireProvenance(src, true); err != nil {
 				return err
 			}

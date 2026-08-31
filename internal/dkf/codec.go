@@ -140,14 +140,16 @@ func sourceNode(s Source) *yaml.Node {
 	return m
 }
 
-// documentNode emits a scalar unless a hash or quote needs carrying, so a
-// claim written before the mapping existed serialises to the same bytes.
+// documentNode emits a scalar unless an author, hash, or quote needs
+// carrying, so a claim written before the mapping existed serialises to the
+// same bytes.
 func documentNode(d Document) *yaml.Node {
-	if d.Hash == "" && d.Quote == "" {
+	if d.Author == "" && d.Hash == "" && d.Quote == "" {
 		return scalar(d.Ref)
 	}
 	m := mapping()
 	addStrAlways(m, "ref", d.Ref)
+	addStr(m, "author", d.Author)
 	addStr(m, "hash", d.Hash)
 	addStr(m, "quote", d.Quote)
 	return m

@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/nodelogicau/particulars-cli/internal/apperr"
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
 	"github.com/nodelogicau/particulars-cli/internal/prov"
+	"github.com/nodelogicau/particulars-cli/internal/query"
 	"github.com/nodelogicau/particulars-cli/internal/store"
 	skill "github.com/nodelogicau/particulars-cli/skills/particulars"
 )
@@ -71,17 +73,20 @@ func (s *Server) instructions() string {
 
 // sourceIn is the spec's source block as tool input.
 type sourceIn struct {
-	Author  string `json:"author,omitempty" jsonschema:"a person"`
+	Author  string `json:"author,omitempty" jsonschema:"a person — a particular id, URI, or name: you or the human you work for; pass it only when it differs from the workspace default"`
 	Harness string `json:"harness,omitempty" jsonschema:"the AI harness, if one was involved (defaults to the connected client's name)"`
 	Model   string `json:"model,omitempty" jsonschema:"the model, if known"`
 	// Document is a union: a bare reference, or a mapping of uri/hash/quote.
 	// It is typed as any because the schema the SDK infers from a struct would
 	// reject the string form, and a bare reference must stay valid — it is not
 	// inferior provenance.
-	Document any `json:"document,omitempty" jsonschema:"what was read to make the assertion: a path, URL, or command as a string — or an object with uri, optional hash (sha256:…), and optional quote (the sentence that supports the claim, verbatim)"`
+	Document any `json:"document,omitempty" jsonschema:"what was read to make the assertion: a path, URL, or command as a string — or an object with ref (uri is the legacy alias), optional author (who produced what was read: a particular id, URI, or name — for testimony, who told you), optional hash (sha256:…), and optional quote (the sentence that supports the claim, verbatim)"`
 }
 
-// documentFrom accepts the string or the mapping form of a document.
+// documentFrom accepts the string or the mapping form of a document. The
+// mapping is keyed by ref, with uri accepted as the legacy alias; an unknown
+// key is refused rather than silently dropped, since a caller who sent it
+// meant something by it.
 func documentFrom(v any) (dkf.Document, error) {
 	switch t := v.(type) {
 	case nil:
@@ -90,18 +95,29 @@ func documentFrom(v any) (dkf.Document, error) {
 		return dkf.Document{Ref: t}, nil
 	case map[string]any:
 		d := dkf.Document{}
-		for key, target := range map[string]*string{"uri": &d.Ref, "hash": &d.Hash, "quote": &d.Quote} {
-			if raw, ok := t[key]; ok {
-				sv, ok := raw.(string)
-				if !ok {
-					return d, apperr.Usage("source.document.%s must be a string", key)
-				}
-				*target = sv
+		var ref, uri string
+		targets := map[string]*string{"ref": &ref, "uri": &uri, "author": &d.Author, "hash": &d.Hash, "quote": &d.Quote}
+		for key, raw := range t {
+			target, ok := targets[key]
+			if !ok {
+				return d, apperr.Usage("source.document has no field %q: the mapping takes ref, author, hash, and quote", key)
 			}
+			sv, ok := raw.(string)
+			if !ok {
+				return d, apperr.Usage("source.document.%s must be a string", key)
+			}
+			*target = sv
+		}
+		if ref != "" && uri != "" {
+			return d, apperr.Usage("source.document: pass ref, not both ref and its legacy alias uri")
+		}
+		d.Ref = ref
+		if d.Ref == "" {
+			d.Ref = uri
 		}
 		return d, nil
 	}
-	return dkf.Document{}, apperr.Usage("source.document must be a string or an object with uri, hash, and quote")
+	return dkf.Document{}, apperr.Usage("source.document must be a string or an object with ref, author, hash, and quote")
 }
 
 // contextIn is the spec's context block as tool input.
@@ -110,8 +126,13 @@ type contextIn struct {
 	Topics []string `json:"topics,omitempty" jsonschema:"stable lowercase tags used by knowledge_recall"`
 }
 
-// source resolves provenance for a call: explicit → env → dkf.yaml → client name.
-func (s *Server) source(req clientInfoer, in *sourceIn, needHarness bool) (dkf.Source, error) {
+// source resolves provenance for a call — explicit → env → dkf.yaml → client
+// name — then resolves author references for writing: a defined particular is
+// written as its uri. A per-call author is explicit (an ambiguous name is
+// refused with candidates); the server flag and workspace default fall
+// through unchanged, noted on stderr, because failing them would block every
+// write of the session.
+func (s *Server) source(g *store.Graph, req clientInfoer, in *sourceIn, needHarness bool) (dkf.Source, error) {
 	e := prov.Explicit{Author: s.opts.Author, Harness: s.opts.Harness, Model: s.opts.Model}
 	if in != nil {
 		if in.Author != "" {
@@ -127,7 +148,7 @@ func (s *Server) source(req clientInfoer, in *sourceIn, needHarness bool) (dkf.S
 		if derr != nil {
 			return dkf.Source{}, derr
 		}
-		e.Document, e.DocumentHash, e.Quote = doc.Ref, doc.Hash, doc.Quote
+		e.Document, e.DocumentAuthor, e.DocumentHash, e.Quote = doc.Ref, doc.Author, doc.Hash, doc.Quote
 	}
 	fallback := ""
 	if ci := req.ClientInfo(); ci != nil {
@@ -136,6 +157,22 @@ func (s *Server) source(req clientInfoer, in *sourceIn, needHarness bool) (dkf.S
 	src := prov.Resolve(s.ws.Config.Defaults.Source, e, fallback)
 	if err := prov.Require(src, needHarness); err != nil {
 		return dkf.Source{}, err
+	}
+	explicit := in != nil && strings.TrimSpace(in.Author) != ""
+	written, ambiguous, err := query.ResolveAuthorForWrite(g, src.Author, explicit, "source.author")
+	if err != nil {
+		return dkf.Source{}, err
+	}
+	if len(ambiguous) > 0 {
+		fmt.Fprintf(os.Stderr, "note: author %q matches %s and is written unchanged; add an alias or merge, or set the default to a URI\n", src.Author, strings.Join(ambiguous, ", "))
+	}
+	src.Author = written
+	if src.Document.Author != "" {
+		written, _, err := query.ResolveAuthorForWrite(g, src.Document.Author, true, "source.document.author")
+		if err != nil {
+			return dkf.Source{}, err
+		}
+		src.Document.Author = written
 	}
 	return src, nil
 }

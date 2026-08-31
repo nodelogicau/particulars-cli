@@ -60,7 +60,14 @@ what an external consumer has already fetched.`,
 					return notFoundErr("--superseded-by %s does not exist", supersededBy)
 				}
 			}
-			src := resolveSource(ws, prov)
+			g, err := ws.Load()
+			if err != nil {
+				return err
+			}
+			src, err := a.resolveSource(ws, g, prov)
+			if err != nil {
+				return err
+			}
 			if err := requireProvenance(src, false); err != nil {
 				return err
 			}

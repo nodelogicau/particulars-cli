@@ -721,3 +721,97 @@ func TestUnknownIndexEntriesSurvive(t *testing.T) {
 		t.Error("a genuinely stale index must still fail the check")
 	}
 }
+
+func stripLinesContaining(s, substr string) string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if !strings.Contains(l, substr) {
+			out = append(out, l)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+func TestIndexAuthorFieldsAndDriftTolerance(t *testing.T) {
+	w := newWS(t)
+	p := mkParticular(t, w, "Project X")
+	c := mkClaim(t, w, p.ID, "A")
+	if _, err := w.RebuildIndex(); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(w.IndexPath())
+	if !strings.Contains(string(data), "author: ben") {
+		t.Fatalf("index should mirror the author as written:\n%s", data)
+	}
+	// An index committed before the author field existed: not drift.
+	old := stripLinesContaining(string(data), "author: ben")
+	if err := os.WriteFile(w.IndexPath(), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if diff, err := w.CheckIndex(); err != nil || !diff.Clean() {
+		t.Errorf("author absent from the committed index must not be drift: %+v %v", diff, err)
+	}
+	// A MAY field present on both sides with differing values: drift.
+	changed := strings.Replace(old, "scope: personal", "scope: organisation", 1)
+	if err := os.WriteFile(w.IndexPath(), []byte(changed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if diff, _ := w.CheckIndex(); diff.Clean() || len(diff.Changed) != 1 || diff.Changed[0] != c.ID {
+		t.Errorf("a changed scope must be drift: %+v", diff)
+	}
+	// A retraction after the index was committed: drift, however many
+	// entries lack the field — retracted is never masked.
+	if err := os.WriteFile(w.IndexPath(), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Retract(c.ID, &dkf.Retracted{Timestamp: ts, Reason: "x", Source: dkf.Source{Author: "ben"}}); err != nil {
+		t.Fatal(err)
+	}
+	if diff, _ := w.CheckIndex(); diff.Clean() || len(diff.Changed) != 1 || diff.Changed[0] != c.ID {
+		t.Errorf("a first retraction must fail the check: %+v", diff)
+	}
+}
+
+func TestIndexUnknownEntryFieldSurvives(t *testing.T) {
+	w := newWS(t)
+	p := mkParticular(t, w, "Project X")
+	c := mkClaim(t, w, p.ID, "A")
+	if _, err := w.RebuildIndex(); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(w.IndexPath())
+	// A newer writer adds a field this implementation does not know,
+	// mid-entry, right after author.
+	var out []string
+	for _, l := range strings.Split(string(data), "\n") {
+		out = append(out, l)
+		if strings.HasSuffix(l, "author: ben") {
+			indent := l[:len(l)-len(strings.TrimLeft(l, " "))]
+			out = append(out, indent+"signed: proof")
+		}
+	}
+	if err := os.WriteFile(w.IndexPath(), []byte(strings.Join(out, "\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Not drift, in either direction.
+	if diff, err := w.CheckIndex(); err != nil || !diff.Clean() {
+		t.Errorf("an unknown entry field must not be drift: %+v %v", diff, err)
+	}
+	// A rebuild preserves it, in place.
+	if _, err := w.RebuildIndex(); err != nil {
+		t.Fatal(err)
+	}
+	rebuilt, _ := os.ReadFile(w.IndexPath())
+	ai, si, sc := strings.Index(string(rebuilt), "author: ben"), strings.Index(string(rebuilt), "signed: proof"), strings.Index(string(rebuilt), "scope:")
+	if si < 0 || si < ai || si > sc {
+		t.Errorf("signed should survive a rebuild between author and scope:\n%s", rebuilt)
+	}
+	// An incremental update carries it too.
+	if err := w.UpsertIndex(c); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(w.IndexPath())
+	if !strings.Contains(string(after), "signed: proof") {
+		t.Errorf("upsert must not strip an unknown field:\n%s", after)
+	}
+}

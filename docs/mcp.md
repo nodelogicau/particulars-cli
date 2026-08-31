@@ -148,10 +148,10 @@ parameters accept an id, URI, label, or alias):
 | `particular_define` | `label`, `uri?`, `aliases[]?` | `{particular, created}` |
 | `particular_resolve` | `query` | `{particular}` — `null` when nothing matches |
 | `particular_merge` | `uri_a`, `uri_b`, `reason?`, `source?` | `{merge, sides, path}` |
-| `claim_assert` | `particular_id`, `content`, `source?`, `context?`, `confidence?`, `scope?`, `timestamp?` | `{claim, path}` |
+| `claim_assert` | `particular_id`, `content`, `evidential`, `source?`, `context?`, `confidence?`, `scope?`, `timestamp?` | `{claim, path}` |
 | `claim_retract` | `claim_id`, `reason`, `source?`, `superseded_by?` | `{id, type, retracted}` |
 | `synthesis_create` | `particular_id`, `content`, `inputs[{id, role, weight?}]`, `unresolved`, `source?`, `method?`, `context?`, `confidence?`, `timestamp?` | `{synthesis, path, warnings}` |
-| `knowledge_recall` | `particular_id?` (or `query?`), `topics[]?`, `scope?`, `include_retracted?`, `limit?` | `{entries, count, subject?, class?}` |
+| `knowledge_recall` | `particular_id?` (or `query?`), `author?`, `topics[]?`, `scope?`, `include_retracted?`, `limit?` | `{entries, count, subject?, class?, author?}`; author-filtered entries carry `relations` (`asserted`/`reported`) |
 | `conflict_detect` | `particular_id` **or** `claim_ids[]` | `{reports, count}` / a report for the set |
 | `lineage_trace` | `claim_id`, `depth?` | provenance tree |
 
@@ -163,6 +163,10 @@ particulars extensions (not part of the DKF tool set):
 | `workspace_status` | root, id, base-uri, counts, `validate` summary, conflict reports, and — inside a git checkout — `git.uncommitted` file paths (read-only) |
 
 `source` is `{author?, harness?, model?, document?}`; `context` is `{scope?, topics[]?}`.
+`author` is a particular reference — id, URI, or name; a defined particular is
+written as its `uri`. `document` is a string, or a mapping of `ref` (`uri` is
+the legacy alias), `author` (who produced what was read — for testimony, who
+told you), `hash`, and `quote`.
 
 Errors are tool results with `isError: true`, a text line `<code>: <message>`, and
 `{"error": {"code", "message"}}` using the CLI's codes (`not_found`, `usage`,

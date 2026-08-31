@@ -13,6 +13,7 @@ source:
   harness: claude
   document:
     ref: docs/architecture.md
+    author: urn:dkf:01a0…:jane   # who produced what was read — optional
     hash: sha256:9f2a…
     quote: |
       In staging, the billing service listens on 443.
@@ -32,6 +33,16 @@ A bare reference stays valid and is **not** inferior provenance:
 
 Some evidence cannot be fetched, hashed, or quoted, and pretending otherwise
 would only push people to invent a URI.
+
+**`author` names who produced what was read** — a particular reference (id,
+URI, or bare name), distinct from `source.author`, who read it. This is how
+testimony is recorded without a fourth evidential: "Jane said the split
+happened in Q2", recorded by Ben, is a claim asserted by Ben, `observed`,
+whose document is Jane's utterance and whose document author is Jane —
+`--document "conversation with Jane, 2026-08-30" --document-author jane`,
+ideally with `--quote`. Who told you goes here, never in the content. An
+unresolvable document author is unresolved, not invalid, and
+`recall --author jane` returns the claim labelled `reported`.
 
 ## Writing one
 

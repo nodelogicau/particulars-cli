@@ -78,10 +78,11 @@ modifier inside double quotes too, so `"$id:thesis"` silently becomes
 |---|---|
 | Find a thing | `particulars particular resolve <id\|uri\|label\|alias> --json` → `{matches: [...]}`; exit 3 if none |
 | Create a thing | `particulars particular define --label "<label>" [--uri <uri>] [--alias <a>]... --json` → `{particular, created}` |
-| Record a fact | `particulars claim assert --subject "<thing>" --content "<statement>" --evidential observed\|inferred\|held --document <evidence> [--topic <t>]... [--confidence 0..1] [--scope personal\|organisation\|public] --json` |
+| Record a fact | `particulars claim assert --subject "<thing>" --content "<statement>" --evidential observed\|inferred\|held --document <evidence> [--document-author <who>] [--topic <t>]... [--confidence 0..1] [--scope personal\|organisation\|public] --json` |
 | Multi-line content | add `--content-file -` and pipe the text on stdin (instead of `--content`) |
 | Reconcile | `particulars synthesis create --subject "<thing>" --input <id>:thesis --input <id>:antithesis [--input <id>:thesis:qualifying] --unresolved "<what remains open>" --content "<resolution with reasoning>" --json` |
 | What is believed | `particulars recall "<thing>" [--topic <t>]... [--scope <s>] [--limit <n>] --json` → `{entries: [...]}`, oldest first, `current: true` on the live synthesis |
+| Who said what | `particulars recall --author <who> --json` — everything that particular asserted (`relations: [asserted]`) or is reported for (`[reported]`); combinable with a subject |
 | Across things | `particulars recall --topic <t> --json` |
 | Which tags exist | `particulars topics ["<thing>"] --json` → `{topics: [{topic, assertions, particulars}]}`; check before inventing a new tag |
 | Why is it believed | `particulars lineage <id> [--depth <n>] --json` → nested tree of inputs with roles |
@@ -112,6 +113,18 @@ On failure stderr carries `{"error": {"code", "message"}}`.
   invalid). A `held` claim takes no confidence — the tool refuses it — because
   a position is not on that scale; how strongly it is held belongs in
   `--content`, where reasoning lives.
+- **Who told you goes in `--document-author`, never in the content.** "Jane
+  said the split happened in Q2" is content "The split happened in Q2" with
+  `--document "conversation with Jane, 2026-08-30" --document-author jane`
+  and, ideally, `--quote` with her words. The claim stays `observed` — you
+  observed the utterance — and `recall --author jane` finds it, labelled
+  `reported`.
+- **Pass `--author` only when the author differs from the default** (the human
+  you work for, from `dkf.yaml`). It takes a particular id, URI, or name; a
+  defined person is written as their URI, and an explicitly passed name that
+  matches two particulars is refused. Never define a person's particular as a
+  side effect — the human chooses the URI they are cited under, once, with
+  `particular define --label "Their Name" --uri <chosen-uri> --alias <name>`.
 - **Scope honestly.** Default `personal`. Use `organisation` for things others in the org should see; never `public` unless the user says so.
 - **Backdate when recording history.** `--timestamp 2024-11-15T00:00:00Z` for a fact from a dated document; the id still records when you wrote it.
 - **Topics are for recall.** Use a few stable, lowercase tags (`architecture`, `auth`, `incident`) so `recall --topic` works later.
