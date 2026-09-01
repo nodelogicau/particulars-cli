@@ -127,7 +127,23 @@ On failure stderr carries `{"error": {"code", "message"}}`.
   `particular define --label "Their Name" --uri <chosen-uri> --alias <name>`.
 - **Scope honestly.** Default `personal`. Use `organisation` for things others in the org should see; never `public` unless the user says so.
 - **Backdate when recording history.** `--timestamp 2024-11-15T00:00:00Z` for a fact from a dated document; the id still records when you wrote it.
-- **Topics are for recall.** Use a few stable, lowercase tags (`architecture`, `auth`, `incident`) so `recall --topic` works later.
+- **Topics are facets for recall, not descriptions.** A claim carries a few
+  tags (2–4) from a small, stable, lowercase vocabulary — one per facet the
+  workspace recalls by (a place, a domain, a system) — never a summary of its
+  content. Check `particulars topics --json` before inventing one; a tag earns
+  its place by being reused.
+- **Compose, never compound.** `us` + `politics`, not `us-politics`;
+  `billing` + `incident`, not `billing-incident`. `recall --topic a --topic b`
+  is an AND, so composed tags recombine freely while a compound one can never
+  be queried apart.
+- **The subject is not a topic.** The particular already names what the claim
+  is about; `kakapo` adds nothing over `conservation` + `new-zealand`, and a
+  city is a subject, not a tag. Tag the facets a claim shares with claims about
+  *other* things.
+- **Retire tags, never rewrite them.** Claim files are append-only, so
+  consolidating `weather` into `climate` means stop using the old tag and
+  search both when it matters; a workspace's own `TOPICS.md` is the place to
+  record which tags won.
 
 ## Rules for particulars
 
