@@ -285,6 +285,12 @@ The path is written relative when the workspace is inside the pointer's director
 so the file survives being cloned elsewhere, and absolute when it is not — in which
 case it is machine-specific and should stay out of git.
 
+A workspace can teach agents its own conventions — topic vocabulary, local
+naming — via `CONVENTIONS.md` at the root (or `workspace.conventions: <file>` in
+`dkf.yaml`): `serve --mcp` delivers it with the `initialize` instructions, so it
+reaches MCP-only clients that never read the repository, and
+`particulars workspace` shows which file applies.
+
 `.dkf` is an implementation extension; spec-conformant readers still find the
 workspace by walking up from inside it. `workspace.base-uri`, if set, must end in
 `/` (`init` adds it if missing).

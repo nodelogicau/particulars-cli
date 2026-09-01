@@ -17,6 +17,10 @@ import (
 // EnvWorkspace is the environment variable consulted when no --workspace flag is given.
 const EnvWorkspace = "DKF_WORKSPACE"
 
+// ConventionsFile is the default conventions document, included in MCP
+// instructions when present at the workspace root.
+const ConventionsFile = "CONVENTIONS.md"
+
 // PointerFile is the optional redirect file honoured during discovery: its
 // first non-blank, non-comment line is a path (relative to the file's
 // directory, or absolute) to a directory containing dkf.yaml.
@@ -604,4 +608,25 @@ func writeAtomic(path string, data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// Conventions returns the workspace's conventions document: the file named
+// by workspace.conventions, or CONVENTIONS.md at the root when the key is
+// unset. rel is "" when neither applies. A missing default is silence; a
+// missing configured file returns its rel with an error, so callers can say
+// which file dkf.yaml promised.
+func (w *Workspace) Conventions() (rel string, content []byte, err error) {
+	rel = w.Config.Workspace.Conventions
+	if rel == "" {
+		data, derr := os.ReadFile(filepath.Join(w.Root, ConventionsFile))
+		if derr != nil {
+			return "", nil, nil
+		}
+		return ConventionsFile, data, nil
+	}
+	data, err := os.ReadFile(filepath.Join(w.Root, filepath.FromSlash(rel)))
+	if err != nil {
+		return rel, nil, err
+	}
+	return rel, data, nil
 }

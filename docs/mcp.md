@@ -132,6 +132,19 @@ the same command by hand from the same directory to see the message.
 
 ## What the model is told
 
+### Workspace conventions
+
+The generic discipline is the skill's; a workspace's own conventions — its
+topic vocabulary, local naming, what goes in which scope — are the
+workspace's. Put them in `CONVENTIONS.md` at the workspace root (or name
+another file with `workspace.conventions: TOPICS.md` in `dkf.yaml`) and the
+server appends them to the `initialize` instructions under a heading naming
+the file, truncated at 16 KiB. This is how conventions reach clients that
+never read the repository — Claude Desktop above all. `particulars workspace`
+shows which file applies; a configured file that is missing is a stderr
+warning, never a failure. Keep it short: it rides in every session's context.
+
+
 At `initialize` the server sends `instructions`: which workspace it is bound to,
 that writes land as files for a human to review, and the full particulars
 discipline (the same text as the agent skill — recall before you assert, evidence

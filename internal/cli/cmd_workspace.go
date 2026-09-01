@@ -29,6 +29,14 @@ directory containing dkf.yaml or a .dkf pointer file. Exit 5 when none applies.`
 			if res.Pointer != "" {
 				out["pointer"] = res.Pointer
 			}
+			convRel, convContent, convErr := ws.Conventions()
+			if convRel != "" {
+				out["conventions"] = convRel
+				if convErr != nil {
+					out["conventions_missing"] = true
+				}
+			}
+			_ = convContent
 			return a.emit(out, func(w io.Writer) {
 				fmt.Fprintf(w, "%s\n  via: %s", res.Root, res.Via)
 				if res.Pointer != "" {
@@ -37,6 +45,13 @@ directory containing dkf.yaml or a .dkf pointer file. Exit 5 when none applies.`
 				fmt.Fprintf(w, "\n  id: %s\n", ws.Config.Workspace.ID)
 				if ws.Config.Workspace.BaseURI != "" {
 					fmt.Fprintf(w, "  base-uri: %s\n", ws.Config.Workspace.BaseURI)
+				}
+				if convRel != "" {
+					if convErr != nil {
+						fmt.Fprintf(w, "  conventions: %s (missing)\n", convRel)
+					} else {
+						fmt.Fprintf(w, "  conventions: %s\n", convRel)
+					}
 				}
 			})
 		}),

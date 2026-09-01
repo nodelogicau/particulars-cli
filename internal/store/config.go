@@ -6,6 +6,9 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -27,6 +30,11 @@ type Config struct {
 type WorkspaceConfig struct {
 	ID      string `yaml:"id"`
 	BaseURI string `yaml:"base-uri,omitempty"`
+	// Conventions names the workspace's conventions document — prose for
+	// agents (topic vocabulary, local naming) delivered to MCP clients with
+	// the initialize instructions. Relative to the workspace root; when
+	// empty, CONVENTIONS.md at the root applies if present.
+	Conventions string `yaml:"conventions,omitempty"`
 }
 
 // Defaults supplies values omitted on the command line.
@@ -57,6 +65,12 @@ func (c Config) Validate() error {
 	}
 	if c.Defaults.Scope != "" && !dkf.ValidScope(c.Defaults.Scope) {
 		return fmt.Errorf("%s: invalid defaults.scope %q", ConfigFile, c.Defaults.Scope)
+	}
+	if v := c.Workspace.Conventions; v != "" {
+		clean := path.Clean(filepath.ToSlash(v))
+		if filepath.IsAbs(v) || clean == ".." || strings.HasPrefix(clean, "../") {
+			return fmt.Errorf("%s: workspace.conventions %q must be a relative path inside the workspace", ConfigFile, v)
+		}
 	}
 	if !dkf.ValidBaseURI(c.Workspace.BaseURI) {
 		return fmt.Errorf("%w: %s: workspace.base-uri %q must end in \"/\"", ErrInvalidBaseURI, ConfigFile, c.Workspace.BaseURI)

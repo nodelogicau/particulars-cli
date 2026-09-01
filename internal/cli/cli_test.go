@@ -1699,3 +1699,22 @@ func TestClaimAssertAuthorResolution(t *testing.T) {
 		t.Errorf("one aggregate author_ambiguous line: %q", v.stdout)
 	}
 }
+
+func TestWorkspaceReportsConventions(t *testing.T) {
+	dir := initWS(t)
+	r := run(t, "", "workspace", "--json")
+	if _, has := r.js["conventions"]; has {
+		t.Errorf("no conventions document, no key: %+v", r.js)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "CONVENTIONS.md"), []byte("topic rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r = run(t, "", "workspace", "--json")
+	if r.js["conventions"] != "CONVENTIONS.md" {
+		t.Errorf("default conventions reported: %+v", r.js)
+	}
+	text := run(t, "", "workspace")
+	if !strings.Contains(text.stdout, "conventions: CONVENTIONS.md") {
+		t.Errorf("text output: %q", text.stdout)
+	}
+}

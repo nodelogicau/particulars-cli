@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -309,5 +310,64 @@ func TestStdioBinary(t *testing.T) {
 	out, err := bad.Output()
 	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 5 || len(out) != 0 {
 		t.Errorf("no workspace: err=%v stdout=%q", err, out)
+	}
+}
+
+func TestInstructionsCarryWorkspaceConventions(t *testing.T) {
+	mk := func(cfg store.Config) *store.Workspace {
+		w, err := store.Init(filepath.Join(t.TempDir(), "kb"), cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return w
+	}
+	// Default file at the root.
+	w := mk(store.NewConfig())
+	if err := os.WriteFile(filepath.Join(w.Root, store.ConventionsFile), []byte("Compose tags, never compound."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ins := New(Options{Workspace: w, Version: "test"}).Instructions()
+	if !strings.Contains(ins, "## Workspace conventions (CONVENTIONS.md)") || !strings.Contains(ins, "Compose tags, never compound.") {
+		t.Errorf("default conventions should follow the skill body:\n%s", ins[len(ins)-300:])
+	}
+	if strings.Index(ins, "Workspace conventions") < strings.Index(ins, "Recall **before** you assert") {
+		t.Error("conventions must come after the skill body")
+	}
+	// Configured file wins over the default name.
+	cfg := store.NewConfig()
+	cfg.Workspace.Conventions = "docs/TOPICS.md"
+	w2 := mk(cfg)
+	if err := os.MkdirAll(filepath.Join(w2.Root, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(w2.Root, "docs", "TOPICS.md"), []byte("tag vocabulary"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ins2 := New(Options{Workspace: w2, Version: "test"}).Instructions()
+	if !strings.Contains(ins2, "(docs/TOPICS.md)") || !strings.Contains(ins2, "tag vocabulary") {
+		t.Error("configured conventions should be delivered under their own name")
+	}
+	// An oversized document is truncated with a note naming the file.
+	w3 := mk(store.NewConfig())
+	if err := os.WriteFile(filepath.Join(w3.Root, store.ConventionsFile), bytes.Repeat([]byte("x"), 20*1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ins3 := New(Options{Workspace: w3, Version: "test"}).Instructions()
+	if !strings.Contains(ins3, "[truncated — read CONVENTIONS.md") {
+		t.Error("oversized conventions should truncate with a note")
+	}
+	if len(ins3) > len(ins)+21*1024 {
+		t.Errorf("truncation should bound the instructions, got %d bytes", len(ins3))
+	}
+	// No document, no section; a configured-but-missing file is omitted.
+	w4 := mk(store.NewConfig())
+	if strings.Contains(New(Options{Workspace: w4, Version: "test"}).Instructions(), "Workspace conventions") {
+		t.Error("no conventions document should mean no section")
+	}
+	cfg5 := store.NewConfig()
+	cfg5.Workspace.Conventions = "absent.md"
+	w5 := mk(cfg5)
+	if strings.Contains(New(Options{Workspace: w5, Version: "test"}).Instructions(), "Workspace conventions") {
+		t.Error("a missing configured file is omitted, not partially rendered")
 	}
 }

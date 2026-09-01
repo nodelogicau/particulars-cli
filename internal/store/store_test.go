@@ -815,3 +815,45 @@ func TestIndexUnknownEntryFieldSurvives(t *testing.T) {
 		t.Errorf("upsert must not strip an unknown field:\n%s", after)
 	}
 }
+
+func TestConventionsResolution(t *testing.T) {
+	// Config validation: the path stays inside the workspace.
+	for _, bad := range []string{"/abs/path.md", "../outside.md", "docs/../../x.md"} {
+		cfg := NewConfig()
+		cfg.Workspace.Conventions = bad
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("conventions %q should fail validation", bad)
+		}
+	}
+	okCfg := NewConfig()
+	okCfg.Workspace.Conventions = "docs/TOPICS.md"
+	if err := okCfg.Validate(); err != nil {
+		t.Errorf("relative conventions path should validate: %v", err)
+	}
+	// Resolution: nothing, default, configured, configured-but-missing.
+	w := newWS(t)
+	if rel, content, err := w.Conventions(); rel != "" || content != nil || err != nil {
+		t.Errorf("no document: %q %q %v", rel, content, err)
+	}
+	if err := os.WriteFile(filepath.Join(w.Root, ConventionsFile), []byte("rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rel, content, err := w.Conventions(); rel != ConventionsFile || string(content) != "rules" || err != nil {
+		t.Errorf("default: %q %q %v", rel, content, err)
+	}
+	cfg := NewConfig()
+	cfg.Workspace.Conventions = "TOPICS.md"
+	w2, err := Init(filepath.Join(t.TempDir(), "kb"), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel, _, cerr := w2.Conventions(); rel != "TOPICS.md" || cerr == nil {
+		t.Errorf("configured-but-missing should return the path with an error: %q %v", rel, cerr)
+	}
+	if err := os.WriteFile(filepath.Join(w2.Root, "TOPICS.md"), []byte("tags"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rel, content, cerr := w2.Conventions(); rel != "TOPICS.md" || string(content) != "tags" || cerr != nil {
+		t.Errorf("configured: %q %q %v", rel, content, cerr)
+	}
+}

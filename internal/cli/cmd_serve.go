@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -33,6 +34,9 @@ stderr. Configure a second workspace as a second server entry in your client.`,
 			ws, res, err := store.DiscoverWith(a.workspace)
 			if err != nil {
 				return err
+			}
+			if rel, _, cerr := ws.Conventions(); cerr != nil {
+				fmt.Fprintf(os.Stderr, "warning: workspace.conventions %s: %v — omitted from instructions\n", rel, cerr)
 			}
 			srv := pmcp.New(pmcp.Options{Workspace: ws, Version: version, Author: prov.author, Harness: prov.harness, Model: prov.model})
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

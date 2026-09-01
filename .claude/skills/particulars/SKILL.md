@@ -143,8 +143,9 @@ On failure stderr carries `{"error": {"code", "message"}}`.
   *other* things.
 - **Retire tags, never rewrite them.** Claim files are append-only, so
   consolidating `weather` into `climate` means stop using the old tag and
-  search both when it matters; a workspace's own `TOPICS.md` is the place to
-  record which tags won.
+  search both when it matters; the workspace's conventions file
+  (`CONVENTIONS.md`, or `workspace.conventions` in dkf.yaml — delivered to MCP
+  clients with the server instructions) is the place to record which tags won.
 
 ## Rules for particulars
 

@@ -66,6 +66,19 @@ func (s *Server) instructions() string {
 	fmt.Fprintf(&b, "This particulars server is bound to the DKF workspace at %s (id %s). Everything you write lands as YAML files there for a human to review — typically through a git pull request; nothing is committed for you.\n\n", s.ws.Root, s.ws.Config.Workspace.ID)
 	b.WriteString("Tool names follow the DKF specification (particular_*, claim_*, synthesis_create, knowledge_recall, conflict_detect, lineage_trace, knowledge_publish); topics_list and workspace_status are particulars extensions.\n")
 	b.Write(skill.Body())
+	// The workspace's own conventions — topic vocabulary, local naming —
+	// travel with the instructions, because an MCP-only client never reads
+	// the repository. Read once, at startup, like the workspace binding.
+	if rel, content, err := s.ws.Conventions(); err == nil && len(content) > 0 {
+		b.WriteString("\n\n## Workspace conventions (" + rel + ")\n\n")
+		const maxConventions = 16 * 1024
+		if len(content) > maxConventions {
+			b.Write(content[:maxConventions])
+			b.WriteString("\n\n[truncated — read " + rel + " in the workspace for the rest]")
+		} else {
+			b.Write(content)
+		}
+	}
 	return b.String()
 }
 
