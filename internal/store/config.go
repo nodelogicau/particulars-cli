@@ -68,7 +68,11 @@ func (c Config) Validate() error {
 	}
 	if v := c.Workspace.Conventions; v != "" {
 		clean := path.Clean(filepath.ToSlash(v))
-		if filepath.IsAbs(v) || clean == ".." || strings.HasPrefix(clean, "../") {
+		// filepath.IsAbs alone is platform-dependent — on Windows "/x" has
+		// no volume and reports false — so a leading slash is checked on the
+		// slashed form too: the path must be relative on every platform the
+		// workspace is cloned to.
+		if filepath.IsAbs(v) || strings.HasPrefix(clean, "/") || clean == ".." || strings.HasPrefix(clean, "../") {
 			return fmt.Errorf("%s: workspace.conventions %q must be a relative path inside the workspace", ConfigFile, v)
 		}
 	}
