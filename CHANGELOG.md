@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.12.0 — the workspace teaches its conventions
+
+- **Workspaces teach their conventions to MCP clients.** `CONVENTIONS.md` at
+  the workspace root — or the file named by `workspace.conventions` in
+  `dkf.yaml` (a relative path that stays inside the workspace, on every
+  platform) — is appended to the `initialize` instructions under a heading
+  naming the file, capped at 16 KiB with a truncation note; the
+  `particulars-discipline` prompt inherits it. This is how a workspace's own
+  register — its topic vocabulary, its ingestion rules — reaches clients that
+  never read the repository, Claude Desktop above all. A configured file that
+  is missing is a stderr warning, never a startup failure; `particulars
+  workspace` reports which file applies.
+- **The subject is the world, not the medium.** Models differ in register when
+  ingesting sources: some extract the knowledge, others catalogue the reading —
+  a particular for the feed, claims whose content is a title and URL: valid by
+  every stated rule and write-only by the one that matters, since recall finds
+  nothing. The register is now taught on every surface a model reads at assert
+  time: `claim_assert` and `particular_define` descriptions and schemas state
+  it at the moment of choice (and `define`'s URI examples name identities, no
+  longer reading matter); the skill carries the deletion test — strip
+  `source.document`, and a claim that then teaches nothing was a citation —
+  nobody-recalls-a-feed, the legitimate document-subject case, and a worked
+  ✗/✓ contrast. `validate` whispers one aggregated `url_in_content` note
+  (info, claims only, never an error — endpoint claims are legitimate; the
+  dogfood workspace produces zero).
+- **The skill teaches topic discipline**: tags are a small stable facet
+  vocabulary, not descriptions; compose (`us` + `politics`) rather than
+  compound, because `--topic` is an AND; the subject particular is not a
+  topic; retire tags rather than rewrite append-only files, recording the
+  winners in the workspace conventions file.
+
 ## v0.11.0 — authors are particulars
 
 - **`source.author` is a particular reference** — id, URI, or bare name —
