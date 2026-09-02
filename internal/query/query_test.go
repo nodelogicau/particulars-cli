@@ -1205,3 +1205,37 @@ func TestRecallByAuthorRelations(t *testing.T) {
 		}
 	}
 }
+
+func TestURLInContentNote(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X")
+	f.particular("Ben", "ben")
+	catalogue := f.claim(p.ID, "Article: warmest winter — https://example.com/a")
+	proper := f.docClaim(p.ID, "Sydney recorded its warmest winter", dkf.Document{Ref: "https://example.com/a"}, "")
+	f.synthesis(p.ID, "reconciled; see https://example.com/a", in(catalogue.ID, dkf.RoleThesis))
+	_, _ = f.w.RebuildIndex()
+	fs, err := Validate(f.w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, _ := f.w.Load()
+	var hits []string
+	for _, fi := range fs {
+		if fi.Code == CodeURLInContent {
+			if fi.Severity != SeverityInfo {
+				t.Errorf("a note, never a problem: %+v", fi)
+			}
+			hits = append(hits, fi.Path)
+		}
+	}
+	if len(hits) != 1 || hits[0] != g.Files[catalogue.ID] {
+		t.Errorf("only the catalogue-shaped claim is noted (not the documented fact, not the synthesis): %v", hits)
+	}
+	_ = proper
+	if !IsCorpusFact(CodeURLInContent) {
+		t.Error("url_in_content aggregates as a corpus fact")
+	}
+	if fs.HasErrors() {
+		t.Error("the note must not fail validation")
+	}
+}

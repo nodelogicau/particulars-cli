@@ -99,6 +99,22 @@ On failure stderr carries `{"error": {"code", "message"}}`.
 
 ## Rules for good claims
 
+- **The subject is the world, not the medium.** A claim is about the thing
+  the fact concerns; what you read goes in `--document`. Two tests: strip the
+  document — a claim that then teaches nothing was a citation, not knowledge;
+  and file facts where someone will recall them — nobody recalls a feed. A
+  document is a subject only when the knowledge is about the document itself
+  (the feed moved; the paper was retracted).
+
+  ```sh
+  # ✗ a catalogue entry: write-only, recall finds nothing
+  --subject "BBC news feed" --content "Article: 'Sydney records warmest winter' — https://bbc.com/news/123"
+  # ✓ the knowledge, with the article as evidence
+  --subject "Sydney" --content "Sydney recorded its warmest winter in 2026" \
+    --evidential observed --document https://bbc.com/news/123 --document-author "BBC" \
+    --quote "the warmest winter since records began"
+  ```
+
 - **One statement per claim.** "Service A times out above 500 rps" — not a paragraph of findings. Split compound observations.
 - **Evidence or it didn't happen.** Put the file path, URL, or document in `--document`. Add `--quote "<the sentence that supports the claim>"` so a reviewer can check the claim against its source without leaving the diff, and `--hash-document` when the document is a file in the workspace, so `validate` can tell you later if it moved.
 - **Quote the sentence, not the section.** A quote is reproduced verbatim inside the claim file, so it discloses its source *completely* — where a synthesis only summarises. Quote what supports the claim and nothing more, and remember that promoting the claim publishes the quote with it.

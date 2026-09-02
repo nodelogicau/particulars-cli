@@ -17,7 +17,7 @@ import (
 
 func (s *Server) registerTools() {
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "particular_define", Annotations: idempotent,
-		Description: "Create or update a particular (a specific, identifiable thing claims are about). Idempotent on URI: without uri one is minted from the label (<base-uri><slug> or urn:dkf:<workspace-id>:<slug>), so the same label always resolves to the same particular. Prefer an existing global URI (Wikidata, ORCID, a GitHub URL) when the thing has one."},
+		Description: "Create or update a particular (a specific, identifiable thing claims are about). A particular is a thing in the world — a person, project, place, system — never the document or feed being read; what you read belongs in claim_assert's source.document. Idempotent on URI: without uri one is minted from the label (<base-uri><slug> or urn:dkf:<workspace-id>:<slug>), so the same label always resolves to the same particular. Prefer an existing global URI (Wikidata, an ORCID, a person's or project's GitHub page) when the thing has one."},
 		s.particularDefine)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "particular_resolve", Annotations: readOnly,
 		Description: "Find a particular by id, URI, label, or alias (label/alias case-insensitive). Returns particular: null when nothing matches. Call this before defining or asserting to avoid duplicates."},
@@ -26,7 +26,7 @@ func (s *Server) registerTools() {
 		Description: "Declare that two URIs denote the same particular. Writes a merge record; nothing is rewritten. Merged particulars form one class for knowledge_recall and conflict_detect. Undo with claim_retract on the merge id."},
 		s.particularMerge)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "claim_assert", Annotations: additive,
-		Description: "Record one falsifiable statement about a particular, with evidence in source.document and calibrated confidence. Recall first (knowledge_recall) so you extend or reconcile rather than duplicate. Claims are immutable; correct them with claim_retract + a new claim, or a synthesis."},
+		Description: "Record one falsifiable statement about a particular, with evidence in source.document and calibrated confidence. The statement is about the thing in the world; what you read goes in source.document (who produced it in document.author) — content that names an article or URL is a citation, not a claim. Recall first (knowledge_recall) so you extend or reconcile rather than duplicate. Claims are immutable; correct them with claim_retract + a new claim, or a synthesis."},
 		s.claimAssert)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "claim_retract", Annotations: additive,
 		Description: "Append a retracted block (reason, source, optional superseded_by) to a claim, synthesis, merge, or promotion record. Retracting a promotion returns the objects it covered to the scope they would have had without it. Never deletes; provenance is preserved. Syntheses that cite a retracted input become stale until re-synthesised."},
@@ -278,8 +278,8 @@ func (s *Server) knowledgePublish(ctx context.Context, req *sdk.CallToolRequest,
 // --- claims -----------------------------------------------------------------
 
 type assertIn struct {
-	ParticularID string     `json:"particular_id" jsonschema:"the subject: id, URI, label, or alias"`
-	Content      string     `json:"content" jsonschema:"one falsifiable statement"`
+	ParticularID string     `json:"particular_id" jsonschema:"the subject: id, URI, label, or alias of the thing in the world the fact is about — never the document or feed it was read in"`
+	Content      string     `json:"content" jsonschema:"one falsifiable statement about the world, not about a document; if it would name an article or URL, put that in source.document and state the fact instead"`
 	Evidential   string     `json:"evidential" jsonschema:"what backs the claim (required, no default): observed = someone or something looked; inferred = reasoning from other claims; held = nothing external backs it, it is a position"`
 	Source       *sourceIn  `json:"source,omitempty"`
 	Context      *contextIn `json:"context,omitempty"`

@@ -44,6 +44,14 @@ ideally with `--quote`. Who told you goes here, never in the content. An
 unresolvable document author is unresolved, not invalid, and
 `recall --author jane` returns the claim labelled `reported`.
 
+**A claim must survive losing its document.** Strip `source.document` from a
+claim: if what remains no longer teaches a reader anything — "Article:
+'warmest winter' — https://…" — it was a citation, not knowledge, and it is
+write-only: nobody recalls a feed. State the fact in `content`, under the
+subject someone will look for, and let the article be the evidence.
+`validate` counts claims whose content carries a URL as one `url_in_content`
+note.
+
 ## Writing one
 
 ```sh

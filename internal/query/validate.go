@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -12,6 +13,11 @@ import (
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
 	"github.com/nodelogicau/particulars-cli/internal/store"
 )
+
+// contentURL is the catalogue smell: a scheme-prefixed web URL inside claim
+// content. Deliberately narrow — urn: or bare hostnames in prose are not the
+// pattern being chased.
+var contentURL = regexp.MustCompile(`https?://`)
 
 // Finding severities.
 const (
@@ -42,6 +48,11 @@ const (
 	// workspace and clears every occurrence at once.
 	CodeAuthorUnresolved = "author_unresolved"
 	CodeAuthorAmbiguous  = "author_ambiguous"
+	// CodeURLInContent: a claim's content carries a URL — the catalogue
+	// smell: content naming its reading matter instead of stating a fact,
+	// when the reference belongs in source.document. A note, never a
+	// problem: claims about endpoints legitimately carry URLs.
+	CodeURLInContent     = "url_in_content"
 	CodeNonCanonical     = "non_canonical"
 	CodeLegacyProducedBy = "legacy_produced_by"
 	CodeLegacyID         = "legacy_id"
@@ -126,7 +137,7 @@ func IsCorpusFact(code string) bool {
 	switch code {
 	case CodeLegacyProducedBy, CodeLegacyID, CodeLegacyDocumentURI,
 		CodeUndeclared, CodeConfidenceOnUndeclared, CodeUnverifiedDocument,
-		CodeAuthorUnresolved, CodeAuthorAmbiguous:
+		CodeAuthorUnresolved, CodeAuthorAmbiguous, CodeURLInContent:
 		return true
 	}
 	return false
@@ -155,6 +166,10 @@ func Validate(w *store.Workspace) (Findings, error) {
 		}
 		if !dkf.IsCanonicalID(obj.ObjectID()) {
 			add(SeverityWarning, path, CodeLegacyID, fmt.Sprintf("id %s is not a canonical UUIDv7; it was written by another implementation", obj.ObjectID()))
+		}
+		if c, ok := obj.(*dkf.Claim); ok && contentURL.MatchString(c.Content) {
+			add(SeverityInfo, path, CodeURLInContent,
+				"content carries a URL; a fact states itself and the reading goes in source.document")
 		}
 		if c, ok := obj.(*dkf.Claim); ok && c.Evidential == "" {
 			add(SeverityInfo, path, CodeUndeclared, "warrant undeclared: the claim predates the evidential field and cannot be backfilled")

@@ -144,6 +144,11 @@ never read the repository — Claude Desktop above all. `particulars workspace`
 shows which file applies; a configured file that is missing is a stderr
 warning, never a failure. Keep it short: it rides in every session's context.
 
+A workspace that ingests feeds or documents should state its ingestion
+register here — *extract the facts; the feed itself is never a subject* —
+because that is exactly the discipline that varies most between models, and
+this file is the one place it reaches every client.
+
 
 At `initialize` the server sends `instructions`: which workspace it is bound to,
 that writes land as files for a human to review, and the full particulars
