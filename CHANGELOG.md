@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.13.1 — conventions as the spec blesses them
 
 - **Workspace conventions as the spec now blesses them** (particulars-cli#8,
   after nodelogicau/particulars#23 was accepted). The default document is

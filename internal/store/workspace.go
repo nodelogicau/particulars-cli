@@ -23,7 +23,7 @@ const EnvWorkspace = "DKF_WORKSPACE"
 // another tool and would be delivered without anyone having asked.
 const ConventionsFile = "dkf.md"
 
-// LegacyConventionsFile is the default before v0.14.0. It is no longer read;
+// LegacyConventionsFile is the default before v0.13.1. It is no longer read;
 // its presence without a replacement is noticed by `workspace` and `serve`.
 const LegacyConventionsFile = "CONVENTIONS.md"
 
