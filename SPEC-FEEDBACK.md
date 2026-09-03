@@ -26,14 +26,15 @@ resolutions. "We" below means this implementation as it was when the item was ra
 
 Bold entries are where v0.1.x diverged and v0.2.0 changed.
 
-Items 11–13 were raised later, from implementing merge records, workspace
-discovery, and the MCP server; they are open upstream as
-[#11](https://github.com/nodelogicau/particulars/issues/11),
-[#12](https://github.com/nodelogicau/particulars/issues/12),
-[#13](https://github.com/nodelogicau/particulars/issues/13), and
-[#14](https://github.com/nodelogicau/particulars/issues/14). Item 15 came out of
-running the Graph export against real knowledge and is open as
-[#15](https://github.com/nodelogicau/particulars/issues/15).
+Items 11–15 were raised later, from implementing merge records, workspace
+discovery, the MCP server, and the Graph export; all five were adopted upstream
+in the round that closed
+[#11](https://github.com/nodelogicau/particulars/issues/11)–[#15](https://github.com/nodelogicau/particulars/issues/15)
+(08dc17a and fd75a11): merge-record prose aligned to the example, the `.dkf`
+pointer blessed with discovery precedence stated, `particular_id` added to
+`synthesis_create`, promotion records (`pub_`) defined with effective scope,
+and `scope_wider_than_inputs` specified as a SHOULD-warn. The resolution is
+recorded under each item.
 
 Items 16–22 are the post-v0.1 record. Item 16 (unknown index entry types)
 was adopted in the `preserve-unknown-index-entries` round. Items 17–21 were
@@ -59,6 +60,10 @@ was raised 2026-08-31 and adopted 2026-09-01 in
 ([#22](https://github.com/nodelogicau/particulars/issues/22)): tolerance by
 immutability of the mirrored property, symmetric, with rebuilds preserving
 unknown entry fields. This CLI implements the whole round.
+
+Item 23 was raised on 2026-09-03 from shipping workspace conventions in
+v0.12.0 and is open as
+[#23](https://github.com/nodelogicau/particulars/issues/23).
 
 ## 1. Identifier format: `<prefix>_<uuidv7>` ([#1](https://github.com/nodelogicau/particulars/issues/1))
 
@@ -227,6 +232,8 @@ reader. Conformant readers ignore `.dkf` and still work from inside the
 workspace. Proposal: bless the pointer as an optional convention in
 `workspace-config`, or state that tools MAY offer equivalent redirection.
 
+*(Resolved: `.dkf` adopted as proposed in 08dc17a, with discovery precedence — explicit argument, then environment, then discovery — stated for the first time.)*
+
 ## 13. `synthesis_create` has no subject parameter ([#13](https://github.com/nodelogicau/particulars/issues/13))
 
 The tool table gives `synthesis_create(content, inputs[], unresolved, source)`,
@@ -235,6 +242,8 @@ receive it. The reference MCP server adds `particular_id` (accepting id, URI,
 label, or alias, as the other tools do). Proposal: add `particular_id` to the
 signature; implementations should not infer the subject from the inputs, since
 cross-particular inputs are explicitly allowed.
+
+*(Resolved: `particular_id` added to the signature in 08dc17a, accepting an id, URI, label, or alias as `claim_assert` does.)*
 
 ## 14. How does `knowledge_publish` promote an immutable claim? ([#14](https://github.com/nodelogicau/particulars/issues/14))
 
@@ -263,6 +272,8 @@ with the same "readers must not consult `dkf.yaml`" property that
 `claim-context` already requires — or state plainly that scope is fixed at
 assertion time and `knowledge_publish` selects which already-public claims to
 serve in a feed.
+
+*(Resolved: option 1 adopted in 08dc17a — `publishes/pub_<uuidv7>.yaml` promotion records; effective scope is the widest non-retracted promotion covering an object, widening only, never cascading.)*
 
 ## 15. A synthesis does not inherit its inputs' scope ([#15](https://github.com/nodelogicau/particulars/issues/15))
 
@@ -302,6 +313,26 @@ We suggest the second, specified rather than left to implementations, so
 `scope_wider_than_inputs` means the same thing everywhere. Whichever is chosen,
 the spec should say so explicitly — the silence reads as "not considered", and
 scope is exactly the field where a reader assumes someone thought it through.
+
+*(Resolved: the narrowed form adopted in fd75a11 — implementations SHOULD warn when a synthesis's effective scope is wider than any input's, reported as `scope_wider_than_inputs`.)*
+
+## 23. Workspace conventions file, delivered by the MCP server ([#23](https://github.com/nodelogicau/particulars/issues/23))
+
+`workspace-config` defines identity, base URI, and writer defaults; nothing in
+the workspace speaks to an agent. The generic discipline travels with the tool,
+but a workspace's own register — its topic vocabulary, its ingestion rules
+("feeds are sources, never subjects"), its authors' URIs — has no defined home
+and no defined route to a model. Observed: two models pointed at one feed, one
+extracting knowledge and the other cataloguing it; only the workspace can say
+"here, never", and several MCP clients never read the repository, so the
+server's `initialize` instructions are the only channel.
+
+v0.12.0 ships `CONVENTIONS.md` at the workspace root, or the file named by
+`workspace.conventions` in `dkf.yaml` (a relative path inside the workspace),
+appended to the instructions under a heading naming the file, capped at
+16 KiB; a missing configured file is a warning, never a startup failure.
+Proposal: bless the filename and the delivery as optional, so a workspace's
+rules survive a change of tool.
 
 ## 10. Smaller notes ([#10](https://github.com/nodelogicau/particulars/issues/10))
 
