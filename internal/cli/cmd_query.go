@@ -264,3 +264,64 @@ contents contradict — that is the agent's job.`,
 	cmd.Flags().BoolVar(&failOn, "fail-on-conflicts", false, "exit 4 if any particular is reported (for CI)")
 	return cmd
 }
+
+func (a *app) unresolvedCmd() *cobra.Command {
+	var includeNone bool
+	var scope string
+	cmd := &cobra.Command{
+		Use:   "unresolved [<particular>] [--include-none] [--scope <s>]",
+		Short: "List what each current synthesis admits it could not settle, oldest first",
+		Long: `For every particular (or merge class) with a current synthesis, prints that
+synthesis's unresolved text — the open questions the current belief admits.
+Superseded syntheses are history and are not listed. Entries whose unresolved
+is exactly "None identified" are hidden unless --include-none is given. Each
+entry carries the number of unsynthesised assertions in the class, so you can
+see where an open question may already have new evidence.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: a.run(func(cmd *cobra.Command, args []string) error {
+			ws, err := a.openWorkspace()
+			if err != nil {
+				return err
+			}
+			g, err := loadGraph(ws)
+			if err != nil {
+				return err
+			}
+			opts := query.UnresolvedOptions{IncludeNone: includeNone}
+			if len(args) == 1 {
+				p, err := resolveSubject(g, args[0])
+				if err != nil {
+					return err
+				}
+				opts.Subject = p.ID
+			}
+			if scope != "" {
+				if !dkf.ValidScope(dkf.Scope(scope)) {
+					return usageErr("invalid --scope %q", scope)
+				}
+				opts.Scope = dkf.Scope(scope)
+			}
+			entries := query.Unresolved(g, opts)
+			return a.emit(map[string]any{"entries": entries, "count": len(entries)}, func(w io.Writer) {
+				if len(entries) == 0 {
+					fmt.Fprintln(w, "Nothing unresolved.")
+					return
+				}
+				for _, e := range entries {
+					fmt.Fprintf(w, "%s  %s  %s\n", e.Particular, e.Label, e.Timestamp.UTC().Format("2006-01-02"))
+					fmt.Fprintf(w, "  synthesis:     %s\n", e.Synthesis)
+					fmt.Fprintf(w, "  unresolved:    %s\n", e.Unresolved)
+					if len(e.Members) > 1 {
+						fmt.Fprintf(w, "  members:       %s\n", strings.Join(e.Members, ", "))
+					}
+					if e.Unsynthesised > 0 {
+						fmt.Fprintf(w, "  unsynthesised: %d\n", e.Unsynthesised)
+					}
+				}
+			})
+		}),
+	}
+	cmd.Flags().BoolVar(&includeNone, "include-none", false, `include entries whose unresolved is "None identified"`)
+	cmd.Flags().StringVar(&scope, "scope", "", "only entries whose current synthesis has this effective scope")
+	return cmd
+}

@@ -1718,3 +1718,47 @@ func TestWorkspaceReportsConventions(t *testing.T) {
 		t.Errorf("text output: %q", text.stdout)
 	}
 }
+
+func TestUnresolved(t *testing.T) {
+	initWS(t)
+	if r := run(t, "", "unresolved", "--json"); r.code != 0 || r.js["count"].(float64) != 0 {
+		t.Errorf("empty workspace: %+v", r)
+	}
+	if r := run(t, "", "unresolved"); r.code != 0 || !strings.Contains(r.stdout, "Nothing unresolved.") {
+		t.Errorf("empty text: %+v", r)
+	}
+	define(t, "Project X")
+	define(t, "Project N")
+	a := assert(t, "Project X", "A")
+	b := assert(t, "Project X", "B")
+	sx := synth(t, "Project X", []string{a + ":thesis", b + ":antithesis"}, "--unresolved", "which one")
+	n := assert(t, "Project N", "N")
+	synth(t, "Project N", []string{n + ":thesis"}, "--unresolved", "None identified")
+
+	r := run(t, "", "unresolved", "--json")
+	if r.code != 0 || r.js["count"].(float64) != 1 {
+		t.Fatalf("unresolved: %+v", r)
+	}
+	e := r.js["entries"].([]any)[0].(map[string]any)
+	if e["synthesis"] != sx || e["unresolved"] != "which one" || e["unsynthesised"].(float64) != 0 || e["label"] != "Project X" {
+		t.Errorf("entry: %+v", e)
+	}
+	if r := run(t, "", "unresolved", "--include-none", "--json"); r.js["count"].(float64) != 2 {
+		t.Errorf("include-none: %+v", r.js)
+	}
+	text := run(t, "", "unresolved")
+	if !strings.Contains(text.stdout, "Project X") || !strings.Contains(text.stdout, "unresolved:    which one") || strings.Contains(text.stdout, "unsynthesised:") {
+		t.Errorf("text:\n%s", text.stdout)
+	}
+	assert(t, "Project X", "C after")
+	text = run(t, "", "unresolved", "Project X")
+	if !strings.Contains(text.stdout, "unsynthesised: 1") || !strings.Contains(text.stdout, "synthesis:     "+sx) {
+		t.Errorf("text with unsynthesised:\n%s", text.stdout)
+	}
+	if r := run(t, "", "unresolved", "Nobody", "--json"); r.code != 3 {
+		t.Errorf("unknown particular should exit 3, got %d", r.code)
+	}
+	if r := run(t, "", "unresolved", "--scope", "bogus", "--json"); r.code != 2 {
+		t.Errorf("invalid scope should exit 2, got %d", r.code)
+	}
+}

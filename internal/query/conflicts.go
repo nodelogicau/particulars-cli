@@ -164,24 +164,8 @@ func Reportable(r Report) bool {
 // when subject is "", one report per class keyed by its lowest particular),
 // filtered by the threshold and ordered by priority descending, then id.
 func Conflicts(g *store.Graph, subject string) []Report {
-	var targets []*dkf.Particular
-	if subject != "" {
-		if p := g.Particular(subject); p != nil {
-			targets = append(targets, p)
-		}
-	} else {
-		seen := map[string]bool{}
-		for _, p := range g.SortedParticulars() {
-			root := g.ClassOf(p.ID)[0]
-			if seen[root] {
-				continue
-			}
-			seen[root] = true
-			targets = append(targets, g.Particular(root))
-		}
-	}
 	out := []Report{}
-	for _, p := range targets {
+	for _, p := range classTargets(g, subject) {
 		r := Analyse(g, p)
 		if Reportable(r) {
 			out = append(out, r)

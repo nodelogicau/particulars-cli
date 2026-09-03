@@ -194,6 +194,7 @@ pushed by a workflow when a knowledge pull request is merged. See
 | `topics [P] [--scope S] [--include-retracted]` | Topics in use, with assertion and particular counts |
 | `lineage <id> [--depth N]` | Provenance tree of a claim or synthesis |
 | `conflicts [P] [--fail-on-conflicts]` | Unsynthesised claims and stale syntheses per particular |
+| `unresolved [P] [--include-none] [--scope S]` | What each current synthesis admits it could not settle, oldest first |
 | `index [--check]` | Rebuild `index.yaml`, or verify it (exit 4 on drift) |
 | `validate` | Structural and referential checks; exit 4 on errors |
 | `serve --mcp [--workspace D]` | Serve the workspace to an MCP client over stdio (see [docs/mcp.md](docs/mcp.md)) |

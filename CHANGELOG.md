@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- **`particulars unresolved` lists the open questions.** Every synthesis must
+  say what it could not settle, and until now nothing read that field back.
+  The new verb prints, for each particular (or merge class) with a current
+  synthesis, that synthesis's `unresolved` text — oldest current synthesis
+  first, so the longest-neglected question surfaces at the top — with the
+  number of unsynthesised assertions in the class, so a reader can see where a
+  question may already have new evidence. Superseded syntheses are history and
+  are not listed; entries saying exactly `None identified` are hidden unless
+  `--include-none`; `--scope` filters on the current synthesis's effective
+  scope. An empty list is success. `unresolved_list` is the MCP counterpart,
+  labelled a particulars extension like `topics_list`; the skill names the
+  verb beside `conflicts` as the second half of "what needs work".
+
 ## v0.12.0 — the workspace teaches its conventions
 
 - **Workspaces teach their conventions to MCP clients.** `CONVENTIONS.md` at

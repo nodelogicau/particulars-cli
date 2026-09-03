@@ -116,7 +116,7 @@ func TestInstructionsAndPrompt(t *testing.T) {
 	for _, tl := range tools.Tools {
 		names[tl.Name] = tl
 	}
-	for _, n := range []string{"particular_define", "particular_resolve", "particular_merge", "claim_assert", "claim_retract", "synthesis_create", "knowledge_recall", "conflict_detect", "lineage_trace", "topics_list", "workspace_status"} {
+	for _, n := range []string{"particular_define", "particular_resolve", "particular_merge", "claim_assert", "claim_retract", "synthesis_create", "knowledge_recall", "conflict_detect", "lineage_trace", "topics_list", "unresolved_list", "workspace_status"} {
 		if names[n] == nil {
 			t.Errorf("missing tool %s", n)
 		}
@@ -216,6 +216,13 @@ func TestSpecToolsRoundTrip(t *testing.T) {
 	if tp["count"].(float64) != 0 { // the only tagged claim (aid) was retracted above
 		t.Errorf("topics: %v", tp)
 	}
+	if ul := h.ok("unresolved_list", map[string]any{}); ul["count"].(float64) != 0 {
+		t.Errorf("unresolved_list should hide None identified: %+v", ul)
+	}
+	if ul := h.ok("unresolved_list", map[string]any{"include_none": true}); ul["count"].(float64) != 1 || ul["entries"].([]any)[0].(map[string]any)["synthesis"] != sid {
+		t.Errorf("unresolved_list include_none: %+v", ul)
+	}
+	h.fail("unresolved_list", map[string]any{"particular_id": "Nobody"}, "not_found")
 	if tp := h.ok("topics_list", map[string]any{"include_retracted": true}); tp["count"].(float64) != 1 {
 		t.Errorf("topics incl. retracted: %v", tp)
 	}
@@ -298,7 +305,7 @@ func TestStdioBinary(t *testing.T) {
 	}
 	defer func() { _ = cs.Close() }()
 	tools, err := cs.ListTools(context.Background(), nil)
-	if err != nil || len(tools.Tools) != 12 {
+	if err != nil || len(tools.Tools) != 13 {
 		t.Fatalf("tools: %v %v", err, tools)
 	}
 	res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{Name: "workspace_status", Arguments: map[string]any{}})

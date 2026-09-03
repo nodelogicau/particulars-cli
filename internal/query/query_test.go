@@ -1239,3 +1239,125 @@ func TestURLInContentNote(t *testing.T) {
 		t.Error("the note must not fail validation")
 	}
 }
+
+func (f *fixture) synthesisOpen(subject, unresolved string, at time.Time, inputs ...dkf.Input) *dkf.Synthesis {
+	f.t.Helper()
+	s := &dkf.Synthesis{ID: dkf.NewID(dkf.TypeSynthesis), Subject: subject, Content: "synthesis", Inputs: inputs, Unresolved: unresolved, Source: dkf.Source{Harness: "test"}, Method: dkf.DefaultMethod, Timestamp: at, Context: dkf.Context{Scope: dkf.ScopePersonal}}
+	if err := f.w.Create(s); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := f.w.UpsertIndex(s); err != nil {
+		f.t.Fatal(err)
+	}
+	return s
+}
+
+func TestUnresolved(t *testing.T) {
+	f := newFixture(t)
+	x := f.particular("Project X")
+	y := f.particular("Project Y")
+	w := f.particular("Project W")
+	n := f.particular("Project N")
+	e := f.particular("Project E")
+	ma := f.particular("Merged A")
+	mb := f.particular("Merged B")
+	r := f.particular("Project R")
+	day := 24 * time.Hour
+
+	// X: two syntheses in a chain, then a claim after the current one.
+	xa := f.claim(x.ID, "A")
+	xb := f.claim(x.ID, "B")
+	x1 := f.synthesisOpen(x.ID, "A is open", ts, in(xa.ID, dkf.RoleThesis), in(xb.ID, dkf.RoleAntithesis))
+	x2 := f.synthesisOpen(x.ID, "B is open", ts.Add(day), in(x1.ID, dkf.RoleThesis))
+	f.claim(x.ID, "D after synthesis")
+	// Y: claims only.
+	f.claim(y.ID, "one")
+	f.claim(y.ID, "two")
+	f.claim(y.ID, "three")
+	// W: the oldest current synthesis.
+	wa := f.claim(w.ID, "A")
+	ws := f.synthesisOpen(w.ID, "W open", ts.Add(-day), in(wa.ID, dkf.RoleThesis))
+	// N: the conventional empty value.
+	na := f.claim(n.ID, "A")
+	ns := f.synthesisOpen(n.ID, NoneIdentified, ts, in(na.ID, dkf.RoleThesis))
+	// E: a non-conventional near-miss is still listed.
+	ea := f.claim(e.ID, "A")
+	es := f.synthesisOpen(e.ID, "nothing", ts.Add(2*day), in(ea.ID, dkf.RoleThesis))
+	// Merged class with the synthesis on the higher member.
+	mba := f.claim(mb.ID, "A")
+	ms := f.synthesisOpen(mb.ID, "merged open", ts.Add(3*day), in(mba.ID, dkf.RoleThesis))
+	f.merge(ma.URI, mb.URI)
+	// R: the newest synthesis retracted; its predecessor is current.
+	ra := f.claim(r.ID, "A")
+	r1 := f.synthesisOpen(r.ID, "r1 open", ts.Add(4*day), in(ra.ID, dkf.RoleThesis))
+	r2 := f.synthesisOpen(r.ID, "r2 open", ts.Add(5*day), in(r1.ID, dkf.RoleThesis))
+	f.retract(r2.ID)
+
+	g := f.graph()
+	entries := Unresolved(g, UnresolvedOptions{})
+	byP := map[string]UnresolvedEntry{}
+	for _, en := range entries {
+		byP[en.Particular] = en
+	}
+	if _, ok := byP[y.ID]; ok {
+		t.Error("a class without a synthesis should not be listed")
+	}
+	if _, ok := byP[n.ID]; ok {
+		t.Error("None identified should be hidden by default")
+	}
+	ex := byP[x.ID]
+	if ex.Synthesis != x2.ID || ex.Unresolved != "B is open" || ex.Unsynthesised != 1 || ex.Members != nil {
+		t.Errorf("X entry: %+v", ex)
+	}
+	if ee := byP[e.ID]; ee.Synthesis != es.ID || ee.Unresolved != "nothing" {
+		t.Errorf("E entry: %+v", ee)
+	}
+	if er := byP[r.ID]; er.Synthesis != r1.ID || er.Unresolved != "r1 open" {
+		t.Errorf("retracted current should fall back: %+v", er)
+	}
+	lower, higher := ma.ID, mb.ID
+	if higher < lower {
+		lower, higher = higher, lower
+	}
+	if _, ok := byP[higher]; ok {
+		t.Error("merged class should be keyed by its lowest member only")
+	}
+	if em := byP[lower]; em.Synthesis != ms.ID || len(em.Members) != 2 {
+		t.Errorf("merged entry: %+v", em)
+	}
+	if len(entries) != 5 || entries[0].Synthesis != ws.ID || entries[1].Synthesis != x2.ID || entries[4].Synthesis != r1.ID {
+		t.Errorf("ordering (oldest current first): %+v", entries)
+	}
+
+	withNone := Unresolved(g, UnresolvedOptions{IncludeNone: true})
+	if len(withNone) != 6 {
+		t.Errorf("include none: %d entries", len(withNone))
+	}
+	found := false
+	for _, en := range withNone {
+		if en.Synthesis == ns.ID && en.Unresolved == NoneIdentified {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("include none should list the conventional entry")
+	}
+	if one := Unresolved(g, UnresolvedOptions{Subject: x.ID}); len(one) != 1 || one[0].Synthesis != x2.ID {
+		t.Errorf("single subject: %+v", one)
+	}
+	if none := Unresolved(g, UnresolvedOptions{Subject: y.ID}); len(none) != 0 {
+		t.Errorf("subject without synthesis: %+v", none)
+	}
+
+	// Scope follows the current synthesis's effective scope.
+	f.promote(dkf.ScopeOrganisation, x2.ID)
+	g = f.graph()
+	if org := Unresolved(g, UnresolvedOptions{Scope: dkf.ScopeOrganisation}); len(org) != 1 || org[0].Synthesis != x2.ID {
+		t.Errorf("promoted scope: %+v", org)
+	}
+	for _, en := range Unresolved(g, UnresolvedOptions{Scope: dkf.ScopePersonal}) {
+		if en.Synthesis == x2.ID {
+			t.Error("promoted synthesis should not be listed at its asserted scope")
+		}
+	}
+}

@@ -166,6 +166,12 @@ jobs:
             echo '```'
             particulars conflicts || true
             echo '```'
+            echo
+            echo '### Questions the current beliefs admit are open'
+            echo
+            echo '```'
+            particulars unresolved || true
+            echo '```'
           } > conflicts.md
           cat conflicts.md >> "$GITHUB_STEP_SUMMARY"
 

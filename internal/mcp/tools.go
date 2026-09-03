@@ -49,6 +49,9 @@ func (s *Server) registerTools() {
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "topics_list", Annotations: readOnly,
 		Description: "(particulars extension, not part of the DKF tool set) List topic tags in use with counts, so you reuse existing tags rather than inventing near-duplicates."},
 		s.topicsList)
+	sdk.AddTool(s.srv, &sdk.Tool{Name: "unresolved_list", Annotations: readOnly,
+		Description: "(particulars extension, not part of the DKF tool set) What each current synthesis admits it could not settle, oldest first — the open questions of the current belief, with the number of unsynthesised assertions in each class so you can see where a question may already have new evidence. Entries saying \"None identified\" are hidden unless include_none."},
+		s.unresolvedList)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "workspace_status", Annotations: readOnly,
 		Description: "(particulars extension, not part of the DKF tool set) The bound workspace: root, id, base-uri, object counts, validate summary, open conflicts, and — when inside a git checkout — workspace files not yet committed. Read-only; never runs a git command that writes."},
 		s.workspaceStatus)
@@ -614,6 +617,29 @@ func (s *Server) lineageTrace(ctx context.Context, req *sdk.CallToolRequest, in 
 		return errResult(err), nil, nil
 	}
 	return okResult("lineage of " + in.ClaimID), tree, nil
+}
+
+type unresolvedIn struct {
+	ParticularID string `json:"particular_id,omitempty" jsonschema:"restrict to one particular's merge class (id, URI, label, or alias)"`
+	Scope        string `json:"scope,omitempty" jsonschema:"only entries whose current synthesis has this effective scope"`
+	IncludeNone  bool   `json:"include_none,omitempty" jsonschema:"include entries whose unresolved is exactly \"None identified\""`
+}
+
+func (s *Server) unresolvedList(ctx context.Context, req *sdk.CallToolRequest, in unresolvedIn) (*sdk.CallToolResult, any, error) {
+	g, err := s.load()
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	opts := query.UnresolvedOptions{IncludeNone: in.IncludeNone, Scope: dkf.Scope(in.Scope)}
+	if in.ParticularID != "" {
+		p, err := resolveOne(g, in.ParticularID)
+		if err != nil {
+			return errResult(err), nil, nil
+		}
+		opts.Subject = p.ID
+	}
+	entries := query.Unresolved(g, opts)
+	return okResult(fmt.Sprintf("%d unresolved", len(entries))), map[string]any{"entries": entries, "count": len(entries)}, nil
 }
 
 type topicsIn struct {

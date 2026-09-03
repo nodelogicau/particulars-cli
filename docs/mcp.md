@@ -178,6 +178,7 @@ particulars extensions (not part of the DKF tool set):
 | Tool | Returns |
 |---|---|
 | `topics_list` | `{topics: [{topic, assertions, particulars}], count}` |
+| `unresolved_list` | `{entries: [{particular, label, uri, members?, synthesis, timestamp, unresolved, unsynthesised}], count}` — each current synthesis's `unresolved`, oldest first; `particular_id?`, `scope?`, `include_none?` |
 | `workspace_status` | root, id, base-uri, counts, `validate` summary, conflict reports, and — inside a git checkout — `git.uncommitted` file paths (read-only) |
 
 `source` is `{author?, harness?, model?, document?}`; `context` is `{scope?, topics[]?}`.

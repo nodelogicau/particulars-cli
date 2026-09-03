@@ -26,6 +26,7 @@ Every time you are about to rely on or record knowledge about some thing X:
 particulars particular resolve "X" --json        # does X exist? (exit 3 = no)
 particulars recall "X" --json                    # what is already believed?
 particulars conflicts "X" --json                 # what has not been reconciled?
+particulars unresolved "X" --json                # what does the current belief admit is open?
       │
       ▼  reason about it yourself
       │
@@ -87,6 +88,7 @@ modifier inside double quotes too, so `"$id:thesis"` silently becomes
 | Which tags exist | `particulars topics ["<thing>"] --json` → `{topics: [{topic, assertions, particulars}]}`; check before inventing a new tag |
 | Why is it believed | `particulars lineage <id> [--depth <n>] --json` → nested tree of inputs with roles |
 | What needs work | `particulars conflicts ["<thing>"] --json` → `{reports: [{particular, current, unsynthesised, stale, priority}]}` |
+| What is still open | `particulars unresolved ["<thing>"] [--include-none] --json` → `{entries: [{particular, synthesis, timestamp, unresolved, unsynthesised}]}`; each current synthesis's `unresolved`, oldest first — the questions the belief admits, beside the structure `conflicts` reports. `None identified` is hidden unless `--include-none` |
 | Show the shape | `particulars export --format mermaid --subject "<thing>" [--depth 2] [--include-retracted]` → a diagram to paste into a PR (`--format dot` for Graphviz) |
 | Withdraw | `particulars retract <id> --reason "<why>" [--kind defect\|supersession\|provenance-failure] [--superseded-by <id>] --json` — claims, syntheses, merges, or promotions; append-only, never deletes (`claim retract` is a deprecated alias) |
 | Share it wider | `particulars publish <id>... --scope organisation\|public [--reason "<why>"] --json` — ids only; widens, never narrows, never cascades to a synthesis's inputs |
