@@ -1706,16 +1706,51 @@ func TestWorkspaceReportsConventions(t *testing.T) {
 	if _, has := r.js["conventions"]; has {
 		t.Errorf("no conventions document, no key: %+v", r.js)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "CONVENTIONS.md"), []byte("topic rules"), 0o644); err != nil {
+	// A v0.12.0 CONVENTIONS.md alone is noticed, not read.
+	if err := os.WriteFile(filepath.Join(dir, "CONVENTIONS.md"), []byte("old rules"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	r = run(t, "", "workspace", "--json")
-	if r.js["conventions"] != "CONVENTIONS.md" {
-		t.Errorf("default conventions reported: %+v", r.js)
+	if _, has := r.js["conventions"]; has || r.js["conventions_legacy"] != "CONVENTIONS.md" || r.stderr != "" || len(r.js["warnings"].([]any)) != 1 {
+		t.Errorf("legacy file: %+v stderr=%q", r.js, r.stderr)
 	}
 	text := run(t, "", "workspace")
-	if !strings.Contains(text.stdout, "conventions: CONVENTIONS.md") {
-		t.Errorf("text output: %q", text.stdout)
+	if !strings.Contains(text.stderr, "CONVENTIONS.md is no longer read") {
+		t.Errorf("legacy notice on stderr: %q", text.stderr)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "dkf.md"), []byte("topic rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r = run(t, "", "workspace", "--json")
+	if r.js["conventions"] != "dkf.md" {
+		t.Errorf("default conventions reported: %+v", r.js)
+	}
+	if _, has := r.js["conventions_legacy"]; has {
+		t.Errorf("dkf.md silences the legacy notice: %+v", r.js)
+	}
+	text = run(t, "", "workspace")
+	if !strings.Contains(text.stdout, "conventions: dkf.md") || text.stderr != "" {
+		t.Errorf("text output: %q stderr=%q", text.stdout, text.stderr)
+	}
+	// An invalid key warns and is ignored; every verb still opens the workspace.
+	cfgPath := filepath.Join(dir, "dkf.yaml")
+	cfg, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgPath, []byte(strings.Replace(string(cfg), "workspace:\n", "workspace:\n  conventions: ../secrets.md\n", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r = run(t, "", "workspace", "--json")
+	if r.code != 0 || r.js["conventions_invalid"] != "../secrets.md" || r.js["conventions"] != "dkf.md" || r.stderr != "" || len(r.js["warnings"].([]any)) != 1 {
+		t.Errorf("invalid key: code %d %+v stderr=%q", r.code, r.js, r.stderr)
+	}
+	text = run(t, "", "workspace")
+	if !strings.Contains(text.stderr, "../secrets.md") {
+		t.Errorf("invalid key warning on stderr: %q", text.stderr)
+	}
+	if r := run(t, "", "topics", "--json"); r.code != 0 {
+		t.Errorf("other verbs must open a workspace with an invalid key: %d %s", r.code, r.stderr)
 	}
 }
 

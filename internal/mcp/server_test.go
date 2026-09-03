@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -334,7 +335,7 @@ func TestInstructionsCarryWorkspaceConventions(t *testing.T) {
 		t.Fatal(err)
 	}
 	ins := New(Options{Workspace: w, Version: "test"}).Instructions()
-	if !strings.Contains(ins, "## Workspace conventions (CONVENTIONS.md)") || !strings.Contains(ins, "Compose tags, never compound.") {
+	if !strings.Contains(ins, "## Workspace conventions (dkf.md)") || !strings.Contains(ins, "Compose tags, never compound.") {
 		t.Errorf("default conventions should follow the skill body:\n%s", ins[len(ins)-300:])
 	}
 	if strings.Index(ins, "Workspace conventions") < strings.Index(ins, "Recall **before** you assert") {
@@ -354,16 +355,27 @@ func TestInstructionsCarryWorkspaceConventions(t *testing.T) {
 	if !strings.Contains(ins2, "(docs/TOPICS.md)") || !strings.Contains(ins2, "tag vocabulary") {
 		t.Error("configured conventions should be delivered under their own name")
 	}
-	// An oversized document is truncated with a note naming the file.
+	// An oversized document is truncated with a note naming the file: at
+	// least 16 KiB delivered, cut only on a character boundary — a character
+	// straddling the mark is included, never dropped.
 	w3 := mk(store.NewConfig())
-	if err := os.WriteFile(filepath.Join(w3.Root, store.ConventionsFile), bytes.Repeat([]byte("x"), 20*1024), 0o644); err != nil {
+	big := append(bytes.Repeat([]byte("x"), 16*1024-1), []byte("é")...) // é = 0xC3 0xA9 straddles 16 KiB
+	big = append(big, bytes.Repeat([]byte("y"), 4*1024)...)
+	if err := os.WriteFile(filepath.Join(w3.Root, store.ConventionsFile), big, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	ins3 := New(Options{Workspace: w3, Version: "test"}).Instructions()
-	if !strings.Contains(ins3, "[truncated — read CONVENTIONS.md") {
-		t.Error("oversized conventions should truncate with a note")
+	marker := "[truncated — read dkf.md"
+	if !strings.Contains(ins3, marker) {
+		t.Fatal("oversized conventions should truncate with a note")
 	}
-	if len(ins3) > len(ins)+21*1024 {
+	section := ins3[strings.Index(ins3, "## Workspace conventions (dkf.md)"):strings.Index(ins3, marker)]
+	body := section[strings.Index(section, "xxx"):]
+	body = strings.TrimRight(body, "\n")
+	if !utf8.ValidString(body) || !strings.HasSuffix(body, "é") || len(body) < 16*1024 {
+		t.Errorf("cut must land after the straddling character: valid=%v len=%d tail=%q", utf8.ValidString(body), len(body), body[len(body)-4:])
+	}
+	if len(ins3) > len(ins)+17*1024 {
 		t.Errorf("truncation should bound the instructions, got %d bytes", len(ins3))
 	}
 	// No document, no section; a configured-but-missing file is omitted.
@@ -376,5 +388,49 @@ func TestInstructionsCarryWorkspaceConventions(t *testing.T) {
 	w5 := mk(cfg5)
 	if strings.Contains(New(Options{Workspace: w5, Version: "test"}).Instructions(), "Workspace conventions") {
 		t.Error("a missing configured file is omitted, not partially rendered")
+	}
+}
+
+func TestConventionsResource(t *testing.T) {
+	h := newHarness(t, "res-test", "ben")
+	if rs, err := h.cs.ListResources(context.Background(), nil); err != nil || len(rs.Resources) != 0 {
+		t.Fatalf("no document, no resource: %v %v", err, rs)
+	}
+	ws, err := store.Init(filepath.Join(t.TempDir(), "kb"), store.NewConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(ws.Root, store.ConventionsFile)
+	if err := os.WriteFile(path, []byte("first"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv := New(Options{Workspace: ws, Version: "test"})
+	st, ct := sdk.NewInMemoryTransports()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = srv.Run(ctx, st) }()
+	cs, err := sdk.NewClient(&sdk.Implementation{Name: "res-test", Version: "1"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	rs, err := cs.ListResources(ctx, nil)
+	if err != nil || len(rs.Resources) != 1 {
+		t.Fatalf("one resource expected: %v %v", err, rs)
+	}
+	r := rs.Resources[0]
+	if r.Name != "dkf.md" || r.MIMEType != "text/markdown" || !strings.HasPrefix(r.URI, "file:///") || !strings.HasSuffix(r.URI, "/dkf.md") {
+		t.Errorf("resource: %+v", r)
+	}
+	// Read on demand: an edit after startup is visible.
+	if err := os.WriteFile(path, []byte("second"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rr, err := cs.ReadResource(ctx, &sdk.ReadResourceParams{URI: r.URI})
+	if err != nil || len(rr.Contents) != 1 || rr.Contents[0].Text != "second" {
+		t.Errorf("read: %v %+v", err, rr)
+	}
+	if !strings.Contains(srv.Instructions(), "first") {
+		t.Error("instructions are a startup snapshot")
 	}
 }

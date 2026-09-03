@@ -29,14 +29,27 @@ directory containing dkf.yaml or a .dkf pointer file. Exit 5 when none applies.`
 			if res.Pointer != "" {
 				out["pointer"] = res.Pointer
 			}
-			convRel, convContent, convErr := ws.Conventions()
+			convRel, _, convErr := ws.Conventions()
 			if convRel != "" {
 				out["conventions"] = convRel
 				if convErr != nil {
 					out["conventions_missing"] = true
 				}
 			}
-			_ = convContent
+			convWarn := ws.ConventionsWarning()
+			if convWarn != "" {
+				out["conventions_invalid"] = ws.Config.Workspace.Conventions
+			}
+			legacy := ws.LegacyConventions()
+			if legacy {
+				out["conventions_legacy"] = store.LegacyConventionsFile
+			}
+			if convWarn != "" {
+				a.warnings = append(a.warnings, convWarn)
+			}
+			if legacy {
+				a.warnings = append(a.warnings, store.LegacyConventionsNotice)
+			}
 			return a.emit(out, func(w io.Writer) {
 				fmt.Fprintf(w, "%s\n  via: %s", res.Root, res.Via)
 				if res.Pointer != "" {

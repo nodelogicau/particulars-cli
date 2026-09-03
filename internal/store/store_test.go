@@ -817,18 +817,67 @@ func TestIndexUnknownEntryFieldSurvives(t *testing.T) {
 }
 
 func TestConventionsResolution(t *testing.T) {
-	// Config validation: the path stays inside the workspace.
-	for _, bad := range []string{"/abs/path.md", "../outside.md", "docs/../../x.md"} {
+	// An invalid key never fails validation: it is treated as unset and
+	// reported, so the workspace opens under every tool.
+	for _, bad := range []string{"/abs/path.md", "../outside.md", "docs/../../x.md", ".."} {
 		cfg := NewConfig()
 		cfg.Workspace.Conventions = bad
-		if err := cfg.Validate(); err == nil {
-			t.Errorf("conventions %q should fail validation", bad)
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("conventions %q must not fail validation: %v", bad, err)
+		}
+		if rel, warn := cfg.ConventionsPath(); rel != "" || !strings.Contains(warn, bad) {
+			t.Errorf("conventions %q: rel %q warn %q", bad, rel, warn)
 		}
 	}
 	okCfg := NewConfig()
 	okCfg.Workspace.Conventions = "docs/TOPICS.md"
-	if err := okCfg.Validate(); err != nil {
-		t.Errorf("relative conventions path should validate: %v", err)
+	if rel, warn := okCfg.ConventionsPath(); rel != "docs/TOPICS.md" || warn != "" {
+		t.Errorf("relative conventions path: %q %q", rel, warn)
+	}
+	// Invalid key falls back to the default file, with a warning.
+	badCfg := NewConfig()
+	badCfg.Workspace.Conventions = "../outside.md"
+	wb, err := Init(filepath.Join(t.TempDir(), "kb"), badCfg)
+	if err != nil {
+		t.Fatalf("workspace with an invalid key must open: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wb.Root, ConventionsFile), []byte("rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rel, content, err := wb.Conventions(); rel != ConventionsFile || string(content) != "rules" || err != nil {
+		t.Errorf("invalid key should fall back to the default: %q %q %v", rel, content, err)
+	}
+	if wb.ConventionsWarning() == "" {
+		t.Error("invalid key should warn")
+	}
+	// Legacy: CONVENTIONS.md alone is noticed, never read.
+	wl := newWS(t)
+	if err := os.WriteFile(filepath.Join(wl.Root, LegacyConventionsFile), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rel, _, _ := wl.Conventions(); rel != "" {
+		t.Errorf("legacy file must not be read, got %q", rel)
+	}
+	if !wl.LegacyConventions() {
+		t.Error("legacy file alone should be noticed")
+	}
+	if err := os.WriteFile(filepath.Join(wl.Root, ConventionsFile), []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if wl.LegacyConventions() {
+		t.Error("dkf.md beside CONVENTIONS.md silences the notice")
+	}
+	cfgL := NewConfig()
+	cfgL.Workspace.Conventions = "TOPICS.md"
+	wl2, err := Init(filepath.Join(t.TempDir(), "kb"), cfgL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wl2.Root, LegacyConventionsFile), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if wl2.LegacyConventions() {
+		t.Error("a configured key silences the notice")
 	}
 	// Resolution: nothing, default, configured, configured-but-missing.
 	w := newWS(t)

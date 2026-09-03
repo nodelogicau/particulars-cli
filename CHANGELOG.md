@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **Workspace conventions as the spec now blesses them** (particulars-cli#8,
+  after nodelogicau/particulars#23 was accepted). The default document is
+  **`dkf.md`**, the prose sibling of `dkf.yaml`, not `CONVENTIONS.md`: a
+  generic name can already exist for another tool and would be delivered
+  without anyone having asked. There is no fallback — a `CONVENTIONS.md` left
+  from v0.12.0 is not read; `workspace` and `serve --mcp` print a notice
+  saying so (`workspace --json`: `conventions_legacy`) until it is renamed or
+  named in `workspace.conventions`. The notice is removed in the release after
+  this one. An invalid `workspace.conventions` (absolute, or escaping the
+  workspace — still a lexical check) no longer refuses to open the workspace:
+  it is treated as unset and reported (`conventions_invalid`). Truncation
+  honours the spec's floor and boundary: at least 16 KiB, cut only on a
+  character boundary, advancing past a character that straddles the mark
+  rather than splitting it. The document is also listed as an MCP **resource**
+  (`file://…`, `text/markdown`), read on each request, for clients that never
+  surface `instructions`. Docs: `.dkf` is blessed by the spec, not an
+  extension; `AGENTS.md` is a good value for the key when the workspace
+  directory is its own agent scope.
+
 ## v0.13.0 — the open questions are listable
 
 - **`particulars unresolved` lists the open questions.** Every synthesis must

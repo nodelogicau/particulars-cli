@@ -17,9 +17,18 @@ import (
 // EnvWorkspace is the environment variable consulted when no --workspace flag is given.
 const EnvWorkspace = "DKF_WORKSPACE"
 
-// ConventionsFile is the default conventions document, included in MCP
-// instructions when present at the workspace root.
-const ConventionsFile = "CONVENTIONS.md"
+// ConventionsFile is the default conventions document — the prose sibling of
+// dkf.yaml — included in MCP instructions when present at the workspace root.
+// The name is DKF-specific on purpose: a generic one can already exist for
+// another tool and would be delivered without anyone having asked.
+const ConventionsFile = "dkf.md"
+
+// LegacyConventionsFile is the default before v0.14.0. It is no longer read;
+// its presence without a replacement is noticed by `workspace` and `serve`.
+const LegacyConventionsFile = "CONVENTIONS.md"
+
+// LegacyConventionsNotice is the migration message for LegacyConventionsFile.
+const LegacyConventionsNotice = LegacyConventionsFile + " is no longer read; rename it to " + ConventionsFile + " or set workspace.conventions in " + ConfigFile
 
 // PointerFile is the optional redirect file honoured during discovery: its
 // first non-blank, non-comment line is a path (relative to the file's
@@ -611,12 +620,12 @@ func writeAtomic(path string, data []byte) error {
 }
 
 // Conventions returns the workspace's conventions document: the file named
-// by workspace.conventions, or CONVENTIONS.md at the root when the key is
-// unset. rel is "" when neither applies. A missing default is silence; a
-// missing configured file returns its rel with an error, so callers can say
-// which file dkf.yaml promised.
+// by workspace.conventions, or dkf.md at the root when the key is unset or
+// invalid (see Config.ConventionsPath). rel is "" when neither applies. A
+// missing default is silence; a missing configured file returns its rel with
+// an error, so callers can say which file dkf.yaml promised.
 func (w *Workspace) Conventions() (rel string, content []byte, err error) {
-	rel = w.Config.Workspace.Conventions
+	rel, _ = w.Config.ConventionsPath()
 	if rel == "" {
 		data, derr := os.ReadFile(filepath.Join(w.Root, ConventionsFile))
 		if derr != nil {
@@ -629,4 +638,26 @@ func (w *Workspace) Conventions() (rel string, content []byte, err error) {
 		return rel, nil, err
 	}
 	return rel, data, nil
+}
+
+// ConventionsWarning is the warning for an invalid workspace.conventions key,
+// or "" when the key is absent or valid.
+func (w *Workspace) ConventionsWarning() string {
+	_, warning := w.Config.ConventionsPath()
+	return warning
+}
+
+// LegacyConventions reports whether the root holds CONVENTIONS.md with
+// neither dkf.md nor a usable workspace.conventions — a workspace written for
+// v0.12.0 whose document is no longer read. Callers print
+// LegacyConventionsNotice; the file is never delivered.
+func (w *Workspace) LegacyConventions() bool {
+	if rel, _ := w.Config.ConventionsPath(); rel != "" {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(w.Root, ConventionsFile)); err == nil {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(w.Root, LegacyConventionsFile))
+	return err == nil
 }

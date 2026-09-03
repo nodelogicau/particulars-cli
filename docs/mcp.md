@@ -136,13 +136,30 @@ the same command by hand from the same directory to see the message.
 
 The generic discipline is the skill's; a workspace's own conventions — its
 topic vocabulary, local naming, what goes in which scope — are the
-workspace's. Put them in `CONVENTIONS.md` at the workspace root (or name
-another file with `workspace.conventions: TOPICS.md` in `dkf.yaml`) and the
-server appends them to the `initialize` instructions under a heading naming
-the file, truncated at 16 KiB. This is how conventions reach clients that
-never read the repository — Claude Desktop above all. `particulars workspace`
-shows which file applies; a configured file that is missing is a stderr
-warning, never a failure. Keep it short: it rides in every session's context.
+workspace's. Put them in `dkf.md` at the workspace root — the prose sibling of
+`dkf.yaml`, as the [DKF specification](https://github.com/nodelogicau/particulars#dkfmd)
+names it — or name another file with `workspace.conventions: TOPICS.md` in
+`dkf.yaml`, and the server appends them to the `initialize` instructions under
+a heading naming the file. At least the first 16 KiB is always delivered, cut
+only on a character boundary, with a note naming the file when longer. This
+is how conventions reach clients that never read the repository — Claude
+Desktop above all. For clients that never surface `instructions` either, the
+same document is listed as an MCP resource (`file://…/dkf.md`, `text/markdown`),
+read from disk on each request, so an edit after startup is visible there while
+the instructions stay a startup snapshot.
+
+`particulars workspace` shows which file applies. A configured file that is
+missing is a stderr warning, never a failure; so is a `workspace.conventions`
+that is absolute or escapes the workspace — the key is then treated as unset
+and reported as `conventions_invalid`, because a workspace must open under
+every tool. The name is DKF-specific on purpose: a generic file such as
+`CONVENTIONS.md` or `AGENTS.md` can already exist at a repository root for
+another tool and would be delivered without anyone having asked. `AGENTS.md`
+is nevertheless a good *value* for the key when the workspace directory is its
+own agent scope (`knowledge/AGENTS.md`): harnesses that read the repository
+then pick it up with no DKF support at all. A `CONVENTIONS.md` left from
+v0.12.0 is not read; `workspace` and `serve` say so until you rename it or
+name it in the key. Keep it short: it rides in every session's context.
 
 A workspace that ingests feeds or documents should state its ingestion
 register here — *extract the facts; the feed itself is never a subject* —

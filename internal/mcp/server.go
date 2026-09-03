@@ -7,9 +7,12 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -46,10 +49,39 @@ func New(o Options) *Server {
 	s := &Server{ws: o.Workspace, opts: o}
 	s.srv = sdk.NewServer(&sdk.Implementation{Name: "particulars", Version: skill.NormaliseVersion(o.Version)}, &sdk.ServerOptions{Instructions: s.instructions()})
 	s.registerTools()
+	s.registerConventionsResource()
 	s.srv.AddPrompt(&sdk.Prompt{Name: PromptName, Description: "The particulars discipline: recall before you assert, evidence on every claim, honest unresolved on every synthesis."}, func(ctx context.Context, req *sdk.GetPromptRequest) (*sdk.GetPromptResult, error) {
 		return &sdk.GetPromptResult{Description: "particulars discipline", Messages: []*sdk.PromptMessage{{Role: "user", Content: &sdk.TextContent{Text: s.instructions()}}}}, nil
 	})
 	return s
+}
+
+// registerConventionsResource lists the workspace's conventions document as
+// a resource when one is readable at startup — the channel for clients that
+// never surface instructions. The content is read at request time, so a
+// client attaching it after an edit sees the edit; instructions, like the
+// workspace binding, are a startup snapshot.
+func (s *Server) registerConventionsResource() {
+	rel, _, err := s.ws.Conventions()
+	if rel == "" || err != nil {
+		return
+	}
+	abs := filepath.Join(s.ws.Root, filepath.FromSlash(rel))
+	p := filepath.ToSlash(abs)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p // a Windows volume path still needs the file:/// form
+	}
+	uri := (&url.URL{Scheme: "file", Path: p}).String()
+	s.srv.AddResource(&sdk.Resource{
+		URI: uri, Name: rel, Title: "Workspace conventions", MIMEType: "text/markdown",
+		Description: "This workspace's own conventions for agents — topic vocabulary, ingestion rules, scopes — delivered with the server instructions and readable here in full.",
+	}, func(ctx context.Context, req *sdk.ReadResourceRequest) (*sdk.ReadResourceResult, error) {
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			return nil, err
+		}
+		return &sdk.ReadResourceResult{Contents: []*sdk.ResourceContents{{URI: uri, MIMEType: "text/markdown", Text: string(data)}}}, nil
+	})
 }
 
 // MCP exposes the underlying SDK server (for transports other than Run).
@@ -71,9 +103,16 @@ func (s *Server) instructions() string {
 	// the repository. Read once, at startup, like the workspace binding.
 	if rel, content, err := s.ws.Conventions(); err == nil && len(content) > 0 {
 		b.WriteString("\n\n## Workspace conventions (" + rel + ")\n\n")
+		// The spec's 16 KiB is a floor, and the cut must land on a
+		// character boundary; both hold only if a character straddling the
+		// mark is included, so the cut advances to the next rune start.
 		const maxConventions = 16 * 1024
 		if len(content) > maxConventions {
-			b.Write(content[:maxConventions])
+			cut := maxConventions
+			for cut < len(content) && !utf8.RuneStart(content[cut]) {
+				cut++
+			}
+			b.Write(content[:cut])
 			b.WriteString("\n\n[truncated — read " + rel + " in the workspace for the rest]")
 		} else {
 			b.Write(content)

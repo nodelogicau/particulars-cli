@@ -33,7 +33,7 @@ type WorkspaceConfig struct {
 	// Conventions names the workspace's conventions document — prose for
 	// agents (topic vocabulary, local naming) delivered to MCP clients with
 	// the initialize instructions. Relative to the workspace root; when
-	// empty, CONVENTIONS.md at the root applies if present.
+	// empty, dkf.md at the root applies if present. See ConventionsPath.
 	Conventions string `yaml:"conventions,omitempty"`
 }
 
@@ -66,20 +66,33 @@ func (c Config) Validate() error {
 	if c.Defaults.Scope != "" && !dkf.ValidScope(c.Defaults.Scope) {
 		return fmt.Errorf("%s: invalid defaults.scope %q", ConfigFile, c.Defaults.Scope)
 	}
-	if v := c.Workspace.Conventions; v != "" {
-		clean := path.Clean(filepath.ToSlash(v))
-		// filepath.IsAbs alone is platform-dependent — on Windows "/x" has
-		// no volume and reports false — so a leading slash is checked on the
-		// slashed form too: the path must be relative on every platform the
-		// workspace is cloned to.
-		if filepath.IsAbs(v) || strings.HasPrefix(clean, "/") || clean == ".." || strings.HasPrefix(clean, "../") {
-			return fmt.Errorf("%s: workspace.conventions %q must be a relative path inside the workspace", ConfigFile, v)
-		}
-	}
 	if !dkf.ValidBaseURI(c.Workspace.BaseURI) {
 		return fmt.Errorf("%w: %s: workspace.base-uri %q must end in \"/\"", ErrInvalidBaseURI, ConfigFile, c.Workspace.BaseURI)
 	}
 	return nil
+}
+
+// ConventionsPath returns workspace.conventions when it names a relative path
+// inside the workspace, or "" with a warning when it does not. The check is
+// lexical, on the cleaned slash-normalised path: an absolute path, a leading
+// slash, or a first segment of ".." is invalid. An invalid value never makes
+// the workspace invalid — readers that predate the key ignore it, and a
+// strict rule would open the workspace under an older tool and refuse it
+// under a newer one — so it is treated as absent and reported.
+func (c Config) ConventionsPath() (rel, warning string) {
+	v := c.Workspace.Conventions
+	if v == "" {
+		return "", ""
+	}
+	clean := path.Clean(filepath.ToSlash(v))
+	// filepath.IsAbs alone is platform-dependent — on Windows "/x" has no
+	// volume and reports false — so a leading slash is checked on the slashed
+	// form too: the path must be relative on every platform the workspace is
+	// cloned to.
+	if filepath.IsAbs(v) || strings.HasPrefix(clean, "/") || clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Sprintf("%s: workspace.conventions %q is not a relative path inside the workspace; ignored", ConfigFile, v)
+	}
+	return v, ""
 }
 
 func encodeConfig(c Config) ([]byte, error) {
