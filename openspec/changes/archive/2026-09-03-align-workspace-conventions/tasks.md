@@ -27,4 +27,4 @@
 
 - [x] 5.1 `go test ./...`, `golangci-lint run`, `openspec validate align-workspace-conventions`
 - [x] 5.2 Manual: a workspace with `CONVENTIONS.md` only shows the notice and delivers nothing; renamed to `dkf.md` it is delivered and listed as a resource
-- [ ] 5.3 Close particulars-cli#8 from the PR
+- [x] 5.3 Close particulars-cli#8 from the PR
