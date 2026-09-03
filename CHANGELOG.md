@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.13.0 — the open questions are listable
 
 - **`particulars unresolved` lists the open questions.** Every synthesis must
   say what it could not settle, and until now nothing read that field back.
