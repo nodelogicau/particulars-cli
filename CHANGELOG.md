@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **The `CONVENTIONS.md` migration notice is gone**, as v0.13.1 promised.
+  `workspace` no longer reports `conventions_legacy` and `serve --mcp` no
+  longer prints the notice; a `CONVENTIONS.md` at the root is simply a file
+  the tool does not read. The default remains `dkf.md`; rename, or name the
+  file in `workspace.conventions`.
+
 ## v0.13.1 — conventions as the spec blesses them
 
 - **Workspace conventions as the spec now blesses them** (particulars-cli#8,

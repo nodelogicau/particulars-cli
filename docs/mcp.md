@@ -158,8 +158,8 @@ another tool and would be delivered without anyone having asked. `AGENTS.md`
 is nevertheless a good *value* for the key when the workspace directory is its
 own agent scope (`knowledge/AGENTS.md`): harnesses that read the repository
 then pick it up with no DKF support at all. A `CONVENTIONS.md` left from
-v0.12.0 is not read; `workspace` and `serve` say so until you rename it or
-name it in the key. Keep it short: it rides in every session's context.
+v0.12.0 is not read; rename it or name it in the key. Keep it short: it rides
+in every session's context.
 
 A workspace that ingests feeds or documents should state its ingestion
 register here — *extract the facts; the feed itself is never a subject* —

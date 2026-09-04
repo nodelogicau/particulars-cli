@@ -850,35 +850,6 @@ func TestConventionsResolution(t *testing.T) {
 	if wb.ConventionsWarning() == "" {
 		t.Error("invalid key should warn")
 	}
-	// Legacy: CONVENTIONS.md alone is noticed, never read.
-	wl := newWS(t)
-	if err := os.WriteFile(filepath.Join(wl.Root, LegacyConventionsFile), []byte("old"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if rel, _, _ := wl.Conventions(); rel != "" {
-		t.Errorf("legacy file must not be read, got %q", rel)
-	}
-	if !wl.LegacyConventions() {
-		t.Error("legacy file alone should be noticed")
-	}
-	if err := os.WriteFile(filepath.Join(wl.Root, ConventionsFile), []byte("new"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if wl.LegacyConventions() {
-		t.Error("dkf.md beside CONVENTIONS.md silences the notice")
-	}
-	cfgL := NewConfig()
-	cfgL.Workspace.Conventions = "TOPICS.md"
-	wl2, err := Init(filepath.Join(t.TempDir(), "kb"), cfgL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(wl2.Root, LegacyConventionsFile), []byte("old"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if wl2.LegacyConventions() {
-		t.Error("a configured key silences the notice")
-	}
 	// Resolution: nothing, default, configured, configured-but-missing.
 	w := newWS(t)
 	if rel, content, err := w.Conventions(); rel != "" || content != nil || err != nil {

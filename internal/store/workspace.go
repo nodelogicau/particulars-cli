@@ -23,13 +23,6 @@ const EnvWorkspace = "DKF_WORKSPACE"
 // another tool and would be delivered without anyone having asked.
 const ConventionsFile = "dkf.md"
 
-// LegacyConventionsFile is the default before v0.13.1. It is no longer read;
-// its presence without a replacement is noticed by `workspace` and `serve`.
-const LegacyConventionsFile = "CONVENTIONS.md"
-
-// LegacyConventionsNotice is the migration message for LegacyConventionsFile.
-const LegacyConventionsNotice = LegacyConventionsFile + " is no longer read; rename it to " + ConventionsFile + " or set workspace.conventions in " + ConfigFile
-
 // PointerFile is the optional redirect file honoured during discovery: its
 // first non-blank, non-comment line is a path (relative to the file's
 // directory, or absolute) to a directory containing dkf.yaml.
@@ -645,19 +638,4 @@ func (w *Workspace) Conventions() (rel string, content []byte, err error) {
 func (w *Workspace) ConventionsWarning() string {
 	_, warning := w.Config.ConventionsPath()
 	return warning
-}
-
-// LegacyConventions reports whether the root holds CONVENTIONS.md with
-// neither dkf.md nor a usable workspace.conventions — a workspace written for
-// v0.12.0 whose document is no longer read. Callers print
-// LegacyConventionsNotice; the file is never delivered.
-func (w *Workspace) LegacyConventions() bool {
-	if rel, _ := w.Config.ConventionsPath(); rel != "" {
-		return false
-	}
-	if _, err := os.Stat(filepath.Join(w.Root, ConventionsFile)); err == nil {
-		return false
-	}
-	_, err := os.Stat(filepath.Join(w.Root, LegacyConventionsFile))
-	return err == nil
 }

@@ -41,9 +41,6 @@ stderr. Configure a second workspace as a second server entry in your client.`,
 			if rel, _, cerr := ws.Conventions(); cerr != nil {
 				fmt.Fprintf(os.Stderr, "warning: workspace.conventions %s: %v — omitted from instructions\n", rel, cerr)
 			}
-			if ws.LegacyConventions() {
-				fmt.Fprintln(os.Stderr, "notice: "+store.LegacyConventionsNotice)
-			}
 			srv := pmcp.New(pmcp.Options{Workspace: ws, Version: version, Author: prov.author, Harness: prov.harness, Model: prov.model})
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()

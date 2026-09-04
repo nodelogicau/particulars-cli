@@ -1706,17 +1706,13 @@ func TestWorkspaceReportsConventions(t *testing.T) {
 	if _, has := r.js["conventions"]; has {
 		t.Errorf("no conventions document, no key: %+v", r.js)
 	}
-	// A v0.12.0 CONVENTIONS.md alone is noticed, not read.
+	// A CONVENTIONS.md is just a file the tool does not read.
 	if err := os.WriteFile(filepath.Join(dir, "CONVENTIONS.md"), []byte("old rules"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	r = run(t, "", "workspace", "--json")
-	if _, has := r.js["conventions"]; has || r.js["conventions_legacy"] != "CONVENTIONS.md" || r.stderr != "" || len(r.js["warnings"].([]any)) != 1 {
-		t.Errorf("legacy file: %+v stderr=%q", r.js, r.stderr)
-	}
-	text := run(t, "", "workspace")
-	if !strings.Contains(text.stderr, "CONVENTIONS.md is no longer read") {
-		t.Errorf("legacy notice on stderr: %q", text.stderr)
+	if _, has := r.js["conventions"]; has || r.js["warnings"] != nil || r.stderr != "" {
+		t.Errorf("CONVENTIONS.md is neither read nor noticed: %+v stderr=%q", r.js, r.stderr)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "dkf.md"), []byte("topic rules"), 0o644); err != nil {
 		t.Fatal(err)
@@ -1725,10 +1721,7 @@ func TestWorkspaceReportsConventions(t *testing.T) {
 	if r.js["conventions"] != "dkf.md" {
 		t.Errorf("default conventions reported: %+v", r.js)
 	}
-	if _, has := r.js["conventions_legacy"]; has {
-		t.Errorf("dkf.md silences the legacy notice: %+v", r.js)
-	}
-	text = run(t, "", "workspace")
+	text := run(t, "", "workspace")
 	if !strings.Contains(text.stdout, "conventions: dkf.md") || text.stderr != "" {
 		t.Errorf("text output: %q stderr=%q", text.stdout, text.stderr)
 	}
