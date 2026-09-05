@@ -678,18 +678,32 @@ func TestHashAndQuoteNormalisation(t *testing.T) {
 	if !QuoteMatches(doc, "  In staging, the billing service listens on 443.  ") {
 		t.Error("surrounding whitespace on the quote should be trimmed")
 	}
-	// Internal whitespace is part of what was quoted.
+	// Whitespace folds on both sides: the words are what was quoted.
 	if !QuoteMatches(doc, "func main() {\n\tx := 1\n}") {
 		t.Error("an indented code quote should match with its indentation")
 	}
-	if QuoteMatches(doc, "func main() {\nx := 1\n}") {
-		t.Error("internal whitespace must not be normalised away")
+	if !QuoteMatches(doc, "func main() {\nx := 1\n}") {
+		t.Error("a re-indented code quote should still match")
+	}
+	if !QuoteMatches(strings.ReplaceAll(doc, "\t", "    "), "func main() {\n\tx := 1\n}") {
+		t.Error("a tab-indented quote should match a space-indented document")
+	}
+	// A quote spanning a hard line wrap — the case from issue #9 — matches,
+	// and keeps matching when the document is wrapped at another column.
+	wrapped := "Preamble.\n\nIn staging, the billing service\nlistens on 443.\n"
+	for _, variant := range []string{wrapped, "In staging,\nthe billing service listens\non 443.", strings.ReplaceAll(wrapped, "\n", "\r\n")} {
+		if !QuoteMatches(variant, "In staging, the billing service listens on 443.") {
+			t.Errorf("a quote across a line wrap should match: %q", variant)
+		}
+	}
+	if !QuoteMatches(doc, "Preamble. In staging, the billing service listens on 443.") {
+		t.Error("a quote spanning a blank line should match")
 	}
 	// CRLF on either side still matches.
 	if !QuoteMatches(strings.ReplaceAll(doc, "\n", "\r\n"), "In staging, the billing service listens on 443.") {
 		t.Error("a CRLF document should still match an LF quote")
 	}
-	for _, absent := range []string{"In production, the billing service listens on 443.", "", "   "} {
+	for _, absent := range []string{"In production, the billing service listens on 443.", "In staging, the billing service listens on 8443.", "in staging, the billing service listens on 443.", "", "   "} {
 		if QuoteMatches(doc, absent) {
 			t.Errorf("%q should not match", absent)
 		}

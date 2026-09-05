@@ -207,19 +207,29 @@ func HashDocumentBytes(data []byte) string {
 	return AlgorithmSHA256 + ":" + hex.EncodeToString(sum[:])
 }
 
-// QuoteMatches reports whether quote appears verbatim in document.
+// QuoteMatches reports whether quote appears in document.
 //
-// Line endings are normalised on both sides and the quote's own leading and
-// trailing whitespace is trimmed — a YAML block scalar acquires a trailing
-// newline that is an artefact of the file format, not of the source. Internal
-// whitespace is compared exactly: the indentation inside a quoted code block
-// is part of what was quoted.
+// Words must match exactly; whitespace does not. Line endings are normalised,
+// the quote's own leading and trailing whitespace is trimmed — a YAML block
+// scalar acquires a trailing newline that is an artefact of the file format,
+// not of the source — and every run of whitespace on both sides is folded to
+// a single space, so a sentence quoted from prose still matches after the
+// document is wrapped at another column, checked out with CRLF, or
+// re-indented. Case, Unicode form, and punctuation are compared verbatim: by
+// the hash rule those are edits, and the quote should agree with the hash
+// about what an edit is. The stored quote is never folded; this is a property
+// of the comparison, not of the file.
 func QuoteMatches(document, quote string) bool {
-	q := strings.TrimSpace(normaliseNewlines(quote))
+	q := foldWhitespace(quote)
 	if q == "" {
 		return false
 	}
-	return strings.Contains(normaliseNewlines(document), q)
+	return strings.Contains(foldWhitespace(document), q)
 }
+
+// foldWhitespace collapses every run of whitespace to one space and trims the
+// ends. strings.Fields splits on unicode.IsSpace, so tabs, newlines, and blank
+// lines all fold; CRLF needs no special case.
+func foldWhitespace(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 func normaliseNewlines(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }

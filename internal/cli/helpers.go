@@ -73,6 +73,9 @@ func (a *app) resolveDocument(ws *store.Workspace, g *store.Graph, f provenanceF
 	if doc.Quote != "" && strings.TrimSpace(doc.Quote) == "" {
 		return doc, usageErr("--quote is blank; omit it rather than recording nothing")
 	}
+	if w := query.QuoteAbsentLocally(ws, doc); w != "" {
+		a.warnings = append(a.warnings, w)
+	}
 	if doc.Author != "" {
 		written, _, err := query.ResolveAuthorForWrite(g, doc.Author, true, "--document-author")
 		if err != nil {

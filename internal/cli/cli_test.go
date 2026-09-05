@@ -1790,3 +1790,70 @@ func TestUnresolved(t *testing.T) {
 		t.Errorf("invalid scope should exit 2, got %d", r.code)
 	}
 }
+
+// A verbatim quote survives a hard line wrap (issue #9): whitespace folds on
+// both sides of the comparison, a miscopied quote is caught when the claim is
+// asserted, and a quote that was never in an unchanged document says so.
+func TestQuoteAcrossLineWrap(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+	t.Setenv("DKF_WORKSPACE", ws)
+	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
+	run(t, "", "particular", "define", "--label", "Billing", "--json")
+	docPath := filepath.Join(ws, "note.md")
+	if err := os.WriteFile(docPath, []byte("the billing service listens\non 443\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	assert := func(quote string) result {
+		return run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Billing", "--content", "Billing listens on 443.",
+			"--document", "note.md", "--hash-document", "--quote", quote, "--json")
+	}
+	codes := func() []string {
+		v := run(t, "", "validate", "--json")
+		if v.code != 0 {
+			t.Fatalf("validate: %+v", v)
+		}
+		var out []string
+		for _, f := range v.js["findings"].([]any) {
+			out = append(out, f.(map[string]any)["code"].(string))
+		}
+		return out
+	}
+
+	// The wrapped quote is written without a warning and does not drift.
+	r := assert("the billing service listens on 443")
+	if r.code != 0 || r.js["warnings"] != nil {
+		t.Fatalf("a quote across a wrap should not warn: %+v", r)
+	}
+	if c := codes(); slicesContains(c, "quote_drift") || slicesContains(c, "context_drift") {
+		t.Errorf("a quote across a wrap should not drift: %v", c)
+	}
+	// Re-wrapping the document is a context change, not a lost quote.
+	if err := os.WriteFile(docPath, []byte("the billing\nservice listens on 443\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if c := codes(); !slicesContains(c, "context_drift") || slicesContains(c, "quote_drift") {
+		t.Errorf("re-wrapping should report context_drift only: %v", c)
+	}
+
+	// A miscopied quote is warned about at assertion, and the claim is still
+	// written; validate then says the quote never matched.
+	r = assert("the billing service listens on 8443")
+	if r.code != 0 {
+		t.Fatalf("a miscopied quote must not refuse the claim: %+v", r)
+	}
+	if ws, _ := r.js["warnings"].([]any); len(ws) != 1 || !strings.Contains(ws[0].(string), "does not appear in note.md") {
+		t.Errorf("expected an assert-time warning, got %v", r.js["warnings"])
+	}
+	text := run(t, "", "validate")
+	if !strings.Contains(text.stdout, "quote_drift: the quoted text has never been an exact match for note.md") {
+		t.Errorf("a quote absent from an unchanged document should say it never matched:\n%s", text.stdout)
+	}
+
+	// An unfetchable reference is not checked.
+	r = run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Billing", "--content", "testimony",
+		"--document", "conversation with Jane", "--quote", "we went microservices in Q2", "--json")
+	if r.code != 0 || r.js["warnings"] != nil {
+		t.Errorf("an unfetchable source should not warn: %+v", r)
+	}
+}

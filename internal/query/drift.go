@@ -16,7 +16,9 @@ const (
 	// changed — "In staging, …" becoming "In production, …" falsifies a claim
 	// without touching a character of the quote.
 	CodeContextDrift = "context_drift"
-	// CodeQuoteDrift: the cited text is gone or altered.
+	// CodeQuoteDrift: the cited text is gone or altered — or, when the
+	// document's hash still matches, was never there: a quote absent from a
+	// document nobody has edited was miscopied or taken from another revision.
 	CodeQuoteDrift = "quote_drift"
 	// CodeUnverifiedDocument: the provenance was not machine-checked. This
 	// says nothing is known, not that anything is wrong: a conversation, a
@@ -82,12 +84,33 @@ func VerifyDocument(ws *store.Workspace, d dkf.Document) DocumentState {
 		}
 		// The document is byte-identical yet the quote is absent: the quote
 		// was never in this document, which is worth saying differently.
-		return DocumentState{CodeQuoteDrift, "the quoted text does not appear in " + ws.Rel(path) + ", though the document is unchanged since the claim was written"}
+		return DocumentState{CodeQuoteDrift, "the quoted text has never been an exact match for " + ws.Rel(path) + ", which is unchanged since the claim was written; the quote was miscopied or taken from a different revision"}
 	case quotePresent:
 		return DocumentState{CodeContextDrift, ws.Rel(path) + " changed since the claim was written; the quoted text is still present, but its surroundings are not"}
 	default:
 		return DocumentState{CodeQuoteDrift, ws.Rel(path) + " changed and the quoted text is gone"}
 	}
+}
+
+// QuoteAbsentLocally checks a quote against the workspace file its document
+// resolves to, at write time, and returns a warning when it is not there.
+// Nothing is refused: the writer may have read another revision, and
+// provenance conditions are reported, never refused. The empty string means
+// either the quote was found or there was nothing local to check it against —
+// a remote URI, an unfetchable reference, an unreadable file.
+func QuoteAbsentLocally(ws *store.Workspace, d dkf.Document) string {
+	if d.Quote == "" {
+		return ""
+	}
+	path, ok := LocalDocumentPath(ws, d.Ref)
+	if !ok {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || dkf.QuoteMatches(string(data), d.Quote) {
+		return ""
+	}
+	return "the quote does not appear in " + ws.Rel(path) + "; the claim is written, but validate will report quote_drift until the quote or the document is corrected"
 }
 
 // LocalDocumentPath resolves a document reference to a file inside the

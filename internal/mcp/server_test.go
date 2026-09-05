@@ -434,3 +434,24 @@ func TestConventionsResource(t *testing.T) {
 		t.Error("instructions are a startup snapshot")
 	}
 }
+
+// claim_assert carries the same assert-time quote warning as the CLI, so the
+// structured result stays equal to `claim assert --json`.
+func TestClaimAssertQuoteWarning(t *testing.T) {
+	h := newHarness(t, "claude-ai", "ben")
+	if err := os.WriteFile(filepath.Join(h.ws.Root, "note.md"), []byte("the billing service listens\non 443\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.ok("particular_define", map[string]any{"label": "Billing"})
+	doc := func(quote string) map[string]any {
+		return map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443",
+			"source": map[string]any{"document": map[string]any{"ref": "note.md", "quote": quote}}}
+	}
+	if r := h.ok("claim_assert", doc("the billing service listens on 443")); r["warnings"] != nil {
+		t.Errorf("a quote across a wrap should not warn: %v", r["warnings"])
+	}
+	r := h.ok("claim_assert", doc("listens on 8443"))
+	if ws, _ := r["warnings"].([]any); len(ws) != 1 || !strings.Contains(ws[0].(string), "does not appear in note.md") {
+		t.Errorf("expected a quote warning, got %v", r["warnings"])
+	}
+}

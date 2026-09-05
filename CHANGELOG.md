@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **A verbatim quote survives a hard line wrap** (particulars-cli#9). Quote
+  matching now folds every run of whitespace — spaces, tabs, newlines, blank
+  lines — to a single space on both sides before comparing, so a sentence
+  quoted from prose wrapped at 80 columns matches, and keeps matching after
+  the document is re-wrapped, checked out with CRLF, or re-indented. Words,
+  case, and punctuation must still match exactly; the stored `quote` is
+  written as given. Some `quote_drift` warnings in existing workspaces will
+  stop being reported, and a whitespace-only edit inside a quoted region now
+  reports `context_drift` rather than `quote_drift`.
+- **`claim assert` and `claim_assert` warn when the quote is not in the
+  document**, when the document resolves to a file in the workspace. The claim
+  is still written; the warning says `validate` will report `quote_drift`
+  until the quote or the document is corrected. A quote absent from a
+  document whose hash still matches now says what it means: the quote has
+  never been an exact match, so it was miscopied or taken from another
+  revision.
 - **The `CONVENTIONS.md` migration notice is gone**, as v0.13.1 promised.
   `workspace` no longer reports `conventions_legacy` and `serve --mcp` no
   longer prints the notice; a `CONVENTIONS.md` at the root is simply a file

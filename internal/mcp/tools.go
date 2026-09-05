@@ -345,7 +345,11 @@ func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in a
 	if err := s.ws.UpsertIndex(c); err != nil {
 		return errResult(err), nil, nil
 	}
-	return okResult("Asserted " + c.ID + " about " + p.Label), map[string]any{"claim": c, "path": s.rel(c.ID)}, nil
+	out := map[string]any{"claim": c, "path": s.rel(c.ID)}
+	if w := query.QuoteAbsentLocally(s.ws, src.Document); w != "" {
+		out["warnings"] = []string{w}
+	}
+	return okResult("Asserted " + c.ID + " about " + p.Label), out, nil
 }
 
 type retractIn struct {

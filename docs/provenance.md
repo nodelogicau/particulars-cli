@@ -83,14 +83,36 @@ source while reading the pull request** — no tooling, no network, no checkout.
 | present | matches | nothing moved |
 | present | differs | **`context_drift`** — the text around the quote changed |
 | absent | differs | **`quote_drift`** — the cited text is gone or altered |
+| absent | matches | **`quote_drift`** — the quote was never in this document: miscopied, or taken from another revision |
 
-The middle row is why hashing the quote alone is not enough. A document reading
+The second row is why hashing the quote alone is not enough. A document reading
 *"In staging, the billing service listens on 443"* yields the claim *"the
 billing service listens on 443"*; changing **staging** to **production**
 falsifies the claim without touching a character of the quote.
 
 **Drift is never a validation failure.** A claim whose source has drifted stays
 valid, readable, and citable — it is a condition for a reader to resolve.
+
+## How a quote is matched
+
+Words must match exactly; whitespace does not. Before comparing, every run of
+spaces, tabs, newlines, and blank lines — in the quote and in the document — is
+folded to a single space, and the quote's own leading and trailing whitespace is
+trimmed. So a sentence quoted from prose still matches after the document is
+wrapped at another column, checked out with CRLF line endings, or re-indented,
+and a quote may span a hard line wrap. Case, punctuation, and Unicode form are
+compared verbatim: by the hash rule those are edits, and the quote agrees with
+the hash about what an edit is. The stored `quote` is always written as you gave
+it — folding is a property of the comparison, never of the file.
+
+One consequence: a whitespace-only edit inside a quoted region — re-indenting a
+code block — reports `context_drift`, not `quote_drift`. The words the claim
+rests on did not change; the document around them did.
+
+`claim assert` runs the same check when the document resolves to a file in the
+workspace, and warns — never refuses — when the quote is not found, so a
+miscopied quote is caught by the person who wrote it rather than by the next
+`validate`.
 
 ## What the hash is taken over
 
