@@ -24,4 +24,4 @@
 
 - [x] 5.1 Run `go test ./...` and `golangci-lint run`.
 - [x] 5.2 Re-run the repro from issue #9 against a binary built from HEAD and confirm `validate` reports no drift.
-- [ ] 5.3 Open a follow-up issue against `nodelogicau/particulars` proposing the folding rule for the `source-verification` spec, so implementations agree on what "appears" means.
+- [x] 5.3 Open a follow-up issue against `nodelogicau/particulars` proposing the folding rule for the `source-verification` spec, so implementations agree on what "appears" means (nodelogicau/particulars#24).
