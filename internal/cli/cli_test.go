@@ -1850,6 +1850,19 @@ func TestQuoteAcrossLineWrap(t *testing.T) {
 		t.Errorf("a quote absent from an unchanged document should say it never matched:\n%s", text.stdout)
 	}
 
+	// Quote only, no hash: an absent quote is drift, but nothing says
+	// whether the document changed or the quote never matched, so the
+	// message infers neither.
+	r = run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Billing", "--content", "no hash",
+		"--document", "note.md", "--quote", "listens on 9443", "--json")
+	if r.code != 0 {
+		t.Fatalf("quote-only claim: %+v", r)
+	}
+	text = run(t, "", "validate")
+	if !strings.Contains(text.stdout, "quote_drift: the quoted text does not appear in note.md; without a hash it is unknown") || strings.Contains(text.stdout, "no longer appears") {
+		t.Errorf("a quote-only miss must not infer that the document changed:\n%s", text.stdout)
+	}
+
 	// An unfetchable reference is not checked.
 	r = run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Billing", "--content", "testimony",
 		"--document", "conversation with Jane", "--quote", "we went microservices in Q2", "--json")

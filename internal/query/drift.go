@@ -73,11 +73,13 @@ func VerifyDocument(ws *store.Workspace, d dkf.Document) DocumentState {
 
 	switch {
 	case d.Hash == "":
-		// Quote only: the quote is the whole signal.
+		// Quote only: the quote is the whole signal. Without a hash nothing
+		// says whether the document changed or the quote was never there, so
+		// the message infers neither.
 		if quotePresent {
 			return DocumentState{}
 		}
-		return DocumentState{CodeQuoteDrift, "the quoted text no longer appears in " + ws.Rel(path)}
+		return DocumentState{CodeQuoteDrift, "the quoted text does not appear in " + ws.Rel(path) + "; without a hash it is unknown whether the document changed or the quote never matched"}
 	case hashMatches:
 		if quotePresent {
 			return DocumentState{}

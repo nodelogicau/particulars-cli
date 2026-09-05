@@ -17,7 +17,9 @@
   until the quote or the document is corrected. A quote absent from a
   document whose hash still matches now says what it means: the quote has
   never been an exact match, so it was miscopied or taken from another
-  revision.
+  revision; a quote absent from a document with no hash no longer says the
+  text "no longer appears", since without a hash nothing says whether the
+  document changed or the quote never matched.
 - **The `CONVENTIONS.md` migration notice is gone**, as v0.13.1 promised.
   `workspace` no longer reports `conventions_legacy` and `serve --mcp` no
   longer prints the notice; a `CONVENTIONS.md` at the root is simply a file
