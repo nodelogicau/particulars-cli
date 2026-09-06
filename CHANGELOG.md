@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Quote matching aligned with DKF change `quote-appears`**
+  (particulars-cli#10, after nodelogicau/particulars#24 was accepted). The
+  whitespace that folds is named as the Unicode `White_Space` property — what
+  `strings.Fields` already did, so NBSP folds and nothing in the matcher
+  changed. An empty or whitespace-only quote is now refused by the MCP
+  `claim_assert` tool as `claim assert` already refused it, and one already in
+  a claim file is read as *no quote*: `validate` reports it once as
+  `empty_quote` (a warning, aggregated like the legacy markers) rather than
+  failing the object with `invalid_document`, verifies the document by hash
+  alone, and raises no `quoted_source` note for it. Two cells of the drift
+  table the spec now names are reached by rule: a quote-only document whose
+  quote is found reports the hash as `unverified_document` (informational,
+  aggregated — existing workspaces gain a count, not a line), and a hash-only
+  document that changed reports `context_drift` without speaking of quoted
+  text it never had. `docs/provenance.md` states the format-blind limit: a
+  wrap inside a blockquote or a comment does not fold across the marker.
 - **A verbatim quote survives a hard line wrap** (particulars-cli#9). Quote
   matching now folds every run of whitespace — spaces, tabs, newlines, blank
   lines — to a single space on both sides before comparing, so a sentence

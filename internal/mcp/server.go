@@ -167,6 +167,11 @@ func documentFrom(v any) (dkf.Document, error) {
 		if d.Ref == "" {
 			d.Ref = uri
 		}
+		if d.Quote != "" && !d.HasQuote() {
+			// Refused on write, as a confidence outside [0, 1] is: a reader
+			// would have to treat it as no quote and warn forever.
+			return d, apperr.Usage("source.document.quote is blank; omit it rather than recording nothing")
+		}
 		return d, nil
 	}
 	return dkf.Document{}, apperr.Usage("source.document must be a string or an object with ref, author, hash, and quote")

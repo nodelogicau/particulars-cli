@@ -70,7 +70,7 @@ func (a *app) resolveDocument(ws *store.Workspace, g *store.Graph, f provenanceF
 		}
 		doc.Hash = dkf.HashDocumentBytes(data)
 	}
-	if doc.Quote != "" && strings.TrimSpace(doc.Quote) == "" {
+	if doc.Quote != "" && !doc.HasQuote() {
 		return doc, usageErr("--quote is blank; omit it rather than recording nothing")
 	}
 	if w := query.QuoteAbsentLocally(ws, doc); w != "" {

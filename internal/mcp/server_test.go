@@ -454,4 +454,12 @@ func TestClaimAssertQuoteWarning(t *testing.T) {
 	if ws, _ := r["warnings"].([]any); len(ws) != 1 || !strings.Contains(ws[0].(string), "does not appear in note.md") {
 		t.Errorf("expected a quote warning, got %v", r["warnings"])
 	}
+	// A blank quote is refused on write, as the CLI refuses --quote "   ".
+	before, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims"))
+	if _, isErr, text := h.call("claim_assert", doc("\n\t")); !isErr || !strings.Contains(text, "source.document.quote is blank") {
+		t.Errorf("a blank quote should be a usage error: %v %q", isErr, text)
+	}
+	if after, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims")); len(after) != len(before) {
+		t.Error("a refused claim must not be written")
+	}
 }

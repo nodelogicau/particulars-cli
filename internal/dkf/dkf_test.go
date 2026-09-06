@@ -625,7 +625,6 @@ func TestDocumentUnion(t *testing.T) {
 		"empty algorithm":   {Ref: "u", Hash: ":" + strings.Repeat("a", 64)},
 		"uppercase hash":    {Ref: "u", Hash: "sha256:" + strings.Repeat("A", 64)},
 		"unprefixed hash":   {Ref: "u", Hash: strings.Repeat("a", 64)},
-		"blank quote":       {Ref: "u", Quote: "   "},
 	} {
 		if ps := doc.Validate("source.document"); len(ps) == 0 {
 			t.Errorf("%s should be rejected", name)
@@ -634,7 +633,10 @@ func TestDocumentUnion(t *testing.T) {
 	for name, doc := range map[string]Document{
 		"bare reference": {Ref: "chat session 2026-08-22"},
 		"nothing at all": {},
-		"full mapping":   {Ref: "u", Hash: "sha256:" + strings.Repeat("f", 64), Quote: "q"},
+		// Read as no quote and warned about by validate, never rejected: the
+		// file cannot be rewritten, so a rejection could never be satisfied.
+		"blank quote":  {Ref: "u", Quote: "   "},
+		"full mapping": {Ref: "u", Hash: "sha256:" + strings.Repeat("f", 64), Quote: "q"},
 		// Another implementation's algorithm is accepted, not rejected: a
 		// reader that refused it could not check anything it wrote.
 		"another algorithm": {Ref: "u", Hash: "blake3:" + strings.Repeat("c", 32)},
@@ -698,6 +700,18 @@ func TestHashAndQuoteNormalisation(t *testing.T) {
 	}
 	if !QuoteMatches(doc, "Preamble. In staging, the billing service listens on 443.") {
 		t.Error("a quote spanning a blank line should match")
+	}
+	// Unicode White_Space folds, not only ASCII: a web-copied NBSP is the
+	// commonest paste artefact.
+	if !QuoteMatches("listens on\u00a0443, per U+2028\u2028here", "listens on 443, per U+2028 here") {
+		t.Error("NBSP and LINE SEPARATOR in the document should fold to a space")
+	}
+	// Format-blind: folding strips whitespace, never a blockquote marker.
+	if QuoteMatches("> the billing service listens\n> on 443\n", "the billing service listens on 443") {
+		t.Error("a wrapped blockquote must not match across the > marker")
+	}
+	if (Document{Ref: "u", Quote: " \n\t"}).HasQuote() || !(Document{Ref: "u", Quote: " x "}).HasQuote() {
+		t.Error("HasQuote should be false only for a quote that folds to nothing")
 	}
 	// CRLF on either side still matches.
 	if !QuoteMatches(strings.ReplaceAll(doc, "\n", "\r\n"), "In staging, the billing service listens on 443.") {

@@ -50,7 +50,10 @@ func VerifyDocument(ws *store.Workspace, d dkf.Document) DocumentState {
 	if d.IsZero() {
 		return DocumentState{}
 	}
-	if d.Hash == "" && d.Quote == "" {
+	// A quote that folds to nothing is read as no quote: validate reports it
+	// as empty_quote, and here the hash is the whole signal.
+	hasQuote := d.HasQuote()
+	if d.Hash == "" && !hasQuote {
 		return DocumentState{CodeUnverifiedDocument, "document carries no hash or quote, so nothing can be checked"}
 	}
 	if algo := dkf.HashAlgorithm(d.Hash); d.Hash != "" && algo != dkf.AlgorithmSHA256 {
@@ -68,16 +71,17 @@ func VerifyDocument(ws *store.Workspace, d dkf.Document) DocumentState {
 		return DocumentState{CodeUnverifiedDocument, "document does not resolve to a readable file: " + ws.Rel(path)}
 	}
 	content := string(data)
-	quotePresent := d.Quote == "" || dkf.QuoteMatches(content, d.Quote)
+	quotePresent := !hasQuote || dkf.QuoteMatches(content, d.Quote)
 	hashMatches := d.Hash == "" || d.Hash == dkf.HashDocumentBytes(data)
 
 	switch {
 	case d.Hash == "":
 		// Quote only: the quote is the whole signal. Without a hash nothing
 		// says whether the document changed or the quote was never there, so
-		// the message infers neither.
+		// the message infers neither — and a found quote is not full
+		// verification, since the text around it went unchecked.
 		if quotePresent {
-			return DocumentState{}
+			return DocumentState{CodeUnverifiedDocument, "the quote appears in " + ws.Rel(path) + ", but the document carries no hash, so the text around it is not checked"}
 		}
 		return DocumentState{CodeQuoteDrift, "the quoted text does not appear in " + ws.Rel(path) + "; without a hash it is unknown whether the document changed or the quote never matched"}
 	case hashMatches:
@@ -87,6 +91,10 @@ func VerifyDocument(ws *store.Workspace, d dkf.Document) DocumentState {
 		// The document is byte-identical yet the quote is absent: the quote
 		// was never in this document, which is worth saying differently.
 		return DocumentState{CodeQuoteDrift, "the quoted text has never been an exact match for " + ws.Rel(path) + ", which is unchanged since the claim was written; the quote was miscopied or taken from a different revision"}
+	case quotePresent && !hasQuote:
+		// Hash only: the document changed, and there is no quote to say
+		// whether the cited text survived it.
+		return DocumentState{CodeContextDrift, ws.Rel(path) + " changed since the claim was written; it carries no quote, so whether the cited text survived is unknown"}
 	case quotePresent:
 		return DocumentState{CodeContextDrift, ws.Rel(path) + " changed since the claim was written; the quoted text is still present, but its surroundings are not"}
 	default:
@@ -101,7 +109,7 @@ func VerifyDocument(ws *store.Workspace, d dkf.Document) DocumentState {
 // either the quote was found or there was nothing local to check it against —
 // a remote URI, an unfetchable reference, an unreadable file.
 func QuoteAbsentLocally(ws *store.Workspace, d dkf.Document) string {
-	if d.Quote == "" {
+	if !d.HasQuote() {
 		return ""
 	}
 	path, ok := LocalDocumentPath(ws, d.Ref)

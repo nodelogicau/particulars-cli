@@ -178,12 +178,20 @@ func (d Document) Validate(field string) Problems {
 				Message: fmt.Sprintf("hash %q is not a sha256 digest: expected 64 hex digits", d.Hash)})
 		}
 	}
-	if d.Quote != "" && strings.TrimSpace(d.Quote) == "" {
-		ps = append(ps, Problem{Code: CodeInvalidDocument, Field: field + ".quote",
-			Message: "quote is empty; omit it rather than recording nothing"})
-	}
+	// An empty quote is not invalid here: a claim file can never be
+	// rewritten, so a read-time rejection could never be satisfied. Writers
+	// refuse it; readers treat the mapping as carrying no quote and warn
+	// (empty_quote), which is what HasQuote lets them do.
 	return ps
 }
+
+// HasQuote reports whether the document carries a quote that says anything —
+// one that folds to non-empty under the whitespace rule. This is the single
+// notion of "carries a quote" shared by drift checking, the disclosure notes,
+// and both write boundaries, so none of them can disagree about whether a
+// quote exists. A quote that folds to nothing is a malformed write, read as
+// no quote.
+func (d Document) HasQuote() bool { return foldWhitespace(d.Quote) != "" }
 
 // HashDocument returns sha256 over the content with CRLF normalised to LF and
 // nothing else normalised.
@@ -209,16 +217,21 @@ func HashDocumentBytes(data []byte) string {
 
 // QuoteMatches reports whether quote appears in document.
 //
-// Words must match exactly; whitespace does not. Line endings are normalised,
-// the quote's own leading and trailing whitespace is trimmed — a YAML block
-// scalar acquires a trailing newline that is an artefact of the file format,
-// not of the source — and every run of whitespace on both sides is folded to
-// a single space, so a sentence quoted from prose still matches after the
-// document is wrapped at another column, checked out with CRLF, or
-// re-indented. Case, Unicode form, and punctuation are compared verbatim: by
-// the hash rule those are edits, and the quote should agree with the hash
-// about what an edit is. The stored quote is never folded; this is a property
-// of the comparison, not of the file.
+// Words must match exactly; whitespace does not. Both sides are folded —
+// every maximal run of characters with the Unicode White_Space property
+// becomes one space, and the ends are trimmed — and the folded quote must be
+// a substring of the folded document. So a sentence quoted from prose still
+// matches after the document is wrapped at another column, checked out with
+// CRLF, re-indented, or pasted with a non-breaking space. Case, punctuation,
+// and Unicode normalisation form are compared verbatim: for everything other
+// than whitespace, the quote agrees with the hash about what an edit is;
+// whitespace is where the two signals part on purpose, since the hash asks
+// whether anything changed and the quote whether the words are still there.
+//
+// The rule is format-blind: it strips no `>`, `//`, or `#` from a
+// continuation line, so a quote across such a wrap must come from one line.
+// The stored quote is never folded; this is a property of the comparison,
+// not of the file.
 func QuoteMatches(document, quote string) bool {
 	q := foldWhitespace(quote)
 	if q == "" {
@@ -228,8 +241,9 @@ func QuoteMatches(document, quote string) bool {
 }
 
 // foldWhitespace collapses every run of whitespace to one space and trims the
-// ends. strings.Fields splits on unicode.IsSpace, so tabs, newlines, and blank
-// lines all fold; CRLF needs no special case.
+// ends. strings.Fields splits on unicode.IsSpace, which is the Unicode
+// White_Space property, so tabs, newlines, blank lines, NBSP, NEL, and the
+// U+2000 block all fold; CRLF needs no special case because CR is whitespace.
 func foldWhitespace(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 func normaliseNewlines(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }

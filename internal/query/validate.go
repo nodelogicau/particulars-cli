@@ -84,6 +84,11 @@ const (
 	// CodeQuotedSource: a claim reproduces source text verbatim and is shared
 	// more widely than the author's own notes.
 	CodeQuotedSource = "quoted_source"
+	// CodeEmptyQuote: a document mapping carries a quote that folds to
+	// nothing. A malformed write, not a source event: the mapping is verified
+	// as though it carried no quote, and — the file being immutable — this
+	// warning is the only way anyone learns it is there.
+	CodeEmptyQuote = "empty_quote"
 	// CodeLegacyDocumentURI: a document mapping was read from the pre-rename
 	// `uri` key. The file can never be rewritten, so a reader accepts it in
 	// perpetuity and this is the only way anyone learns it is there.
@@ -135,7 +140,7 @@ func (fs Findings) HasErrors() bool {
 // quoted_source all name one file worth opening, so they list.
 func IsCorpusFact(code string) bool {
 	switch code {
-	case CodeLegacyProducedBy, CodeLegacyID, CodeLegacyDocumentURI,
+	case CodeLegacyProducedBy, CodeLegacyID, CodeLegacyDocumentURI, CodeEmptyQuote,
 		CodeUndeclared, CodeConfidenceOnUndeclared, CodeUnverifiedDocument,
 		CodeAuthorUnresolved, CodeAuthorAmbiguous, CodeURLInContent:
 		return true
@@ -286,6 +291,9 @@ func Validate(w *store.Workspace) (Findings, error) {
 			continue
 		}
 		path := g.Files[a.ObjectID()]
+		if doc.Quote != "" && !doc.HasQuote() {
+			add(SeverityWarning, path, CodeEmptyQuote, "document carries a quote that is empty or only whitespace; it is verified as though it carried no quote")
+		}
 		// Retracted objects are checked too: the unverifiable-defect finding
 		// below is about the retraction, not about a live claim.
 		st := VerifyDocument(w, doc)
@@ -315,7 +323,7 @@ func Validate(w *store.Workspace) (Findings, error) {
 		// A quote reproduces its source completely, where a synthesis only
 		// summarises. Say so where the exposure is wider than the author's
 		// own notes, so a reviewer weighing scope can see it.
-		if doc.Quote != "" && dkf.ScopeRank(g.EffectiveScope(a.ObjectID())) > dkf.ScopeRank(dkf.ScopePersonal) {
+		if doc.HasQuote() && dkf.ScopeRank(g.EffectiveScope(a.ObjectID())) > dkf.ScopeRank(dkf.ScopePersonal) {
 			add(SeverityInfo, path, CodeQuotedSource, fmt.Sprintf(
 				"carries a verbatim quote from %s and is %s, so that source text is disclosed in full",
 				doc.Ref, g.EffectiveScope(a.ObjectID())))

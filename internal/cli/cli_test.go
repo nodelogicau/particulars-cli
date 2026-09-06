@@ -1870,3 +1870,104 @@ func TestQuoteAcrossLineWrap(t *testing.T) {
 		t.Errorf("an unfetchable source should not warn: %+v", r)
 	}
 }
+
+// The cells of the drift table that carry only one signal, and the empty
+// quote the spec reads as no quote (align-quote-appears).
+func TestDriftSingleSignalStates(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+	t.Setenv("DKF_WORKSPACE", ws)
+	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
+	run(t, "", "particular", "define", "--label", "Billing", "--json")
+	docPath := filepath.Join(ws, "note.md")
+	if err := os.WriteFile(docPath, []byte("the billing service listens on 443\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	findings := func() map[string]string {
+		v := run(t, "", "validate", "--json")
+		if v.code != 0 {
+			t.Fatalf("validate: %+v", v)
+		}
+		out := map[string]string{}
+		for _, f := range v.js["findings"].([]any) {
+			m := f.(map[string]any)
+			out[m["code"].(string)] = m["message"].(string)
+		}
+		return out
+	}
+
+	// Quote only, present: no drift, but the hash is unverified.
+	run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Billing", "--content", "quote only",
+		"--document", "note.md", "--quote", "listens on 443", "--json")
+	f := findings()
+	if _, drift := f["quote_drift"]; drift {
+		t.Errorf("a found quote is not drift: %v", f)
+	}
+	if !strings.Contains(f["unverified_document"], "carries no hash, so the text around it is not checked") {
+		t.Errorf("quote-only present should report the hash as unverified: %v", f)
+	}
+
+	// Hash only, document changed: context_drift that does not speak of a quote.
+	hashOnly := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Billing", "--content", "hash only",
+		"--document", "note.md", "--hash-document", "--json")
+	hashOnlyID := hashOnly.js["claim"].(map[string]any)["id"].(string)
+	if err := os.WriteFile(docPath, []byte("the billing service listens on 443 now\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f = findings()
+	if msg := f["context_drift"]; !strings.Contains(msg, "carries no quote") || strings.Contains(msg, "quoted text") {
+		t.Errorf("hash-only drift must not speak of quoted text: %q", msg)
+	}
+	if err := os.WriteFile(docPath, []byte("the billing service listens on 443\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, "", "retract", hashOnlyID, "--reason", "done with it", "--json")
+
+	// An empty quote on disk: valid, warned about once as a corpus fact,
+	// verified by hash alone, and not a disclosure.
+	r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Billing", "--content", "will be blanked",
+		"--scope", "organisation", "--document", "note.md", "--hash-document", "--quote", "listens on 443", "--json")
+	claimPath := filepath.Join(ws, r.js["path"].(string))
+	raw, err := os.ReadFile(claimPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(claimPath, []byte(strings.Replace(string(raw), "quote: listens on 443", "quote: \"  \\t \"", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v := run(t, "", "validate", "--json")
+	if v.code != 0 {
+		t.Fatalf("an empty quote must not fail validation: %+v", v)
+	}
+	f = findings()
+	if _, ok := f["empty_quote"]; !ok {
+		t.Errorf("expected empty_quote, got %v", f)
+	}
+	for _, absent := range []string{"invalid_document", "quote_drift", "quoted_source"} {
+		if _, ok := f[absent]; ok {
+			t.Errorf("an empty quote must not report %s: %v", absent, f)
+		}
+	}
+	text := run(t, "", "validate")
+	if !strings.Contains(text.stdout, "1 object  empty_quote") || strings.Contains(text.stdout, ".yaml  empty_quote") {
+		t.Errorf("empty_quote should aggregate as a corpus fact:\n%s", text.stdout)
+	}
+
+	// Write boundaries: a blank --quote is refused; an empty --quote-file is no quote.
+	if r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Billing", "--content", "blank",
+		"--document", "note.md", "--quote", " \t ", "--json"); r.code != 2 {
+		t.Errorf("a blank --quote should be a usage error, got %d", r.code)
+	}
+	emptyFile := filepath.Join(ws, "empty.txt")
+	if err := os.WriteFile(emptyFile, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r = run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Billing", "--content", "empty file",
+		"--document", "note.md", "--quote-file", emptyFile, "--json")
+	if r.code != 0 || r.js["warnings"] != nil {
+		t.Fatalf("an empty --quote-file is no quote: %+v", r)
+	}
+	if doc := r.js["claim"].(map[string]any)["source"].(map[string]any)["document"]; doc != "note.md" {
+		t.Errorf("no quote should leave the document a bare reference, got %#v", doc)
+	}
+}

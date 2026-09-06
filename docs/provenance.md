@@ -84,6 +84,9 @@ source while reading the pull request** — no tooling, no network, no checkout.
 | present | differs | **`context_drift`** — the text around the quote changed |
 | absent | differs | **`quote_drift`** — the cited text is gone or altered |
 | absent | matches | **`quote_drift`** — the quote was never in this document: miscopied, or taken from another revision |
+| present | *none* | nothing moved that the quote can see; the hash is reported as unverified (`unverified_document`) |
+| absent | *none* | **`quote_drift`** — whether the document changed or the quote never matched is unknown |
+| *none* | differs | **`context_drift`** — the document changed; with no quote, whether the cited text survived is unknown |
 
 The second row is why hashing the quote alone is not enough. A document reading
 *"In staging, the billing service listens on 443"* yields the claim *"the
@@ -96,21 +99,42 @@ valid, readable, and citable — it is a condition for a reader to resolve.
 ## How a quote is matched
 
 Words must match exactly; whitespace does not. Before comparing, every run of
-spaces, tabs, newlines, and blank lines — in the quote and in the document — is
-folded to a single space, and the quote's own leading and trailing whitespace is
-trimmed. So a sentence quoted from prose still matches after the document is
-wrapped at another column, checked out with CRLF line endings, or re-indented,
-and a quote may span a hard line wrap. Case, punctuation, and Unicode form are
-compared verbatim: by the hash rule those are edits, and the quote agrees with
-the hash about what an edit is. The stored `quote` is always written as you gave
-it — folding is a property of the comparison, never of the file.
+characters with the Unicode `White_Space` property — spaces, tabs, newlines,
+blank lines, and also the non-breaking space a web page pastes in — is folded to
+a single space on both sides, and the ends are trimmed. So a sentence quoted
+from prose still matches after the document is wrapped at another column,
+checked out with CRLF line endings, or re-indented, and a quote may span a hard
+line wrap or a paragraph break. Case, punctuation, and Unicode normalisation
+form are compared verbatim: for everything *other than whitespace*, the quote
+agrees with the hash about what an edit is. Whitespace is where the two signals
+part on purpose — the hash asks whether anything changed, the quote whether the
+words are still there. The stored `quote` is always written as you gave it;
+folding is a property of the comparison, never of the file.
 
 One consequence: a whitespace-only edit inside a quoted region — re-indenting a
 code block — reports `context_drift`, not `quote_drift`. The words the claim
 rests on did not change; the document around them did.
 
-`claim assert` runs the same check when the document resolves to a file in the
-workspace, and warns — never refuses — when the quote is not found, so a
+The rule is format-blind. Folding removes whitespace and nothing else, so a wrap
+inside a Markdown blockquote or a code comment — where the continuation line
+starts with `>` or `//` — does not match across the marker:
+
+```
+> the billing service listens
+> on 443
+```
+
+cannot be quoted as *the billing service listens on 443*. Take such a quote
+from within one line.
+
+A quote that is empty or only whitespace is refused when the claim is written,
+on the same footing as a confidence outside [0, 1]. A claim file that already
+carries one is not invalid — the file cannot be rewritten, so a rejection could
+never be satisfied — and is read as carrying no quote: verified by hash alone,
+and reported once by `validate` as `empty_quote`.
+
+`claim assert` runs the matching check when the document resolves to a file in
+the workspace, and warns — never refuses — when the quote is not found, so a
 miscopied quote is caught by the person who wrote it rather than by the next
 `validate`.
 
