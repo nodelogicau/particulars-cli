@@ -132,6 +132,30 @@ the same command by hand from the same directory to see the message.
 
 ## What the model is told
 
+The `initialize` instructions carry three things, in this order: the skill
+body, which states the general discipline; this workspace's register, which
+states what it already uses; and the workspace conventions, which are a
+person's commentary on those facts and so are read last.
+
+### The workspace register
+
+A model choosing a subject or a topic cannot reuse a name it cannot see, and
+over MCP asking costs a round trip per question. So the server generates a
+register from the object files and delivers it unasked: every particular with
+its aliases, claim count and whether any belief covers it, then every topic
+with how often it is carried and which are used only once. `particulars
+register` prints the same thing in a shell.
+
+It matters most for topics. A particular minted by mistake can be merged
+later; a topic can never be renamed, because claim files are append-only. A
+workspace that ran without this grew 195 topics for 137 claims, more than half
+of them used exactly once, with `adolescent-psychology` beside `psychology`
+and `being-in-the-world` beside `being`.
+
+Being derived, the register cannot go stale. It is bounded at 12 KiB, and
+where a workspace exceeds that the least-used entries are dropped first, so
+what survives is what is most worth reusing.
+
 ### Workspace conventions
 
 The generic discipline is the skill's; a workspace's own conventions — its
@@ -139,8 +163,8 @@ topic vocabulary, local naming, what goes in which scope — are the
 workspace's. Put them in `dkf.md` at the workspace root — the prose sibling of
 `dkf.yaml`, as the [DKF specification](https://github.com/nodelogicau/particulars#dkfmd)
 names it — or name another file with `workspace.conventions: TOPICS.md` in
-`dkf.yaml`, and the server appends them to the `initialize` instructions under
-a heading naming the file. At least the first 16 KiB is always delivered, cut
+`dkf.yaml`, and the server appends them to the `initialize` instructions after
+the register, under a heading naming the file. At least the first 16 KiB is always delivered, cut
 only on a character boundary, with a note naming the file when longer. This
 is how conventions reach clients that never read the repository — Claude
 Desktop above all. For clients that never surface `instructions` either, the

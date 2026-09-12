@@ -1971,3 +1971,64 @@ func TestDriftSingleSignalStates(t *testing.T) {
 		t.Errorf("no quote should leave the document a bare reference, got %#v", doc)
 	}
 }
+
+// The register reports what the workspace already uses, so a new claim reuses
+// a name rather than minting a near-duplicate (workspace-register).
+func TestRegisterVerb(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+	t.Setenv("DKF_WORKSPACE", ws)
+	run(t, "", "init", "--author", "ben", "--harness", "claude", "--json")
+	run(t, "", "particular", "define", "--label", "Billing Service", "--alias", "billing", "--json")
+	run(t, "", "particular", "define", "--label", "Auth Service", "--json")
+	for _, c := range []struct{ subj, text, topic string }{
+		{"Billing Service", "one", "invoicing"},
+		{"Billing Service", "two", "invoicing"},
+		{"Auth Service", "three", "sessions"},
+	} {
+		run(t, "", "claim", "assert", "--evidential", "observed", "--subject", c.subj,
+			"--content", c.text, "--topic", c.topic, "--json")
+	}
+
+	r := run(t, "", "register", "--json")
+	if r.code != 0 {
+		t.Fatalf("register: %+v", r)
+	}
+	ps := r.js["particulars"].([]any)
+	first := ps[0].(map[string]any)
+	if len(ps) != 2 || first["label"] != "Billing Service" || first["claims"].(float64) != 2 {
+		t.Errorf("particulars by claim count: %#v", ps)
+	}
+	if first["global"] != false {
+		t.Error("a label-minted URI is not a global identity")
+	}
+	tps := r.js["topics"].([]any)
+	if len(tps) != 2 || tps[0].(map[string]any)["topic"] != "invoicing" || tps[1].(map[string]any)["singleton"] != true {
+		t.Errorf("topics by count, singleton marked: %#v", tps)
+	}
+
+	text := run(t, "", "register")
+	for _, want := range []string{"Billing Service", "aliases: billing", "2 claims", "no belief yet", "invoicing (2)", "used once"} {
+		if !strings.Contains(text.stdout, want) {
+			t.Errorf("text register missing %q:\n%s", want, text.stdout)
+		}
+	}
+
+	// A conventions document is the human's commentary on these facts, never
+	// a source of them.
+	if err := os.WriteFile(filepath.Join(ws, "dkf.md"), []byte("# Conventions\n\nUse the tag `nonexistent`.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if after := run(t, "", "register"); after.stdout != text.stdout {
+		t.Error("the register is derived from the files, not the conventions")
+	}
+}
+
+func TestRegisterNeedsWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("DKF_WORKSPACE", "")
+	if r := run(t, "", "register"); r.code != 5 {
+		t.Errorf("no workspace should exit 5, got %d", r.code)
+	}
+}

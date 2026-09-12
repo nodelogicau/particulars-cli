@@ -2,6 +2,7 @@ package query
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1359,5 +1360,88 @@ func TestUnresolved(t *testing.T) {
 		if en.Synthesis == x2.ID {
 			t.Error("promoted synthesis should not be listed at its asserted scope")
 		}
+	}
+}
+
+func TestBuildRegister(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Project X", "px")
+	q := f.particular("Project Y")
+	f.claim(p.ID, "A", "architecture", "db")
+	f.claim(p.ID, "B", "architecture")
+	f.claim(q.ID, "C", "db")
+	f.claim(q.ID, "E", "solo")
+	gone := f.claim(q.ID, "D", "retired-tag")
+	f.retract(gone.ID)
+	reg := BuildRegister(f.graph())
+
+	// Particulars order by claim count descending, then label.
+	if len(reg.Particulars) != 2 || reg.Particulars[0].Label != "Project X" || reg.Particulars[0].Claims != 2 {
+		t.Fatalf("particular order/counts: %+v", reg.Particulars)
+	}
+	if reg.Particulars[1].Claims != 2 {
+		t.Errorf("a retracted claim is not a name in use: %+v", reg.Particulars[1])
+	}
+	if len(reg.Particulars[0].Aliases) != 1 || reg.Particulars[0].Global {
+		t.Errorf("aliases and minted-URI detection: %+v", reg.Particulars[0])
+	}
+	// No synthesis anywhere, so every particular reports no belief.
+	for _, row := range reg.Particulars {
+		if row.HasCurrent {
+			t.Errorf("no synthesis exists: %+v", row)
+		}
+	}
+	// Topics order by count descending, then name; a retracted assertion's
+	// tag is not in use; a tag carried once is a singleton.
+	var names []string
+	for _, tp := range reg.Topics {
+		names = append(names, tp.Topic)
+		if tp.Topic == "retired-tag" {
+			t.Error("a retracted claim's topic is not in use")
+		}
+		if (tp.Topic == "solo") != (tp.Assertions == 1) {
+			t.Errorf("counts: %+v", tp)
+		}
+		if tp.Singleton != (tp.Assertions == 1) {
+			t.Errorf("singleton marking: %+v", tp)
+		}
+	}
+	// architecture and db both carry 2, so the tie orders by name; solo
+	// carries 1 and sorts last.
+	if len(names) != 3 || names[0] != "architecture" || names[1] != "db" || names[2] != "solo" {
+		t.Errorf("count desc then name asc: %v", names)
+	}
+	// Two renderings of unchanged files agree.
+	if BuildRegister(f.graph()).Render(RegisterCap) != reg.Render(RegisterCap) {
+		t.Error("the register must be deterministic")
+	}
+}
+
+func TestRegisterTruncation(t *testing.T) {
+	f := newFixture(t)
+	p := f.particular("Subject")
+	for i := 0; i < 60; i++ {
+		f.claim(p.ID, fmt.Sprintf("claim %d", i), fmt.Sprintf("tag-%02d", i), "shared")
+	}
+	reg := BuildRegister(f.graph())
+	full := reg.Render(0)
+	cut := reg.Render(len(full) / 2)
+
+	if len(cut) > len(full)/2 {
+		t.Fatalf("render must honour the cap: %d > %d", len(cut), len(full)/2)
+	}
+	if !strings.Contains(cut, "omitted") {
+		t.Error("truncation must say how many were dropped")
+	}
+	// The most-used topic survives; the least-used do not. Dropping the tail
+	// is the whole point: the singletons are what should not be copied.
+	if !strings.Contains(cut, "shared (60)") {
+		t.Error("the most-used topic must survive truncation")
+	}
+	if strings.Contains(cut, "tag-59") {
+		t.Error("a singleton must be dropped before a heavily used tag")
+	}
+	if !strings.Contains(cut, "Subject") {
+		t.Error("the only particular should survive: topics are dropped first")
 	}
 }

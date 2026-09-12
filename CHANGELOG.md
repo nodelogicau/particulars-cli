@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **`particulars register`: what the workspace already uses.** A new verb, and
+  a new section in the MCP `initialize` instructions between the skill body
+  and the conventions document, listing every particular with its aliases,
+  claim count and whether any belief covers it, then every topic with its
+  count and which are used once. A model cannot reuse a name it cannot see,
+  and the existing loop opens at `resolve "X"`, by which point the subject is
+  already chosen. Two dogfood workspaces of comparable size make the case: the
+  one carrying a hand-written registry in `dkf.md` holds 174 claims under 9
+  particulars and 46 topics, while the one without holds 137 claims under 39
+  particulars and **195 topics, 110 of them used exactly once**, with
+  `adolescent-psychology` beside `psychology`. It matters most for topics: a
+  particular can be merged later, a topic can never be renamed. The register
+  is derived from the object files, so it cannot go stale the way a
+  hand-typed one does; it is bounded at 12 KiB, dropping the least-used
+  entries first.
 - **Quote matching aligned with DKF change `quote-appears`**
   (particulars-cli#10, after nodelogicau/particulars#24 was accepted). The
   whitespace that folds is named as the Unicode `White_Space` property — what

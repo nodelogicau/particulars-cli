@@ -463,3 +463,29 @@ func TestClaimAssertQuoteWarning(t *testing.T) {
 		t.Error("a refused claim must not be written")
 	}
 }
+
+// The register travels with the instructions, because an MCP client never
+// reads the repository (workspace-register).
+func TestInstructionsCarryRegister(t *testing.T) {
+	h := newHarness(t, "claude-ai", "ben")
+	h.ok("particular_define", map[string]any{"label": "Billing Service", "aliases": []string{"billing"}})
+	h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing Service",
+		"content": "Invoices run nightly", "context": map[string]any{"topics": []string{"invoicing"}}})
+
+	ins := New(Options{Workspace: h.ws, Version: "test"}).Instructions()
+	for _, want := range []string{"This workspace's particulars and topics", "Billing Service", "invoicing (1)"} {
+		if !strings.Contains(ins, want) {
+			t.Errorf("instructions missing %q", want)
+		}
+	}
+	// Order: the skill states the discipline, the register the facts, the
+	// human's conventions comment on them and are read last.
+	if err := os.WriteFile(filepath.Join(h.ws.Root, "dkf.md"), []byte("# Conventions\n\nLocal rules.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ins = New(Options{Workspace: h.ws, Version: "test"}).Instructions()
+	reg, conv := strings.Index(ins, "This workspace's particulars"), strings.Index(ins, "Local rules.")
+	if reg < 0 || conv < 0 || reg > conv {
+		t.Errorf("register must precede the conventions document: %d vs %d", reg, conv)
+	}
+}

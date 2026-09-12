@@ -20,6 +20,21 @@ files by hand, never touch `index.yaml`.
 
 ## The loop
 
+**Once per session, before you choose a subject or a topic**, read what the
+workspace already uses:
+
+```
+particulars register --json    # every particular, every topic, and how used
+```
+
+The loop below opens at `resolve "X"`, by which point X is already chosen — it
+can tell you what is believed about X, never that a better subject exists or
+that the tag you are about to coin is a near-miss of one in use. A particular
+minted by mistake can be merged later; **a topic can never be renamed**, so the
+tag you invent is permanent. Reuse a name unless it genuinely does not fit. An
+MCP client receives the register with the server's instructions and does not
+need to call anything.
+
 Every time you are about to rely on or record knowledge about some thing X:
 
 ```
@@ -85,6 +100,7 @@ modifier inside double quotes too, so `"$id:thesis"` silently becomes
 | What is believed | `particulars recall "<thing>" [--topic <t>]... [--scope <s>] [--limit <n>] --json` → `{entries: [...]}`, oldest first, `current: true` on the live synthesis |
 | Who said what | `particulars recall --author <who> --json` — everything that particular asserted (`relations: [asserted]`) or is reported for (`[reported]`); combinable with a subject |
 | Across things | `particulars recall --topic <t> --json` |
+| What the workspace already uses | `particulars register --json` → `{particulars: [...], topics: [...]}`; read once before choosing a subject or a tag |
 | Which tags exist | `particulars topics ["<thing>"] --json` → `{topics: [{topic, assertions, particulars}]}`; check before inventing a new tag |
 | Why is it believed | `particulars lineage <id> [--depth <n>] --json` → nested tree of inputs with roles |
 | What needs work | `particulars conflicts ["<thing>"] --json` → `{reports: [{particular, current, unsynthesised, stale, priority}]}` |
