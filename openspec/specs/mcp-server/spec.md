@@ -108,7 +108,7 @@ For each session the server SHALL default `source.harness` to the client's `clie
 - **THEN** the claim records `harness: other` and `author: ben`
 
 ### Requirement: Instructions and prompt carry the skill
-The `initialize` response SHALL include `instructions` consisting of a short header naming the bound workspace (root and id) and stating that writes land as files for human review, followed by the embedded skill's body. When the workspace carries a conventions document (per the `workspace` capability), the instructions SHALL additionally carry its content after the skill body, under a heading naming the file. When the server limits what it delivers it SHALL deliver at least the first 16 KiB of the document's UTF-8 encoding, SHALL cut only on a character boundary — advancing past a character that straddles the limit, never cutting short of it — and SHALL append a note saying the text was truncated and naming the file. A configured conventions file that cannot be read SHALL be reported on stderr and omitted, never failing startup. The server SHALL also expose a prompt named `particulars-discipline` returning the same text.
+The `initialize` response SHALL include `instructions` consisting of a short header naming the bound workspace (root and id) and stating that writes land as files for human review, followed by the embedded skill's body. The instructions SHALL then carry the workspace register (per the `workspace-register` capability) under a heading naming it, so that a client which never reads the repository can see which particulars and topics the workspace already uses before it chooses either. When the workspace carries a conventions document (per the `workspace` capability), the instructions SHALL additionally carry its content after the register, under a heading naming the file — last, so that a human's stated convention is read after the facts it comments on and takes precedence over them. When the server limits what it delivers it SHALL deliver at least the first 16 KiB of the document's UTF-8 encoding, SHALL cut only on a character boundary — advancing past a character that straddles the limit, never cutting short of it — and SHALL append a note saying the text was truncated and naming the file. A configured conventions file that cannot be read SHALL be reported on stderr and omitted, never failing startup. The server SHALL also expose a prompt named `particulars-discipline` returning the same text.
 
 #### Scenario: Instructions present
 - **WHEN** a client initialises
@@ -129,6 +129,14 @@ The `initialize` response SHALL include `instructions` consisting of a short hea
 #### Scenario: Prompt available
 - **WHEN** a client lists prompts and gets `particulars-discipline`
 - **THEN** the prompt's message text equals the instructions body
+
+#### Scenario: The register travels with the instructions
+- **WHEN** a client initializes against a workspace holding 39 particulars and 195 topics
+- **THEN** `instructions` carries a register section listing them, between the skill body and any conventions document
+
+#### Scenario: A workspace with no conventions document
+- **WHEN** the workspace carries no conventions document
+- **THEN** `instructions` still carries the register, because it is derived rather than authored
 
 ### Requirement: Conventions document is a resource
 When the workspace carries a readable conventions document at startup, the server SHALL expose it as an MCP resource with a `file://` URI naming the document's absolute path, `name` equal to its workspace-relative path, `mimeType` `text/markdown`, whose content is read from the file at request time. When no document applies, no resource SHALL be listed.
