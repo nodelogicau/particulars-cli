@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.14.0 — what the workspace already uses, and quotes that survive a re-wrap
 
 - **`particulars register`: what the workspace already uses.** A new verb, and
   a new section in the MCP `initialize` instructions between the skill body
