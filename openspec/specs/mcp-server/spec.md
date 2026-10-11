@@ -85,6 +85,13 @@ The server SHALL expose `unresolved_list(particular_id?, scope?, include_none?)`
 - **WHEN** `unresolved_list{particular_id: "Nobody"}` is called
 - **THEN** the result has `isError: true` and `error.code: "not_found"`
 
+### Requirement: Results carry their data as text
+A successful tool result SHALL carry, after its one-line summary text block, a second text block holding its structured content as JSON, so that a client which passes the model only text content still passes the data.
+
+#### Scenario: Listing in a text-only client
+- **WHEN** `unresolved_list` returns one entry
+- **THEN** the first text block is `1 unresolved` and the second parses as JSON equal to the structured content, naming that entry's synthesis
+
 ### Requirement: Errors are tool results with CLI codes
 A domain failure (not found, usage, invalid input, conflict, runtime) SHALL be returned as a tool result with `isError: true`, a text block `<code>: <message>`, and structured `{"error": {"code", "message"}}` using the CLI's error codes. Protocol-level failures only SHALL be JSON-RPC errors.
 

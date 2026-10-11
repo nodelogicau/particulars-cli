@@ -223,6 +223,15 @@ func TestSpecToolsRoundTrip(t *testing.T) {
 	if ul := h.ok("unresolved_list", map[string]any{"include_none": true}); ul["count"].(float64) != 1 || ul["entries"].([]any)[0].(map[string]any)["synthesis"] != sid {
 		t.Errorf("unresolved_list include_none: %+v", ul)
 	}
+	// The data rides in the text too, for clients that show the model only text.
+	res, err := h.cs.CallTool(context.Background(), &sdk.CallToolParams{Name: "unresolved_list", Arguments: map[string]any{"include_none": true}})
+	if err != nil || len(res.Content) != 2 {
+		t.Fatalf("unresolved_list content: %v %v", err, res)
+	}
+	var fromText map[string]any
+	if err := json.Unmarshal([]byte(res.Content[1].(*sdk.TextContent).Text), &fromText); err != nil || res.Content[0].(*sdk.TextContent).Text != "1 unresolved" || fromText["entries"].([]any)[0].(map[string]any)["synthesis"] != sid {
+		t.Errorf("unresolved_list text: %v %v", err, res.Content)
+	}
 	h.fail("unresolved_list", map[string]any{"particular_id": "Nobody"}, "not_found")
 	if tp := h.ok("topics_list", map[string]any{"include_retracted": true}); tp["count"].(float64) != 1 {
 		t.Errorf("topics incl. retracted: %v", tp)

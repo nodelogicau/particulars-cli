@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **MCP results reach the model in clients that read only text.** Every
+  successful tool result now repeats its structured content as a JSON text
+  block after the summary. Claude Desktop passes the model only text, so it
+  saw a count such as "3 topics" and none of the topics.
+- **`make bundle` no longer ships a stale macOS binary.** The local universal
+  binary is built in the bundle's staging directory instead of `dist/`, where
+  later runs picked up whatever was left there.
+
 ## v0.14.0 — what the workspace already uses, and quotes that survive a re-wrap
 
 - **`particulars register`: what the workspace already uses.** A new verb, and

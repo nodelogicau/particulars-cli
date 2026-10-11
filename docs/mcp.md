@@ -228,6 +228,10 @@ written as its `uri`. `document` is a string, or a mapping of `ref` (`uri` is
 the legacy alias), `author` (who produced what was read — for testimony, who
 told you), `hash`, and `quote`.
 
+A successful result carries its output as structured content and again as a
+JSON text block after a one-line summary, since some clients (Claude Desktop
+among them) show the model only the text.
+
 Errors are tool results with `isError: true`, a text line `<code>: <message>`, and
 `{"error": {"code", "message"}}` using the CLI's codes (`not_found`, `usage`,
 `invalid`, `conflict`, `runtime`).
