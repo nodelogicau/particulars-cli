@@ -24,10 +24,13 @@ find_bin() { # glob words -> first existing match, or empty (never fails)
   return 0
 }
 
+STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
+
 # GoReleaser writes its universal binary to dist/<id>_darwin_all/particulars
 # (the id is prefixed, e.g. particulars-universal_darwin_all), so match any
 # *_darwin_all directory first. `make cross` produces flat per-arch files, so
-# fall back to building the universal binary here with lipo.
+# fall back to building the universal binary here with lipo — into the stage,
+# never dist, or a later run would pick up the stale result above.
 DARWIN="$(find_bin "${DIST}"/*_darwin_all/particulars)"
 if [ -z "$DARWIN" ]; then
   ARM="$(find_bin "${DIST}"/particulars_darwin_arm64*/particulars)"; [ -n "$ARM" ] || ARM="$(find_bin "${DIST}/particulars_darwin_arm64")"
@@ -37,9 +40,8 @@ if [ -z "$DARWIN" ]; then
       echo "build-bundle: both darwin arches present but lipo is unavailable; refusing to ship a single-architecture bundle" >&2
       exit 1
     }
-    mkdir -p "${DIST}/particulars_darwin_all"
-    lipo -create -output "${DIST}/particulars_darwin_all/particulars" "$ARM" "$AMD"
-    DARWIN="${DIST}/particulars_darwin_all/particulars"
+    lipo -create -output "$STAGE/particulars-universal" "$ARM" "$AMD"
+    DARWIN="$STAGE/particulars-universal"
   else
     DARWIN="${ARM:-$AMD}"
   fi
@@ -57,7 +59,6 @@ if command -v file >/dev/null 2>&1 && ! file "$DARWIN" | grep -q "universal bina
   exit 1
 fi
 
-STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/server/darwin" "$STAGE/server/win32"
 cp "$DARWIN" "$STAGE/server/darwin/particulars"; chmod 0755 "$STAGE/server/darwin/particulars"
 cp "$WIN" "$STAGE/server/win32/particulars.exe"
