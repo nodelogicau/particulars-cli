@@ -73,3 +73,23 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: make cross
+
+  # Scale benchmarks: published, never gating. Timings on shared runners show
+  # trends only; compare local runs with benchstat for decisions.
+  bench-scale:
+    name: Scale benchmarks
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: make bench-scale BENCHTIME=3x | tee bench-scale.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-scale-${{ github.sha }}
+          path: bench-scale.txt

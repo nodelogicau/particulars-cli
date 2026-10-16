@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Scale benchmarks.** `make bench-scale` times load, `index`, `recall`,
+  `recall --topic`, `conflicts`, `validate`, and the built binary's `recall`
+  over generated, seeded workspaces of 100 to 20,000 claims. CI publishes the
+  results on every push to `main` without gating on them. The first run finds
+  every curve linear, with no knee at the 800-claim dkf/0.2 trigger. What a
+  user waits for is each verb parsing every file (2.2 s for `recall` at
+  20,000 claims), which sharding would not change. See `docs/benchmarks.md`.
 - **MCP results reach the model in clients that read only text.** Every
   successful tool result now repeats its structured content as a JSON text
   block after the summary. Claude Desktop passes the model only text, so it

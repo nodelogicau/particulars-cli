@@ -19,7 +19,7 @@ Memory efficacy — agent, guidance, and spec tools on LongMemEval — is benchm
 ## Decisions
 
 ### 1. In-process benchmarks over generated workspaces
-A test-only generator writes a workspace through the store package from a fixed seed, with seeded ids and timestamps so two generations are byte-identical. Shape follows the two dogfood workspaces: particulars ≈ claims/20, a Zipf-shaped topic vocabulary, a synthesis every few claims, a small fraction of retractions and merges. Sizes 100, 800, 5,000, 20,000 bracket the trigger by an order of magnitude each side.
+A test-only generator writes a workspace through the store package from a fixed seed, with seeded ids and timestamps so two generations are byte-identical. Shape follows the two dogfood workspaces: particulars ≈ claims/10, a Zipf-shaped topic vocabulary, a synthesis every few claims, a small fraction of retractions and merges. Sizes 100, 800, 5,000, 20,000 bracket the trigger by an order of magnitude each side.
 
 *Alternative:* benchmark a copy of a real workspace. Rejected: private content, a single size, and no control over shape.
 
@@ -40,4 +40,5 @@ In-process timings miss process start and the index read a user actually waits f
 
 ## Open Questions
 
-- Where do the curves bend, and does that move the dkf/0.2 trigger? Answered by the first local run (task 1.7).
+- ~~Where do the curves bend, and does that move the dkf/0.2 trigger?~~ Answered by the first local run (2026-10-16, M2 Pro): nowhere, because every curve is linear. `ExecRecall` takes 85 ms at 800 claims and 2.2 s at 20,000. The time goes to every verb parsing every file, which sharding does not change, so the trigger stays where it was: GitHub's 1,000-file directory listing, which these benchmarks do not measure. The fix for speed, if it is ever needed, is to answer `recall` from the index. Details are in `docs/benchmarks.md`.
+- The particular ratio is one per 10 claims, not the drafted one per 20. That is between the two dogfood workspaces, at 1:20 and 1:3.5.

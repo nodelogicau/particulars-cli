@@ -6,7 +6,7 @@ DIST    := dist
 
 export CGO_ENABLED := 0
 
-.PHONY: all build test lint fmt vet cross clean tidy skill bundle
+.PHONY: all build test lint fmt vet cross clean tidy skill bundle bench-scale
 
 all: build
 
@@ -15,6 +15,12 @@ build:
 
 test:
 	go test ./... -count=1
+
+# Scale benchmarks over generated workspaces (100–20,000 claims). Never part
+# of `test`; the largest sizes take a few minutes. BENCHTIME=1x for a quick look.
+BENCHTIME ?= 5x
+bench-scale:
+	go test ./internal/query -run '^$$' -bench . -benchtime=$(BENCHTIME) -count=1 -timeout 60m
 
 fmt:
 	gofmt -l -w .
