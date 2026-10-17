@@ -98,6 +98,7 @@ modifier inside double quotes too, so `"$id:thesis"` silently becomes
 | Multi-line content | add `--content-file -` and pipe the text on stdin (instead of `--content`) |
 | Reconcile | `particulars synthesis create --subject "<thing>" --input <id>:thesis --input <id>:antithesis [--input <id>:thesis:qualifying] --unresolved "<what remains open>" --content "<resolution with reasoning>" --json` |
 | What is believed | `particulars recall "<thing>" [--topic <t>]... [--scope <s>] [--limit <n>] --json` → `{entries: [...]}`, oldest first, `current: true` on the live synthesis |
+| Search by words | `particulars recall --query "<words or question>" [--limit <n>] --json` → `{particulars: [{particular, resolution, entries}], omitted}`; use when you don't know the thing's name — it matches labels, aliases, and content (any word), exact names first, matching entries `matched: true`, 10 particulars unless `--limit`. Prefer `recall "<thing>"` when you know the name |
 | Who said what | `particulars recall --author <who> --json` — everything that particular asserted (`relations: [asserted]`) or is reported for (`[reported]`); combinable with a subject |
 | Across things | `particulars recall --topic <t> --json` |
 | What the workspace already uses | `particulars register --json` → `{particulars: [...], topics: [...]}`; read once before choosing a subject or a tag |

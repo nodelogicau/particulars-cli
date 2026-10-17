@@ -42,6 +42,8 @@ type Entry struct {
 	Inputs        []dkf.Input `json:"inputs,omitempty"`
 	Unresolved    string      `json:"unresolved,omitempty"`
 	Method        string      `json:"method,omitempty"`
+	// Matched marks, in recall by query, an object whose content matched.
+	Matched bool `json:"matched,omitempty"`
 }
 
 func entryFor(g *store.Graph, a dkf.Assertion) Entry {

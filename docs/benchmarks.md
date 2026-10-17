@@ -32,6 +32,7 @@ before anything is timed. Change the shape and you must bump `genVersion`.
 | `RebuildIndex` | `index` |
 | `Recall` | `recall` of the particular with the most claims, graph already loaded |
 | `RecallTopic` | `recall --topic` of the most-used topic, graph already loaded |
+| `RecallQuery` | `recall --query` of a question containing "fact", which every generated claim contains, so every particular resolves and is recalled: the worst case. Graph already loaded |
 | `Conflicts` | `conflicts` over the whole workspace, graph already loaded |
 | `Validate` | `validate`, including its load |
 | `ExecRecall` | the built binary running `recall --json`: process start, load, and output, as a user waits for them |
@@ -69,6 +70,20 @@ What they say:
   at if those runs slow down.
 - At the dogfood workspace's growth rate (~240 claims a month), `recall`
   passes half a second (~4,000 claims) in about a year and a half.
+
+### Recall by query (2026-10-17, Apple M2 Pro, generator `g1`, 3 iterations)
+
+| claims | `Recall` | `RecallQuery` |
+|---:|---:|---:|
+| 100 | 0.03 ms | 0.5 ms |
+| 800 | 0.24 ms | 4.9 ms |
+| 5,000 | 1.0 ms | 28 ms |
+| 20,000 | 7.5 ms | 116 ms |
+
+Even when every particular resolves, recall by query stays linear and well under
+the load: 116 ms against ~2 s at 20,000 claims. Most of that time goes to stage
+two recalling every resolved class so the order can be computed before the
+limit applies. A query of specific words resolves far fewer particulars.
 
 The dkf/0.2 trigger was never about CLI speed. It is the GitHub
 1,000-file directory listing, which these numbers neither move nor measure.

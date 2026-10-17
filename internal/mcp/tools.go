@@ -35,7 +35,7 @@ func (s *Server) registerTools() {
 		Description: "Record a synthesis you have already reasoned: inputs with roles (thesis = the belief challenged, antithesis = the challenger; weight primary|qualifying), content carrying the reasoning, and the mandatory unresolved — state what remains open, or exactly 'None identified'. A synthesis is itself a claim and becomes the current belief for its particular."},
 		s.synthesisCreate)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "knowledge_recall", Annotations: readOnly,
-		Description: "Retrieve claims and syntheses about a particular (by id, URI, label, or alias) and/or carrying every given topic, in lineage order (inputs before the syntheses citing them). Marks the current synthesis and each unsynthesised entry. Operates across merged particulars."},
+		Description: "Retrieve claims and syntheses about a particular (by id, URI, label, or alias) and/or carrying every given topic, in lineage order (inputs before the syntheses citing them). Marks the current synthesis and each unsynthesised entry. Operates across merged particulars. With query (free text) instead of particular_id, resolves every particular whose label, alias, or content matches the query or any of its words, and returns each one's recall grouped by particular with its resolution (label, alias, lexical), exact names first and matching entries marked."},
 		s.knowledgeRecall)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "conflict_detect", Annotations: readOnly,
 		Description: "Structural conflict sets for a particular (or a given set of claim ids): current synthesis, unsynthesised assertions not reconciled into it, stale syntheses citing a retracted input, and a priority. The tool does not judge contradiction — you do."},
@@ -510,21 +510,21 @@ func (s *Server) synthesisCreate(ctx context.Context, req *sdk.CallToolRequest, 
 
 type recallIn struct {
 	ParticularID     string   `json:"particular_id,omitempty" jsonschema:"id, URI, label, or alias; omit to recall by topic only"`
-	Query            string   `json:"query,omitempty" jsonschema:"alias of particular_id, as in the DKF tool table"`
+	Query            string   `json:"query,omitempty" jsonschema:"free-text question or words; resolves particulars by label, alias, or content, then recalls each (exclusive with particular_id)"`
 	Scope            string   `json:"scope,omitempty" jsonschema:"only this scope"`
 	Topics           []string `json:"topics,omitempty" jsonschema:"all must match"`
 	IncludeRetracted bool     `json:"include_retracted,omitempty"`
-	Limit            int      `json:"limit,omitempty" jsonschema:"keep the most recent N in lineage order"`
+	Limit            int      `json:"limit,omitempty" jsonschema:"keep the most recent N in lineage order; with query, the first N particulars (default 10)"`
 	Author           string   `json:"author,omitempty" jsonschema:"objects asserted by or reported from this particular (id, URI, label, or alias), each labelled with its relations"`
 }
 
 func (s *Server) knowledgeRecall(ctx context.Context, req *sdk.CallToolRequest, in recallIn) (*sdk.CallToolResult, any, error) {
 	subject := in.ParticularID
-	if subject == "" {
-		subject = in.Query
+	if subject != "" && in.Query != "" {
+		return errResult(apperr.Usage("pass particular_id or query, not both")), nil, nil
 	}
-	if subject == "" && len(in.Topics) == 0 && in.Author == "" {
-		return errResult(apperr.Usage("pass particular_id (or query), topics, author, or a combination")), nil, nil
+	if subject == "" && in.Query == "" && len(in.Topics) == 0 && in.Author == "" {
+		return errResult(apperr.Usage("pass particular_id, query, topics, author, or a combination")), nil, nil
 	}
 	g, err := s.load()
 	if err != nil {
@@ -556,6 +556,17 @@ func (s *Server) knowledgeRecall(ctx context.Context, req *sdk.CallToolRequest, 
 		}
 		opts.Author = p.ID
 		out["author"] = p.ID
+	}
+	if in.Query != "" {
+		res, err := query.RecallQuery(g, in.Query, opts)
+		if err != nil {
+			return errResult(err), nil, nil
+		}
+		top := "(none)"
+		if len(res.Particulars) > 0 {
+			top = fmt.Sprintf("%s [%s]", res.Particulars[0].Label, res.Particulars[0].Resolution)
+		}
+		return okResult(fmt.Sprintf("%d particulars (%d omitted); top: %s", res.Count, res.Omitted, top)), res, nil
 	}
 	entries := query.Recall(g, opts)
 	out["entries"], out["count"] = entries, len(entries)

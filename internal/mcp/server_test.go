@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nodelogicau/particulars-cli/internal/query"
 	"github.com/nodelogicau/particulars-cli/internal/store"
 )
 
@@ -158,7 +160,7 @@ func TestSpecToolsRoundTrip(t *testing.T) {
 	if s["synthesis"].(map[string]any)["source"].(map[string]any)["harness"] != "claude" || len(s["warnings"].([]any)) != 0 {
 		t.Errorf("synthesis: %v", s)
 	}
-	rc = h.ok("knowledge_recall", map[string]any{"query": "Project X"})
+	rc = h.ok("knowledge_recall", map[string]any{"particular_id": "Project X"})
 	last := rc["entries"].([]any)[2].(map[string]any)
 	if last["id"] != sid || last["current"] != true {
 		t.Errorf("current after synthesis: %v", last)
@@ -497,4 +499,40 @@ func TestInstructionsCarryRegister(t *testing.T) {
 	if reg < 0 || conv < 0 || reg > conv {
 		t.Errorf("register must precede the conventions document: %d vs %d", reg, conv)
 	}
+}
+
+// knowledge_recall with query is recall by query, not an alias of
+// particular_id: grouped per particular, its result equals the one RecallQuery
+// produces for `recall --query --json`.
+func TestKnowledgeRecallByQuery(t *testing.T) {
+	h := newHarness(t, "claude-ai", "ben")
+	px := id(h.ok("particular_define", map[string]any{"label": "Project X"}), "particular")
+	h.ok("particular_define", map[string]any{"label": "Session"})
+	h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Project X", "content": "Uses Postgres"})
+	h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Session", "content": "The session timeout is 30 minutes."})
+
+	got, isErr, text := h.call("knowledge_recall", map[string]any{"query": "what is the session timeout?"})
+	if isErr || !strings.HasPrefix(text, "1 particulars (0 omitted); top: Session [lexical]") {
+		t.Fatalf("recall by query: %v %q", isErr, text)
+	}
+	g, err := h.ws.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := query.RecallQuery(g, "what is the session timeout?", query.RecallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wantJS map[string]any
+	b, _ := json.Marshal(want)
+	_ = json.Unmarshal(b, &wantJS)
+	if !reflect.DeepEqual(got, wantJS) {
+		t.Errorf("MCP result differs from recall --query --json:\n%v\n%v", got, wantJS)
+	}
+
+	r := h.ok("knowledge_recall", map[string]any{"query": "Project X"})
+	if p := r["particulars"].([]any)[0].(map[string]any); p["particular"] != px || p["resolution"] != "label" || r["entries"] != nil {
+		t.Errorf("a name passed as query: %v", r)
+	}
+	h.fail("knowledge_recall", map[string]any{"particular_id": "Project X", "query": "timeout"}, "usage")
 }

@@ -9,24 +9,36 @@ import (
 
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
 	"github.com/nodelogicau/particulars-cli/internal/query"
+	"github.com/nodelogicau/particulars-cli/internal/store"
 )
 
 func (a *app) recallCmd() *cobra.Command {
 	var includeRetracted bool
 	var limit int
-	var scope, author string
+	var scope, author, queryText string
 	var topics []string
 	cmd := &cobra.Command{
-		Use:   "recall [<particular>] [--author <who>] [--topic <t>]... [--scope <s>] [--include-retracted] [--limit <n>]",
+		Use:   "recall [<particular> | --query <text>] [--author <who>] [--topic <t>]... [--scope <s>] [--include-retracted] [--limit <n>]",
 		Short: "Retrieve claims and syntheses in lineage order",
 		Long: `Returns claims and syntheses about a particular (by id, uri, label, or alias)
 and/or carrying every given --topic, oldest first so that inputs precede the
 syntheses that cite them. The most recent non-retracted synthesis about a
-particular is marked current. --limit keeps the most recent N.`,
+particular is marked current. --limit keeps the most recent N.
+
+--query <text> recalls by free text instead of a particular: it resolves every
+particular whose label, alias, or claim/synthesis content contains the query or
+any of its words (edge punctuation trimmed, case folded), then recalls each as
+above. Results are grouped per particular with how it was resolved (label,
+alias, lexical), exact names first; content matches are marked. With --query,
+--limit counts particulars (default 10).`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: a.run(func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 && len(topics) == 0 && author == "" {
-				return usageErr("pass a particular, one or more --topic, --author, or a combination")
+			querying := cmd.Flags().Changed("query")
+			if querying && len(args) == 1 {
+				return usageErr("pass a particular or --query, not both")
+			}
+			if len(args) == 0 && len(topics) == 0 && author == "" && !querying {
+				return usageErr("pass a particular, --query, one or more --topic, --author, or a combination")
 			}
 			ws, err := a.openWorkspace()
 			if err != nil {
@@ -59,6 +71,9 @@ particular is marked current. --limit keeps the most recent N.`,
 				}
 				opts.Author = p.ID
 			}
+			if querying {
+				return a.recallByQuery(g, queryText, opts)
+			}
 			entries := query.Recall(g, opts)
 			out := map[string]any{"entries": entries, "count": len(entries)}
 			if opts.Author != "" {
@@ -78,41 +93,75 @@ particular is marked current. --limit keeps the most recent N.`,
 				if subjectLabel != "" {
 					fmt.Fprintf(w, "%s (%s): %s\n", subjectLabel, opts.Subject, plural(len(entries), "entry"))
 				}
-				for _, e := range entries {
-					flags := ""
-					if e.Current {
-						flags += " [current]"
-					}
-					if e.Unsynthesised {
-						flags += " [unsynthesised]"
-					}
-					if e.Retracted {
-						flags += " [retracted]"
-					}
-					for _, r := range e.Relations {
-						flags += " [" + r + "]"
-					}
-					if opts.Subject != "" && e.Subject != opts.Subject {
-						flags += " [subject " + e.Subject + "]"
-					}
-					fmt.Fprintf(w, "%s  %-9s %s  conf=%s%s\n    %s\n", e.ID, e.Type, e.Timestamp, fmtConfidence(e.Confidence), flags, oneLine(e.Content, 160))
-					if e.Type == dkf.TypeSynthesis {
-						ids := make([]string, len(e.Inputs))
-						for i, in := range e.Inputs {
-							ids[i] = fmt.Sprintf("%s(%s)", in.ID, in.Role)
-						}
-						fmt.Fprintf(w, "    inputs: %s\n    unresolved: %s\n", strings.Join(ids, ", "), oneLine(e.Unresolved, 120))
-					}
-				}
+				printEntries(w, entries, opts.Subject)
 			})
 		}),
 	}
 	cmd.Flags().BoolVar(&includeRetracted, "include-retracted", false, "include retracted claims and syntheses")
-	cmd.Flags().IntVar(&limit, "limit", 0, "keep only the most recent N entries")
+	cmd.Flags().IntVar(&limit, "limit", 0, "keep only the most recent N entries (with --query: the first N particulars, default 10)")
 	cmd.Flags().StringVar(&scope, "scope", "", "only entries with this scope")
 	cmd.Flags().StringVar(&author, "author", "", "only entries asserted by or reported from this particular (id, uri, label, or alias)")
 	cmd.Flags().StringArrayVar(&topics, "topic", nil, "only entries carrying this topic (repeatable; all must match)")
+	cmd.Flags().StringVar(&queryText, "query", "", "recall by free text: particulars whose label, alias, or content matches the query or any of its words")
 	return cmd
+}
+
+// recallByQuery runs recall by query and emits it grouped per particular.
+func (a *app) recallByQuery(g *store.Graph, text string, opts query.RecallOptions) error {
+	res, err := query.RecallQuery(g, text, opts)
+	if err != nil {
+		return err
+	}
+	return a.emit(res, func(w io.Writer) {
+		if len(res.Particulars) == 0 {
+			fmt.Fprintln(w, "(nothing recalled)")
+			return
+		}
+		for i, p := range res.Particulars {
+			if i > 0 {
+				fmt.Fprintln(w)
+			}
+			fmt.Fprintf(w, "%s (%s) [%s]: %s\n", p.Label, p.Particular, p.Resolution, plural(len(p.Entries), "entry"))
+			printEntries(w, p.Entries, p.Particular)
+		}
+		if res.Omitted > 0 {
+			fmt.Fprintf(w, "(+%d more; raise --limit)\n", res.Omitted)
+		}
+	})
+}
+
+// printEntries renders recalled entries; subject, when set, flags entries
+// about another member of its merge class.
+func printEntries(w io.Writer, entries []query.Entry, subject string) {
+	for _, e := range entries {
+		flags := ""
+		if e.Current {
+			flags += " [current]"
+		}
+		if e.Unsynthesised {
+			flags += " [unsynthesised]"
+		}
+		if e.Retracted {
+			flags += " [retracted]"
+		}
+		if e.Matched {
+			flags += " [matched]"
+		}
+		for _, r := range e.Relations {
+			flags += " [" + r + "]"
+		}
+		if subject != "" && e.Subject != subject {
+			flags += " [subject " + e.Subject + "]"
+		}
+		fmt.Fprintf(w, "%s  %-9s %s  conf=%s%s\n    %s\n", e.ID, e.Type, e.Timestamp, fmtConfidence(e.Confidence), flags, oneLine(e.Content, 160))
+		if e.Type == dkf.TypeSynthesis {
+			ids := make([]string, len(e.Inputs))
+			for i, in := range e.Inputs {
+				ids[i] = fmt.Sprintf("%s(%s)", in.ID, in.Role)
+			}
+			fmt.Fprintf(w, "    inputs: %s\n    unresolved: %s\n", strings.Join(ids, ", "), oneLine(e.Unresolved, 120))
+		}
+	}
 }
 
 func (a *app) lineageCmd() *cobra.Command {

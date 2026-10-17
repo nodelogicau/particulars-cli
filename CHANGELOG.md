@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Recall by query: `particulars recall --query "<words>"`.** Recall now
+  works when you don't know a thing's name. It resolves every particular
+  whose label, alias, or claim or synthesis content contains the query or any
+  of its words, then returns each one's recall under the same filters. Edge
+  punctuation is trimmed, so `timeout?` finds "timeout" and `PROJ-1234.` finds
+  the ticket, and matching uses full Unicode case folding. Results are grouped
+  per particular with `resolution` (`label`, `alias`, `lexical`). An exact name
+  asked about in a sentence (`Project X?`) comes first, then more words
+  matched, and matching entries carry `matched: true`. `--limit` counts
+  particulars and defaults to 10, with `omitted` reporting the rest. This
+  implements DKF `recall-query`'s lexical baseline (#12).
+- **BREAKING (MCP): `knowledge_recall`'s `query` is recall by query.** It was
+  an alias of `particular_id` and returned a flat `entries` list or a
+  not-found error. It now returns the grouped `recall --query --json` result,
+  and passing both `query` and `particular_id` is a usage error. A name passed
+  as `query` still comes first, as `resolution: label`. Clients that relied
+  on the old shape should pass `particular_id`.
 - **Scale benchmarks.** `make bench-scale` times load, `index`, `recall`,
   `recall --topic`, `conflicts`, `validate`, and the built binary's `recall`
   over generated, seeded workspaces of 100 to 20,000 claims. CI publishes the

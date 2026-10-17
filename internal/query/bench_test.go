@@ -147,6 +147,23 @@ func BenchmarkRecallTopic(b *testing.B) {
 	})
 }
 
+// BenchmarkRecallQuery recalls by a question of two vocabulary words and
+// "fact", which every generated claim contains: the worst case, in which
+// stage one resolves every particular and stage two recalls each.
+func BenchmarkRecallQuery(b *testing.B) {
+	q := fmt.Sprintf("what %s fact %s?", genWords[0], genWords[1])
+	eachSize(b, func(b *testing.B, ws *benchWorkspace) {
+		g := loadBench(b, ws)
+		b.ResetTimer()
+		for b.Loop() {
+			r, err := RecallQuery(g, q, RecallOptions{})
+			if err != nil || r.Count == 0 {
+				b.Fatal("empty recall by query")
+			}
+		}
+	})
+}
+
 func BenchmarkConflicts(b *testing.B) {
 	eachSize(b, func(b *testing.B, ws *benchWorkspace) {
 		g := loadBench(b, ws)

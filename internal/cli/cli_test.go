@@ -2032,3 +2032,39 @@ func TestRegisterNeedsWorkspace(t *testing.T) {
 		t.Errorf("no workspace should exit 5, got %d", r.code)
 	}
 }
+
+func TestRecallByQuery(t *testing.T) {
+	initWS(t)
+	x := define(t, "Project X")
+	define(t, "Session")
+	c := assert(t, "Session", "The session timeout is 30 minutes.")
+	assert(t, "Project X", "Uses Postgres")
+
+	r := run(t, "", "recall", "--query", "timeout?", "--json")
+	ps := r.js["particulars"].([]any)
+	if r.code != 0 || len(ps) != 1 || r.js["query"] != "timeout?" || r.js["count"].(float64) != 1 || r.js["omitted"].(float64) != 0 {
+		t.Fatalf("recall --query: %d %+v", r.code, r.js)
+	}
+	p := ps[0].(map[string]any)
+	e := p["entries"].([]any)[0].(map[string]any)
+	if p["resolution"] != "lexical" || p["label"] != "Session" || e["id"] != c || e["matched"] != true {
+		t.Errorf("grouped result: %+v", p)
+	}
+	r = run(t, "", "recall", "--query", "Project X?", "--json")
+	if p := r.js["particulars"].([]any)[0].(map[string]any); p["particular"] != x || p["resolution"] != "label" {
+		t.Errorf("name as query: %+v", r.js)
+	}
+	if r = run(t, "", "recall", "--query", "?!", "--json"); r.code != 0 || len(r.js["particulars"].([]any)) != 0 {
+		t.Errorf("punctuation alone: %d %+v", r.code, r.js)
+	}
+	if r = run(t, "", "recall", "Project X", "--query", "timeout", "--json"); r.code != 2 {
+		t.Errorf("particular and --query: want 2, got %d", r.code)
+	}
+	if r = run(t, "", "recall", "--query", "timeout", "--limit", "-1", "--json"); r.code != 2 {
+		t.Errorf("negative limit: want 2, got %d", r.code)
+	}
+	r = run(t, "", "recall", "--query", "timeout")
+	if r.code != 0 || !strings.Contains(r.stdout, "Session ("+e["subject"].(string)+") [lexical]: 1 entry") || !strings.Contains(r.stdout, "[matched]") {
+		t.Errorf("plain text:\n%s", r.stdout)
+	}
+}
