@@ -154,6 +154,9 @@ func printEntries(w io.Writer, entries []query.Entry, subject string) {
 			flags += " [subject " + e.Subject + "]"
 		}
 		fmt.Fprintf(w, "%s  %-9s %s  conf=%s%s\n    %s\n", e.ID, e.Type, e.Timestamp, fmtConfidence(e.Confidence), flags, oneLine(e.Content, 160))
+		if len(e.Basis) > 0 {
+			fmt.Fprintf(w, "    basis: %s\n", strings.Join(e.Basis, ", "))
+		}
 		if e.Type == dkf.TypeSynthesis {
 			ids := make([]string, len(e.Inputs))
 			for i, in := range e.Inputs {
@@ -194,7 +197,16 @@ func (a *app) lineageCmd() *cobra.Command {
 }
 
 func printTree(w io.Writer, n *query.Node, prefix string, root bool) {
+	printNode(w, n, prefix, root, false)
+}
+
+// printNode renders one node; isBasis labels a basis member, which carries no
+// role, so "argued from" and "inferred from" read differently.
+func printNode(w io.Writer, n *query.Node, prefix string, root, isBasis bool) {
 	label := n.ID
+	if isBasis {
+		label = n.ID + " (basis)"
+	}
 	if n.Role != "" {
 		label = fmt.Sprintf("%s (%s", n.ID, n.Role)
 		if n.Weight != "" && n.Weight != dkf.WeightPrimary {
@@ -216,13 +228,16 @@ func printTree(w io.Writer, n *query.Node, prefix string, root bool) {
 	if n.Cycle {
 		marks = append(marks, "cycle")
 	}
+	if n.Repeated {
+		marks = append(marks, "shown above")
+	}
 	if n.Truncated {
 		marks = append(marks, "…")
 	}
 	if len(marks) > 0 {
 		label += " [" + strings.Join(marks, ", ") + "]"
 	}
-	if !n.Missing && !n.Cycle {
+	if !n.Missing && !n.Cycle && !n.Repeated {
 		label += "  " + oneLine(n.Content, 100)
 	}
 	fmt.Fprintf(w, "%s%s\n", prefix, label)
@@ -230,20 +245,26 @@ func printTree(w io.Writer, n *query.Node, prefix string, root bool) {
 	if !root {
 		childPrefix = prefix
 	}
-	for i, c := range n.Inputs {
+	children := len(n.Inputs) + len(n.Basis)
+	for i := 0; i < children; i++ {
+		c, isBasis := n.Inputs, false
+		j := i
+		if i >= len(n.Inputs) {
+			c, isBasis, j = n.Basis, true, i-len(n.Inputs)
+		}
 		connector := "├── "
 		next := childPrefix + "│   "
-		if i == len(n.Inputs)-1 {
+		if i == children-1 {
 			connector = "└── "
 			next = childPrefix + "    "
 		}
-		printTreeChild(w, c, childPrefix+connector, next)
+		printTreeChild(w, c[j], isBasis, childPrefix+connector, next)
 	}
 }
 
-func printTreeChild(w io.Writer, n *query.Node, linePrefix, childPrefix string) {
+func printTreeChild(w io.Writer, n *query.Node, isBasis bool, linePrefix, childPrefix string) {
 	var sb strings.Builder
-	printTree(&sb, n, "", true)
+	printNode(&sb, n, "", true, isBasis)
 	lines := strings.Split(strings.TrimRight(sb.String(), "\n"), "\n")
 	fmt.Fprintf(w, "%s%s\n", linePrefix, lines[0])
 	for _, l := range lines[1:] {

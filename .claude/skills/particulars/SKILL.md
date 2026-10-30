@@ -95,7 +95,7 @@ modifier inside double quotes too, so `"$id:thesis"` silently becomes
 |---|---|
 | Find a thing | `particulars particular resolve <id\|uri\|label\|alias> --json` → `{matches: [...]}`; exit 3 if none |
 | Create a thing | `particulars particular define --label "<label>" [--uri <uri>] [--alias <a>]... --json` → `{particular, created}` |
-| Record a fact | `particulars claim assert --subject "<thing>" --content "<statement>" --evidential observed\|inferred\|held --document <evidence> [--document-author <who>] [--topic <t>]... [--confidence 0..1] [--scope personal\|organisation\|public] --json` |
+| Record a fact | `particulars claim assert --subject "<thing>" --content "<statement>" --evidential observed\|inferred\|held --document <evidence> [--document-author <who>] [--basis <id>]... [--topic <t>]... [--confidence 0..1] [--scope personal\|organisation\|public] --json` |
 | Multi-line content | add `--content-file -` and pipe the text on stdin (instead of `--content`) |
 | Reconcile | `particulars synthesis create --subject "<thing>" --input <id>:thesis --input <id>:antithesis [--input <id>:thesis:qualifying] --unresolved "<what remains open>" --content "<resolution with reasoning>" --json` |
 | What is believed | `particulars recall "<thing>" [--topic <t>]... [--scope <s>] [--limit <n>] --json` → `{entries: [...]}`, oldest first, `current: true` on the live synthesis |
@@ -104,7 +104,7 @@ modifier inside double quotes too, so `"$id:thesis"` silently becomes
 | Across things | `particulars recall --topic <t> --json` |
 | What the workspace already uses | `particulars register --json` → `{particulars: [...], topics: [...]}`; read once before choosing a subject or a tag |
 | Which tags exist | `particulars topics ["<thing>"] --json` → `{topics: [{topic, assertions, particulars}]}`; check before inventing a new tag |
-| Why is it believed | `particulars lineage <id> [--depth <n>] --json` → nested tree of inputs with roles |
+| Why is it believed | `particulars lineage <id> [--depth <n>] --json` → nested tree of inputs with roles, and of each inferred claim's `basis` |
 | What needs work | `particulars conflicts ["<thing>"] --json` → `{reports: [{particular, current, unsynthesised, stale, priority}]}` |
 | What is still open | `particulars unresolved ["<thing>"] [--include-none] --json` → `{entries: [{particular, synthesis, timestamp, unresolved, unsynthesised}]}`; each current synthesis's `unresolved`, oldest first — the questions the belief admits, beside the structure `conflicts` reports. `None identified` is hidden unless `--include-none` |
 | Show the shape | `particulars export --format mermaid --subject "<thing>" [--depth 2] [--include-retracted]` → a diagram to paste into a PR (`--format dot` for Graphviz) |
@@ -143,6 +143,16 @@ On failure stderr carries `{"error": {"code", "message"}}`.
   reasoned it from other claims; `held` — nothing external backs it, it is a
   position. Do not reach for `observed` reflexively: it claims you looked, and
   a reviewer will read it that way.
+- **Name what an inference rests on.** Before asserting `--evidential
+  inferred`, recall, and pass each claim or synthesis you reasoned from as
+  `--basis <id>` (repeatable; ids, never labels; `basis` over MCP). The chain
+  can then be walked by `lineage`, and the claim goes **stale** in `conflicts`
+  when something it rests on is retracted. A rule of thumb is an inferred
+  claim whose basis is its instances. When a counterexample turns up, leave
+  the rule alone and reconcile the two with a `--method qualification`
+  synthesis. A basis is evidence, not reconciliation: the claims it names stay
+  `unsynthesised`. An inference with no basis is still written, with an
+  `inferred_without_basis` warning — never switch to `held` to avoid naming one.
 - **Confidence is the probability you are wrong, inverted** — not how good the
   evidence is, and not how strongly you feel. It exists only for `observed`
   (the evidence may have been misread) and `inferred` (the reasoning may be

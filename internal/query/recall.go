@@ -30,9 +30,11 @@ type Entry struct {
 	Timestamp  string         `json:"timestamp"`
 	Confidence *float64       `json:"confidence,omitempty"`
 	Evidential dkf.Evidential `json:"evidential,omitempty"`
-	Scope      dkf.Scope      `json:"scope"`
-	Topics     []string       `json:"topics,omitempty"`
-	Retracted  bool           `json:"retracted"`
+	// Basis is an inferred claim's basis as written, when it has one.
+	Basis     []string  `json:"basis,omitempty"`
+	Scope     dkf.Scope `json:"scope"`
+	Topics    []string  `json:"topics,omitempty"`
+	Retracted bool      `json:"retracted"`
 	// Relations labels an author-filtered result with how it matched:
 	// asserted (source.author) and/or reported (source.document.author) —
 	// one object can be both, and the two are never collapsed.
@@ -55,6 +57,7 @@ func entryFor(g *store.Graph, a dkf.Assertion) Entry {
 	}
 	if c, ok := a.(*dkf.Claim); ok {
 		e.Evidential = c.Evidential
+		e.Basis = c.Basis
 	}
 	if s, ok := a.(*dkf.Synthesis); ok {
 		e.Inputs = s.Inputs
@@ -194,8 +197,9 @@ func hasAllTopics(have, want []string) bool {
 	return true
 }
 
-// LineageOrder sorts assertions so that inputs precede the syntheses citing
-// them (within the given set), ties broken by id. Cycles cannot occur in a
+// LineageOrder sorts assertions so that what each cites precedes it (within
+// the given set) — inputs before the syntheses citing them, and basis members
+// before the inferred claims resting on them — ties broken by id. Cycles cannot occur in a
 // well-formed workspace; if present, remaining nodes are appended by id.
 func LineageOrder(as []dkf.Assertion) []dkf.Assertion {
 	byID := map[string]dkf.Assertion{}
@@ -210,7 +214,7 @@ func LineageOrder(as []dkf.Assertion) []dkf.Assertion {
 		progressed := false
 		for i, a := range pending {
 			ready := true
-			for _, in := range a.InputIDs() {
+			for _, in := range dkf.Cited(a) {
 				if _, inSet := byID[in]; inSet && !emitted[in] && in != a.ObjectID() {
 					ready = false
 					break

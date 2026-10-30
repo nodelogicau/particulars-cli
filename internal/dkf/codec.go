@@ -192,6 +192,18 @@ func claimNode(c *Claim) *yaml.Node {
 	addKV(m, "context", contextNode(c.Context))
 	addTime(m, "timestamp", c.Timestamp)
 	addStr(m, "evidential", string(c.Evidential))
+	if c.Basis != nil {
+		// An empty list is written as `[]` rather than dropped, so a file
+		// carrying one stays canonical and the defect stays visible.
+		basis := sequence()
+		if len(c.Basis) == 0 {
+			basis.Style = yaml.FlowStyle
+		}
+		for _, id := range c.Basis {
+			basis.Content = append(basis.Content, scalar(id))
+		}
+		addKV(m, "basis", basis)
+	}
 	addFloat(m, "confidence", c.Confidence)
 	if c.Retracted != nil {
 		addKV(m, "retracted", retractedNode(c.Retracted))
@@ -280,12 +292,14 @@ type synthesisFile struct {
 	Context    Context     `yaml:"context"`
 	Confidence *float64    `yaml:"confidence"`
 	Retracted  *Retracted  `yaml:"retracted"`
+	Basis      []string    `yaml:"basis"`
 }
 
 func (f *synthesisFile) toSynthesis() *Synthesis {
 	s := &Synthesis{
 		ID: f.ID, Subject: f.Subject, Content: f.Content, Inputs: f.Inputs, Unresolved: f.Unresolved,
 		Method: f.Method, Timestamp: f.Timestamp, Context: f.Context, Confidence: f.Confidence, Retracted: f.Retracted,
+		StrayBasis: f.Basis,
 	}
 	switch {
 	case f.Source != nil && f.ProducedBy != nil:

@@ -42,7 +42,8 @@ func (o Options) visible(g *store.Graph, a dkf.Assertion) bool {
 }
 
 // Lineage builds the dialectic for the merge equivalence class containing p:
-// a node per claim and synthesis, an edge per input labelled with its role.
+// a node per claim and synthesis, an edge per input labelled with its role,
+// and an edge per basis member of an inferred claim, labelled basis.
 func Lineage(g *store.Graph, p *dkf.Particular, o Options) *Model {
 	members := g.ClassOf(p.ID)
 	inClass := map[string]bool{}
@@ -79,7 +80,8 @@ func Lineage(g *store.Graph, p *dkf.Particular, o Options) *Model {
 		}
 	}
 
-	// Breadth-first from each root, so Depth counts levels of inputs.
+	// Breadth-first from each root, so Depth counts levels of inputs and
+	// basis members alike.
 	depth := map[string]int{}
 	queue := make([]string, 0, len(roots))
 	for _, id := range roots {
@@ -111,23 +113,27 @@ func Lineage(g *store.Graph, p *dkf.Particular, o Options) *Model {
 				queue = append(queue, r.SupersededBy)
 			}
 		}
-		s, ok := a.(*dkf.Synthesis)
-		if !ok {
-			continue
-		}
 		if o.Depth > 0 && depth[id] >= o.Depth {
 			continue
 		}
-		for _, in := range s.Inputs {
-			ia := g.Assertion(in.ID)
-			if ia == nil || !o.visible(g, ia) {
-				continue
+		follow := func(cid string, k EdgeKind, role string) {
+			ca := g.Assertion(cid)
+			if ca == nil || !o.visible(g, ca) {
+				return
 			}
-			b.edge(in.ID, id, EdgeInput, string(in.Role)+weightSuffix(in.Weight))
-			if _, seen := depth[in.ID]; !seen {
-				depth[in.ID] = depth[id] + 1
-				queue = append(queue, in.ID)
+			b.edge(cid, id, k, role)
+			if _, seen := depth[cid]; !seen {
+				depth[cid] = depth[id] + 1
+				queue = append(queue, cid)
 			}
+		}
+		if s, ok := a.(*dkf.Synthesis); ok {
+			for _, in := range s.Inputs {
+				follow(in.ID, EdgeInput, string(in.Role)+weightSuffix(in.Weight))
+			}
+		}
+		for _, cid := range a.BasisIDs() {
+			follow(cid, EdgeBasis, "")
 		}
 	}
 	return b.build()

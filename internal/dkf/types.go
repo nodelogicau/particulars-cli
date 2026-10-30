@@ -127,7 +127,7 @@ type Particular struct {
 
 // Claim is a DCLAIM: an assertion about a particular with provenance.
 // Spec order: id, type, subject, content, source, context, timestamp,
-// confidence, retracted.
+// evidential, basis, confidence, retracted.
 type Claim struct {
 	ID        string    `yaml:"id" json:"id"`
 	Subject   string    `yaml:"subject" json:"subject"`
@@ -143,6 +143,12 @@ type Claim struct {
 	// the field: the warrant cannot now be established, and validate reports
 	// it as undeclared.
 	Evidential Evidential `yaml:"evidential,omitempty" json:"evidential,omitempty"`
+	// Basis is what an inferred claim was inferred from: the ids of claims and
+	// syntheses, as its evidence. It is not a set of synthesis inputs — naming
+	// an object here never synthesises it — so InputIDs does not return it.
+	// Non-nil and empty means the file carried `basis: []`, which validate
+	// reports; writers never produce it.
+	Basis      []string   `yaml:"basis,omitempty" json:"basis,omitempty"`
 	Confidence *float64   `yaml:"confidence,omitempty" json:"confidence,omitempty"`
 	Retracted  *Retracted `yaml:"retracted,omitempty" json:"retracted,omitempty"`
 }
@@ -196,6 +202,11 @@ type Synthesis struct {
 	// ConflictingProvenance is set when a file carried both `source` and
 	// `produced-by`; `source` wins and validate reports it. Never serialised.
 	ConflictingProvenance bool `yaml:"-" json:"-"`
+	// StrayBasis is a `basis` a hand-written synthesis file carried. A
+	// synthesis cites through inputs, so validate reports it as
+	// basis_not_inferred; it is kept only so that can be seen, is never
+	// traversed, and is never serialised.
+	StrayBasis []string `yaml:"-" json:"-"`
 }
 
 // Merge is a merge record: a declaration that two URIs denote the same
@@ -271,6 +282,20 @@ type Assertion interface {
 	GetConfidence() *float64
 	// InputIDs returns the ids of cited inputs; empty for plain claims.
 	InputIDs() []string
+	// BasisIDs returns the ids an inferred claim was inferred from; empty for
+	// syntheses. Kept apart from InputIDs because a basis is evidence, not
+	// synthesis: it makes an object stale but never synthesised.
+	BasisIDs() []string
+}
+
+// Cited returns every id a claim or synthesis rests on — inputs, then basis —
+// for the questions that follow both: staleness, cycles, and disclosure.
+func Cited(a Assertion) []string {
+	in, b := a.InputIDs(), a.BasisIDs()
+	if len(b) == 0 {
+		return in
+	}
+	return append(append(make([]string, 0, len(in)+len(b)), in...), b...)
 }
 
 func (p *Particular) ObjectID() string { return p.ID }
@@ -286,6 +311,7 @@ func (c *Claim) GetTimestamp() time.Time   { return c.Timestamp }
 func (c *Claim) GetConfidence() *float64   { return c.Confidence }
 func (c *Claim) GetRetracted() *Retracted  { return c.Retracted }
 func (c *Claim) InputIDs() []string        { return nil }
+func (c *Claim) BasisIDs() []string        { return c.Basis }
 func (c *Claim) SetRetracted(r *Retracted) { c.Retracted = r }
 
 func (s *Synthesis) ObjectID() string          { return s.ID }
@@ -298,6 +324,7 @@ func (s *Synthesis) GetTimestamp() time.Time   { return s.Timestamp }
 func (s *Synthesis) GetConfidence() *float64   { return s.Confidence }
 func (s *Synthesis) GetRetracted() *Retracted  { return s.Retracted }
 func (s *Synthesis) SetRetracted(r *Retracted) { s.Retracted = r }
+func (s *Synthesis) BasisIDs() []string        { return nil }
 
 func (m *Merge) ObjectID() string               { return m.ID }
 func (pr *Promotion) ObjectID() string          { return pr.ID }

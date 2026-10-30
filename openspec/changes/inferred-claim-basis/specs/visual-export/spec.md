@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: The lineage view
-With `--subject <particular>`, the export SHALL render the dialectic for that particular's merge equivalence class: one node per claim and per synthesis, one edge per synthesis input, directed from the input to the synthesis and labelled with the input's role, and one edge per basis member of an inferred claim, directed from the member to the claim, labelled `basis`, and drawn in a line style distinct from input edges (dashed in DOT, dotted in Mermaid). The subject SHALL be resolvable by id, URI, label, or alias, and an ambiguous subject SHALL exit 2 listing the candidates, as elsewhere. Cross-particular inputs and basis members SHALL be included as nodes, since they are part of the reasoning, and SHALL be marked as belonging to another particular.
+With `--subject <particular>`, the export SHALL render the dialectic for that particular's merge equivalence class: one node per claim and per synthesis, one edge per synthesis input, directed from the input to the synthesis and labelled with the input's role, and one edge per basis member of an inferred claim, directed from the member to the claim, labelled `basis`, and drawn in a line style distinct from input edges (dotted in DOT, `-.->` in Mermaid, where the `basis` label tells it from a superseded-by edge). The subject SHALL be resolvable by id, URI, label, or alias, and an ambiguous subject SHALL exit 2 listing the candidates, as elsewhere. Cross-particular inputs and basis members SHALL be included as nodes, since they are part of the reasoning, and SHALL be marked as belonging to another particular.
 
 #### Scenario: Roles are visible on the edges
 - **WHEN** a synthesis cites one claim as `thesis` and another as `antithesis` and the lineage view is rendered
@@ -54,5 +54,5 @@ The lineage view SHALL distinguish, by visual attribute rather than by text alon
 - **THEN** only the first two levels of inputs appear
 
 #### Scenario: A basis counts as a level
-- **WHEN** the current synthesis cites an inferred claim whose basis lists one claim, and the view is rendered with `--depth 1`
+- **WHEN** the current synthesis cites an inferred claim whose basis lists one claim about a particular outside the class, and the view is rendered with `--depth 1`
 - **THEN** the inferred claim appears and its basis member does not

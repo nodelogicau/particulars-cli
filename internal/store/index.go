@@ -115,7 +115,11 @@ type Entry struct {
 	Topics         []string `yaml:"topics,omitempty" json:"topics,omitempty"`
 	Timestamp      string   `yaml:"timestamp,omitempty" json:"timestamp,omitempty"`
 	Inputs         []string `yaml:"inputs,omitempty" json:"inputs,omitempty"`
-	Retracted      bool     `yaml:"retracted,omitempty" json:"retracted,omitempty"`
+	// Basis mirrors an inferred claim's basis, so staleness through it can be
+	// computed from the index alone. Kept apart from Inputs: a claim entry
+	// never carries inputs, and "has inputs" still means "is a synthesis".
+	Basis     []string `yaml:"basis,omitempty" json:"basis,omitempty"`
+	Retracted bool     `yaml:"retracted,omitempty" json:"retracted,omitempty"`
 	// Unknown preserves fields a newer writer put on this entry, as
 	// alternating key/value nodes — the field-level twin of Index.Unknown: a
 	// rebuild is of the workspace, not of one tool's view of it, and
@@ -130,7 +134,7 @@ type Entry struct {
 var knownEntryFields = map[string]bool{
 	"id": true, "type": true, "uri": true, "uris": true, "claims": true,
 	"subject": true, "author": true, "document-author": true, "scope": true,
-	"topics": true, "timestamp": true, "inputs": true, "retracted": true,
+	"topics": true, "timestamp": true, "inputs": true, "basis": true, "retracted": true,
 }
 
 // MarshalYAML emits the known fields in struct order. An entry carrying
@@ -212,6 +216,7 @@ func EntryFor(obj dkf.Object) Entry {
 			Topics:         ctx.Topics,
 			Timestamp:      dkf.FormatTime(o.GetTimestamp()),
 			Inputs:         o.InputIDs(),
+			Basis:          o.BasisIDs(),
 			Retracted:      o.GetRetracted() != nil,
 		}
 		if o.GetTimestamp().IsZero() {

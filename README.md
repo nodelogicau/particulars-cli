@@ -186,13 +186,13 @@ pushed by a workflow when a knowledge pull request is merged. See
 | `workspace pointer [dir] [--at D] [--force]` | Write a `.dkf` pointer to an existing workspace |
 | `particular define --label L [--uri U] [--alias A]…` | Create or update a particular; idempotent on URI |
 | `particular resolve <id\|uri\|label\|alias>` | Find particulars (label/alias case-insensitive) |
-| `claim assert --subject P (--content T \| --content-file F\|-) --evidential observed\|inferred\|held [--author A] [--document D] [--document-author W] [--hash-document] [--quote Q] […]` | Record a claim with its warrant, optionally with checkable evidence; `--document-author` names who produced what was read (see [docs/provenance.md](docs/provenance.md)) |
+| `claim assert --subject P (--content T \| --content-file F\|-) --evidential observed\|inferred\|held [--basis ID]… [--author A] [--document D] [--document-author W] [--hash-document] [--quote Q] […]` | Record a claim with its warrant, optionally with checkable evidence; `--document-author` names who produced what was read (see [docs/provenance.md](docs/provenance.md)); `--basis` names the claims and syntheses an inferred claim was inferred from |
 | `retract <id> --reason R [--superseded-by id]` | Append a retraction block to a claim, synthesis, or merge (`claim retract` is an alias) |
 | `particular merge <a> <b> [--reason R]` | Declare two URIs the same particular; writes `merges/mrg_….yaml` |
 | `synthesis create --subject P --input id:role[:weight]… --unresolved U […]` | Record a synthesis the agent has reasoned |
 | `recall [P] [--author W] [--topic T]… [--scope S] [--include-retracted] [--limit N]` | Claims and syntheses in lineage order; current synthesis marked. `--author` returns what a particular asserted or is reported for, labelled `relations` |
 | `topics [P] [--scope S] [--include-retracted]` | Topics in use, with assertion and particular counts |
-| `lineage <id> [--depth N]` | Provenance tree of a claim or synthesis |
+| `lineage <id> [--depth N]` | Provenance tree of a claim or synthesis: synthesis `inputs` by role and inferred claims' `basis`, each object expanded once (`repeated: true` thereafter) |
 | `conflicts [P] [--fail-on-conflicts]` | Unsynthesised claims and stale syntheses per particular |
 | `unresolved [P] [--include-none] [--scope S]` | What each current synthesis admits it could not settle, oldest first |
 | `index [--check]` | Rebuild `index.yaml`, or verify it (exit 4 on drift) |

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
+	"github.com/nodelogicau/particulars-cli/internal/query"
 )
 
 func (a *app) claimCmd() *cobra.Command {
@@ -21,7 +22,7 @@ func (a *app) claimCmd() *cobra.Command {
 
 func (a *app) claimAssertCmd() *cobra.Command {
 	var subject, content, contentFile, evidential, scope, confidence, timestamp string
-	var topics []string
+	var topics, basis []string
 	var prov provenanceFlags
 	cmd := &cobra.Command{
 		Use:   "assert --subject <particular> (--content <text> | --content-file <path|->) [flags]",
@@ -75,6 +76,11 @@ func (a *app) claimAssertCmd() *cobra.Command {
 			if dkf.Evidential(evidential) == dkf.EvidentialHeld && conf != nil {
 				return usageErr("a held claim carries no confidence: a position is not mistaken in the way a probability describes — put how strongly it is held in --content")
 			}
+			basisWarnings, err := query.CheckBasis(g, dkf.Evidential(evidential), "--basis", basis)
+			if err != nil {
+				return err
+			}
+			a.warnings = append(a.warnings, basisWarnings...)
 			doc, err := a.resolveDocument(ws, g, prov)
 			if err != nil {
 				return err
@@ -89,13 +95,22 @@ func (a *app) claimAssertCmd() *cobra.Command {
 			c := &dkf.Claim{
 				ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: text, Source: src,
 				Context: dkf.Context{Scope: sc, Topics: topics}, Timestamp: ts,
-				Evidential: dkf.Evidential(evidential), Confidence: conf,
+				Evidential: dkf.Evidential(evidential), Basis: basis, Confidence: conf,
 			}
 			if err := ws.Create(c); err != nil {
 				return err
 			}
 			if err := ws.UpsertIndex(c); err != nil {
 				return err
+			}
+			// Evaluated at creation as well as during validate, as for a
+			// synthesis: reported, never blocking.
+			if len(basis) > 0 {
+				if g2, err := loadGraph(ws); err == nil {
+					if msg := query.ScopeWiderThanInputs(g2, c); msg != "" {
+						a.warnings = append(a.warnings, msg)
+					}
+				}
 			}
 			path, _ := ws.Path(c.ID)
 			return a.emit(map[string]any{"claim": c, "path": ws.Rel(path)}, func(w io.Writer) {
@@ -110,6 +125,7 @@ func (a *app) claimAssertCmd() *cobra.Command {
 	cmd.Flags().StringVar(&prov.harness, "harness", "", "source.harness (default: $DKF_HARNESS, then dkf.yaml)")
 	cmd.Flags().StringVar(&prov.model, "model", "", "source.model (default: $DKF_MODEL, then dkf.yaml)")
 	cmd.Flags().StringVar(&evidential, "evidential", "", "what backs the claim (required): observed|inferred|held")
+	cmd.Flags().StringArrayVar(&basis, "basis", nil, "id of a claim or synthesis an inferred claim was inferred from (repeatable; inferred only; ids, never labels)")
 	cmd.Flags().StringVar(&prov.document, "document", "", "source.document: URI or workspace-relative path of the evidence")
 	cmd.Flags().StringVar(&prov.documentAuthor, "document-author", "", "who produced what was read (id, uri, or name of a particular) — for testimony: who told you")
 	cmd.Flags().StringVar(&prov.documentHash, "document-hash", "", "sha256:… of the document as you read it (CRLF normalised to LF)")

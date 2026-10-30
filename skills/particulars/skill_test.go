@@ -142,3 +142,12 @@ func TestAgentsSectionAndSplice(t *testing.T) {
 		t.Error("FindSection should flag broken")
 	}
 }
+
+func TestSkillTeachesBasis(t *testing.T) {
+	body := string(Raw())
+	for _, want := range []string{"--basis <id>", "recall", "rule of thumb", "qualification", "stay\n  `unsynthesised`", "never switch to `held`"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("skill should teach %q", want)
+		}
+	}
+}

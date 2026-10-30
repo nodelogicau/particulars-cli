@@ -22,25 +22,34 @@ import (
 // changing.
 const CodeScopeWiderThanInputs = "scope_wider_than_inputs"
 
-// ScopeWiderThanInputs reports the condition for one synthesis, or nil. It is
-// the single implementation behind all three evaluation points the spec names:
-// when a synthesis is created, when a promotion is written, and during
-// validation. It never returns an error: a wider synthesis is permitted, and
-// whether its prose actually discloses its inputs is a judgement for whoever
-// reviews the change.
-func ScopeWiderThanInputs(g *store.Graph, s *dkf.Synthesis) string {
-	if s == nil || s.Retracted != nil {
+// ScopeWiderThanInputs reports the condition for one synthesis or inferred
+// claim, or "". An inferred claim's basis counts as its inputs here: its
+// content may restate what its basis says, exactly as a synthesis may restate
+// its inputs. It is the single implementation behind all three evaluation
+// points the spec names: when the object is created, when a promotion is
+// written, and during validation. It never returns an error: a wider object is
+// permitted, and whether its prose actually discloses what it cites is a
+// judgement for whoever reviews the change.
+func ScopeWiderThanInputs(g *store.Graph, a dkf.Assertion) string {
+	if a == nil || a.GetRetracted() != nil {
 		return ""
 	}
-	mine := g.EffectiveScope(s.ID)
+	cited, kind, members := a.InputIDs(), "synthesis", "input(s)"
+	if c, ok := a.(*dkf.Claim); ok {
+		if c.Evidential != dkf.EvidentialInferred {
+			return "" // a stray basis is basis_not_inferred, not disclosure
+		}
+		cited, kind, members = c.Basis, "inferred claim", "basis member(s)"
+	}
+	id := a.ObjectID()
+	mine := g.EffectiveScope(id)
 	var narrower []string
-	for _, in := range s.Inputs {
-		child := g.Assertion(in.ID)
-		if child == nil {
+	for _, cid := range cited {
+		if g.Assertion(cid) == nil {
 			continue
 		}
-		if theirs := g.EffectiveScope(in.ID); dkf.ScopeRank(theirs) < dkf.ScopeRank(mine) {
-			narrower = append(narrower, in.ID+" ("+describeScope(g, in.ID, theirs)+")")
+		if theirs := g.EffectiveScope(cid); dkf.ScopeRank(theirs) < dkf.ScopeRank(mine) {
+			narrower = append(narrower, cid+" ("+describeScope(g, cid, theirs)+")")
 		}
 	}
 	if len(narrower) == 0 {
@@ -48,8 +57,8 @@ func ScopeWiderThanInputs(g *store.Graph, s *dkf.Synthesis) string {
 	}
 	sort.Strings(narrower)
 	return fmt.Sprintf(
-		"synthesis %s is %s but reasons from narrower input(s) %s; its content can carry their substance somewhere those inputs are withheld",
-		s.ID, describeScope(g, s.ID, mine), strings.Join(narrower, ", "))
+		"%s %s is %s but reasons from narrower %s %s; its content can carry their substance somewhere those are withheld",
+		kind, id, describeScope(g, id, mine), members, strings.Join(narrower, ", "))
 }
 
 // describeScope names a scope and, when a promotion is why it is that wide,
@@ -94,11 +103,11 @@ func QuoteDisclosuresForPromotion(g *store.Graph, pr *dkf.Promotion) []string {
 	return out
 }
 
-// ScopeFindingsForPromotion returns the condition for every synthesis a
-// promotion could have changed: the syntheses it promoted, and every
-// non-retracted synthesis citing anything it covers — because promoting an
-// input can clear the condition on a synthesis nobody named, and promoting a
-// synthesis can create it.
+// ScopeFindingsForPromotion returns the condition for every synthesis and
+// inferred claim a promotion could have changed: those it promoted, and every
+// non-retracted one citing anything it covers — because promoting an input or
+// a basis member can clear the condition on an object nobody named, and
+// promoting the object itself can create it.
 func ScopeFindingsForPromotion(g *store.Graph, pr *dkf.Promotion) []string {
 	if pr == nil {
 		return nil
@@ -109,20 +118,19 @@ func ScopeFindingsForPromotion(g *store.Graph, pr *dkf.Promotion) []string {
 	}
 	var out []string
 	for _, a := range g.SortedAssertions() {
-		s, ok := a.(*dkf.Synthesis)
-		if !ok || s.Retracted != nil {
+		if a.GetRetracted() != nil {
 			continue
 		}
-		relevant := covered[s.ID]
-		for _, in := range s.Inputs {
-			if covered[in.ID] {
+		relevant := covered[a.ObjectID()]
+		for _, id := range dkf.Cited(a) {
+			if covered[id] {
 				relevant = true
 			}
 		}
 		if !relevant {
 			continue
 		}
-		if msg := ScopeWiderThanInputs(g, s); msg != "" {
+		if msg := ScopeWiderThanInputs(g, a); msg != "" {
 			out = append(out, msg)
 		}
 	}

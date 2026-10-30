@@ -84,6 +84,9 @@ func dotEdgeAttrs(e Edge) string {
 		a = append(a, "label="+dotQuote(e.Role))
 	}
 	switch e.Kind {
+	case EdgeBasis:
+		// Dotted, not dashed: dashed is superseded-by. Evidence, not argument.
+		a = append(a, "style=dotted", "label=\"basis\"")
 	case EdgeSuperseded:
 		a = append(a, "style=dashed", "arrowhead=empty", "label=\"superseded by\"")
 	case EdgeMerge:

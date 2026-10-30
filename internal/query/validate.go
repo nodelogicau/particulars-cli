@@ -40,7 +40,18 @@ const (
 	CodeIndexStale        = "index_stale"
 	CodeIndexMissing      = "index_missing"
 	CodeStaleSynthesis    = "stale_synthesis"
-	CodeOrphanParticular  = "orphan_particular"
+	// CodeStaleClaim: a live claim rests, through its basis, on something
+	// since retracted. Claims are immutable, so the way out is to retract it,
+	// usually with superseded-by pointing at a rule with a revised basis.
+	CodeStaleClaim = "stale_claim"
+	// CodeDuplicateBasis: a basis names the same object twice. Writers refuse
+	// it; the format does not forbid it, so a hand-written file is warned.
+	CodeDuplicateBasis = "duplicate_basis"
+	// CodeInferredWithoutBasis: an inferred claim that does not say what it
+	// was inferred from. A corpus fact: every claim written before basis
+	// existed carries it, and none can be given one.
+	CodeInferredWithoutBasis = "inferred_without_basis"
+	CodeOrphanParticular     = "orphan_particular"
 	// CodeAuthorUnresolved / CodeAuthorAmbiguous: an author value that
 	// resolves to no particular, or a bare name matching several. Both are
 	// facts about the corpus, aggregated per value: the action that clears
@@ -141,7 +152,7 @@ func (fs Findings) HasErrors() bool {
 func IsCorpusFact(code string) bool {
 	switch code {
 	case CodeLegacyProducedBy, CodeLegacyID, CodeLegacyDocumentURI, CodeEmptyQuote,
-		CodeUndeclared, CodeConfidenceOnUndeclared, CodeUnverifiedDocument,
+		CodeUndeclared, CodeConfidenceOnUndeclared, CodeInferredWithoutBasis, CodeUnverifiedDocument,
 		CodeAuthorUnresolved, CodeAuthorAmbiguous, CodeURLInContent:
 		return true
 	}
@@ -181,6 +192,9 @@ func Validate(w *store.Workspace) (Findings, error) {
 			if c.Confidence != nil {
 				add(SeverityInfo, path, CodeConfidenceOnUndeclared, "confidence on an undeclared claim cannot be interpreted: the warrant it would grade is unknown")
 			}
+		}
+		if c, ok := obj.(*dkf.Claim); ok && c.Evidential == dkf.EvidentialInferred && c.Basis == nil {
+			add(SeverityInfo, path, CodeInferredWithoutBasis, "inferred claim names no basis: what it was inferred from is stated, if at all, only in its content")
 		}
 		if syn, ok := obj.(*dkf.Synthesis); ok && syn.Method != "" && !dkf.ValidMethod(syn.Method) {
 			add(SeverityWarning, path, CodeUnknownMethod, fmt.Sprintf("method %q is outside the vocabulary (reconciliation, qualification, positions); read leniently", syn.Method))
@@ -402,6 +416,25 @@ func Validate(w *store.Workspace) (Findings, error) {
 		if r := a.GetRetracted(); r != nil && r.SupersededBy != "" && g.Assertion(r.SupersededBy) == nil {
 			add(SeverityError, path, CodeDanglingReference, fmt.Sprintf("retracted.superseded-by %s does not exist", r.SupersededBy))
 		}
+		if c, ok := a.(*dkf.Claim); ok {
+			seen := map[string]bool{}
+			for _, id := range c.Basis {
+				if seen[id] {
+					add(SeverityWarning, path, CodeDuplicateBasis, fmt.Sprintf("basis lists %s more than once", id))
+				}
+				seen[id] = true
+				if g.Assertion(id) == nil && dkf.IsAssertionID(id) { // other ids are already reported as invalid_id
+					add(SeverityError, path, CodeDanglingReference, fmt.Sprintf("basis member %s does not exist", id))
+				}
+			}
+			if msg := ScopeWiderThanInputs(g, c); msg != "" {
+				add(SeverityWarning, path, CodeScopeWiderThanInputs, msg)
+			}
+			if c.Retracted == nil && len(c.Basis) > 0 && CitesRetracted(g, c, staleMemo) {
+				add(SeverityWarning, path, CodeStaleClaim, fmt.Sprintf("claim %s rests on a retracted object (directly or transitively); consider retracting it with superseded-by pointing at a revised claim", c.ID))
+			}
+			continue
+		}
 		s, ok := a.(*dkf.Synthesis)
 		if !ok {
 			continue
@@ -421,7 +454,7 @@ func Validate(w *store.Workspace) (Findings, error) {
 
 	// Cycles.
 	for _, id := range findCycles(g) {
-		add(SeverityError, g.Files[id], CodeCycle, fmt.Sprintf("%s participates in an input cycle", id))
+		add(SeverityError, g.Files[id], CodeCycle, fmt.Sprintf("%s participates in a cycle of inputs or basis", id))
 	}
 
 	// Index consistency.
@@ -444,7 +477,9 @@ func Validate(w *store.Workspace) (Findings, error) {
 	return fs, nil
 }
 
-// findCycles returns the ids of syntheses that lie on an input cycle.
+// findCycles returns the ids of claims and syntheses that lie on a cycle of
+// synthesis inputs and claim bases together. A claim naming itself in its
+// basis is left to self_basis, whose fix is the claim, not the graph.
 func findCycles(g *store.Graph) []string {
 	const (
 		white = 0
@@ -457,17 +492,20 @@ func findCycles(g *store.Graph) []string {
 	visit = func(id string, stack []string) {
 		colour[id] = grey
 		stack = append(stack, id)
-		if s, ok := g.Assertion(id).(*dkf.Synthesis); ok {
-			for _, in := range s.Inputs {
-				switch colour[in.ID] {
+		if a := g.Assertion(id); a != nil {
+			for _, cid := range dkf.Cited(a) {
+				if cid == id {
+					continue
+				}
+				switch colour[cid] {
 				case white:
-					if g.Assertion(in.ID) != nil {
-						visit(in.ID, stack)
+					if g.Assertion(cid) != nil {
+						visit(cid, stack)
 					}
 				case grey:
 					for i := len(stack) - 1; i >= 0; i-- {
 						onCycle[stack[i]] = true
-						if stack[i] == in.ID {
+						if stack[i] == cid {
 							break
 						}
 					}

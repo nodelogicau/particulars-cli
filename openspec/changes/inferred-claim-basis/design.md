@@ -54,7 +54,7 @@ Today only a synthesis cites other objects. Several parts of the CLI assume that
 
 **Cycles are checked over the combined graph.** The validator's cycle check walks `Cited`, so a hand-edited loop through basis and inputs is reported as `cycle`. A self-citing basis gets its own `self_basis` error, because "cycle of length one" sends a reader to the wrong fix.
 
-**Visual export.** A new `EdgeBasis` kind is drawn from the basis member to the claim and labelled `basis`. It is dashed in DOT and dotted (`-.->`) in Mermaid, so evidence reads differently from argument. Basis members outside the class are included and marked foreign, as cross-particular inputs are. `--depth` counts basis edges as levels.
+**Visual export.** A new `EdgeBasis` kind is drawn from the basis member to the claim and labelled `basis`. It is dotted in DOT (dashed is taken by superseded-by) and `-.->` in Mermaid, where its label tells it from a superseded-by edge. Either way, evidence reads differently from argument. Basis members outside the class are included and marked foreign, as cross-particular inputs are. `--depth` counts basis edges as levels.
 
 ## Risks / Trade-offs
 

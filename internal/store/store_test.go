@@ -877,3 +877,40 @@ func TestConventionsResolution(t *testing.T) {
 		t.Errorf("configured: %q %q %v", rel, content, cerr)
 	}
 }
+
+func TestIndexCarriesBasis(t *testing.T) {
+	w := newWS(t)
+	p := mkParticular(t, w, "Project X")
+	a := mkClaim(t, w, p.ID, "A")
+	rule := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: "rule", Evidential: dkf.EvidentialInferred,
+		Basis: []string{a.ID}, Source: dkf.Source{Author: "ben"}, Context: dkf.Context{Scope: dkf.ScopePersonal}, Timestamp: ts}
+	if err := w.Create(rule); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.UpsertIndex(rule); err != nil {
+		t.Fatal(err)
+	}
+	if diff, err := w.CheckIndex(); err != nil || !diff.Clean() {
+		t.Fatalf("index must be current right after an inferred claim is written: %+v %v", diff, err)
+	}
+	data, _ := os.ReadFile(w.IndexPath())
+	entry := string(data)[strings.Index(string(data), "id: "+rule.ID):]
+	if next := strings.Index(entry[1:], "- id: "); next >= 0 {
+		entry = entry[:next+1]
+	}
+	ti, bi := strings.Index(entry, "timestamp:"), strings.Index(entry, "basis:\n")
+	if bi < 0 || bi < ti || !strings.Contains(entry, "- "+a.ID) {
+		t.Errorf("claim entry should carry basis after timestamp:\n%s", entry)
+	}
+	if strings.Contains(entry, "inputs:") {
+		t.Errorf("a claim entry never carries inputs:\n%s", entry)
+	}
+	// A committed basis is regenerated in place, byte for byte.
+	if _, err := w.RebuildIndex(); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := os.ReadFile(w.IndexPath())
+	if !bytes.Equal(data, again) {
+		t.Errorf("rebuild changed the index:\n%s\n---\n%s", data, again)
+	}
+}

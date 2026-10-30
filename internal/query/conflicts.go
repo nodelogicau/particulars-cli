@@ -45,8 +45,8 @@ func Analyse(g *store.Graph, p *dkf.Particular) Report {
 		if cur == nil || (id != cur.ID && !reconciled[id]) {
 			r.Unsynthesised = append(r.Unsynthesised, id)
 		}
-		if s, ok := a.(*dkf.Synthesis); ok && CitesRetracted(g, s, memo) {
-			r.Stale = append(r.Stale, s.ID)
+		if CitesRetracted(g, a, memo) {
+			r.Stale = append(r.Stale, id)
 		}
 	}
 	sort.Strings(r.Unsynthesised)
@@ -57,8 +57,10 @@ func Analyse(g *store.Graph, p *dkf.Particular) Report {
 
 // AnalyseSet treats the given claim/synthesis ids as the whole universe:
 // current is the most recent non-retracted synthesis in the set, unsynthesised
-// the members outside its transitive inputs, stale the member syntheses citing
-// a retracted object. Unknown ids are an error.
+// the members outside its transitive inputs, stale the members citing a
+// retracted object — followed through objects outside the set, since what a
+// member rests on is not limited to what the caller named. Unknown ids are an
+// error.
 func AnalyseSet(g *store.Graph, ids []string) (Report, error) {
 	r := Report{Unsynthesised: []string{}, Stale: []string{}}
 	var members []dkf.Assertion
@@ -96,8 +98,8 @@ func AnalyseSet(g *store.Graph, ids []string) (Report, error) {
 		if cur == nil || (id != cur.ID && !reconciled[id]) {
 			r.Unsynthesised = append(r.Unsynthesised, id)
 		}
-		if s, ok := a.(*dkf.Synthesis); ok && CitesRetracted(g, s, memo) {
-			r.Stale = append(r.Stale, s.ID)
+		if CitesRetracted(g, a, memo) {
+			r.Stale = append(r.Stale, id)
 		}
 	}
 	sort.Strings(r.Unsynthesised)
@@ -106,29 +108,27 @@ func AnalyseSet(g *store.Graph, ids []string) (Report, error) {
 	return r, nil
 }
 
-// CitesRetracted reports whether s cites, directly or transitively, a
-// retracted object. memo caches results across calls; cycles are guarded.
-func CitesRetracted(g *store.Graph, s *dkf.Synthesis, memo map[string]bool) bool {
-	if v, ok := memo[s.ID]; ok {
+// CitesRetracted reports whether a cites, directly or transitively through
+// synthesis inputs and claim bases, a retracted object. memo caches results
+// across calls; cycles are guarded.
+func CitesRetracted(g *store.Graph, a dkf.Assertion, memo map[string]bool) bool {
+	id := a.ObjectID()
+	if v, ok := memo[id]; ok {
 		return v
 	}
-	memo[s.ID] = false // cycle guard: assume not stale while exploring
+	memo[id] = false // cycle guard: assume not stale while exploring
 	stale := false
-	for _, in := range s.Inputs {
-		child := g.Assertion(in.ID)
+	for _, cid := range dkf.Cited(a) {
+		child := g.Assertion(cid)
 		if child == nil {
 			continue
 		}
-		if child.GetRetracted() != nil {
-			stale = true
-			break
-		}
-		if cs, ok := child.(*dkf.Synthesis); ok && CitesRetracted(g, cs, memo) {
+		if child.GetRetracted() != nil || CitesRetracted(g, child, memo) {
 			stale = true
 			break
 		}
 	}
-	memo[s.ID] = stale
+	memo[id] = stale
 	return stale
 }
 

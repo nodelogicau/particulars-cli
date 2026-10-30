@@ -39,6 +39,7 @@ type EdgeKind string
 
 const (
 	EdgeInput      EdgeKind = "input"      // an assertion cited by a synthesis
+	EdgeBasis      EdgeKind = "basis"      // what an inferred claim was inferred from
 	EdgeSuperseded EdgeKind = "superseded" // a retracted object's replacement
 	EdgeMerge      EdgeKind = "merge"      // two particulars declared the same
 )

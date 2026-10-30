@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- **An inferred claim names its basis: `claim assert --basis <id>`.** An
+  `inferred` claim can now list the claims and syntheses it was inferred from,
+  with `--basis` (repeatable) or `basis` on MCP `claim_assert`. The basis is
+  written after `evidential`. It is refused on any claim that isn't inferred,
+  and for an id that is duplicated, missing, or not a claim or synthesis. An
+  inferred claim without a basis is still written, with an
+  `inferred_without_basis` warning, and so is a basis citing a retracted
+  claim, which warns `stale_claim`. A rule of thumb is an inferred claim whose
+  basis is its instances. This implements DKF `inferred-claim-basis`
+  (nodelogicau/particulars#43, #14).
+- **Stale reaches claims.** `conflicts` and `conflict_detect` now list a claim
+  in `stale` when anything it rests on, through `basis` or `inputs`,
+  is retracted, and a synthesis citing such a claim is stale too. A basis
+  never synthesises what it names, so `unsynthesised` is unchanged.
+- **`validate` checks a basis.** New errors are `basis_not_inferred`, a basis
+  on a claim that isn't inferred or on a synthesis (the file is still read),
+  `empty_basis`, `self_basis`, a dangling or wrongly typed basis id, and a
+  cycle through inputs and basis together. New warnings are `stale_claim` and
+  `duplicate_basis`. `inferred_without_basis` is reported in aggregate, like
+  `undeclared`. `scope_wider_than_inputs` also covers an inferred claim wider
+  than its basis, at assertion, on `publish`, and in `validate`, and a
+  promotion never cascades to a basis.
+- **Lineage, recall, index and export follow the basis.** `lineage` and
+  `lineage_trace` list basis children under `basis`, beside `inputs`, and the
+  text tree labels them `(basis)`. Recall and index entries carry `basis`, and
+  recall lists basis members before the claim resting on them.
+  `export --format dot|mermaid` draws basis edges, dotted and labelled `basis`.
+- **BREAKING (output): `lineage` expands each object once.** An object reached
+  by two paths used to be expanded under both. It is now expanded at its first
+  occurrence, and later occurrences carry `repeated: true` (text: `shown
+  above`) with no children. Every id still appears in the tree.
 - **Recall by query: `particulars recall --query "<words>"`.** Recall now
   works when you don't know a thing's name. It resolves every particular
   whose label, alias, or claim or synthesis content contains the query or any

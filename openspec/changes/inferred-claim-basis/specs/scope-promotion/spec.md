@@ -14,7 +14,7 @@ Promoting a synthesis SHALL NOT promote the assertions it cites, and promoting a
 ## ADDED Requirements
 
 ### Requirement: A basis is treated as inputs for disclosure
-For `scope_wider_than_inputs`, the members of an inferred claim's `basis` SHALL be treated as that claim's inputs. The condition SHALL be evaluated for an inferred claim when it is asserted, during `validate`, and whenever `publish` or `knowledge_publish` writes a promotion that covers the claim or covers any of its basis members. The findings the promotion created or cleared SHALL be carried in the result exactly as for a synthesis. The condition SHALL remain a warning and SHALL NOT prevent the write.
+For `scope_wider_than_inputs`, the members of an inferred claim's `basis` SHALL be treated as that claim's inputs. The condition SHALL be evaluated for an inferred claim when it is asserted, during `validate`, and whenever `publish` or `knowledge_publish` writes a promotion that covers the claim or covers any of its basis members. The findings that hold after the promotion SHALL be carried in the result exactly as for a synthesis, so a finding the promotion cleared is absent from it. The condition SHALL remain a warning and SHALL NOT prevent the write.
 
 #### Scenario: A shared rule from personal instances
 - **WHEN** `claim assert --evidential inferred --scope organisation --basis clm_p` is run and `clm_p` is `personal`
@@ -22,4 +22,4 @@ For `scope_wider_than_inputs`, the members of an inferred claim's `basis` SHALL 
 
 #### Scenario: Promoting a basis member clears the condition
 - **WHEN** an `organisation` inferred claim is warned for its `personal` basis member, and `publish <member> --scope organisation` is run
-- **THEN** the promotion's result reports the condition cleared for the inferred claim, though the promotion did not name it
+- **THEN** the promotion's result carries no `scope_wider_than_inputs` finding for the inferred claim, though the promotion did not name it, and `validate` no longer reports it

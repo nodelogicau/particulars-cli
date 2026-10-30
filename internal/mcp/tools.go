@@ -26,7 +26,7 @@ func (s *Server) registerTools() {
 		Description: "Declare that two URIs denote the same particular. Writes a merge record; nothing is rewritten. Merged particulars form one class for knowledge_recall and conflict_detect. Undo with claim_retract on the merge id."},
 		s.particularMerge)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "claim_assert", Annotations: additive,
-		Description: "Record one falsifiable statement about a particular, with evidence in source.document and calibrated confidence. The statement is about the thing in the world; what you read goes in source.document (who produced it in document.author) — content that names an article or URL is a citation, not a claim. Recall first (knowledge_recall) so you extend or reconcile rather than duplicate. Claims are immutable; correct them with claim_retract + a new claim, or a synthesis."},
+		Description: "Record one falsifiable statement about a particular, with evidence in source.document and calibrated confidence. The statement is about the thing in the world; what you read goes in source.document (who produced it in document.author) — content that names an article or URL is a citation, not a claim. Recall first (knowledge_recall) so you extend or reconcile rather than duplicate. An inferred claim names what it was inferred from in basis — a rule of thumb lists its instances. Claims are immutable; correct them with claim_retract + a new claim, or a synthesis."},
 		s.claimAssert)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "claim_retract", Annotations: additive,
 		Description: "Append a retracted block (reason, source, optional superseded_by) to a claim, synthesis, merge, or promotion record. Retracting a promotion returns the objects it covered to the scope they would have had without it. Never deletes; provenance is preserved. Syntheses that cite a retracted input become stale until re-synthesised."},
@@ -284,6 +284,7 @@ type assertIn struct {
 	ParticularID string     `json:"particular_id" jsonschema:"the subject: id, URI, label, or alias of the thing in the world the fact is about — never the document or feed it was read in"`
 	Content      string     `json:"content" jsonschema:"one falsifiable statement about the world, not about a document; if it would name an article or URL, put that in source.document and state the fact instead"`
 	Evidential   string     `json:"evidential" jsonschema:"what backs the claim (required, no default): observed = someone or something looked; inferred = reasoning from other claims; held = nothing external backs it, it is a position"`
+	Basis        []string   `json:"basis,omitempty" jsonschema:"for an inferred claim only: ids of the claims and syntheses it was inferred from (recall them first). Its evidence, not synthesis inputs: the claim goes stale when one is retracted. A rule of thumb lists its instances. Ids, never labels"`
 	Source       *sourceIn  `json:"source,omitempty"`
 	Context      *contextIn `json:"context,omitempty"`
 	Confidence   *float64   `json:"confidence,omitempty" jsonschema:"0..1; 0.9+ seen directly, 0.6-0.8 inferred"`
@@ -338,7 +339,15 @@ func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in a
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: in.Content, Source: src, Context: dkf.Context{Scope: sc, Topics: topics}, Timestamp: ts, Evidential: dkf.Evidential(in.Evidential), Confidence: conf}
+	warnings, err := query.CheckBasis(g, dkf.Evidential(in.Evidential), "basis", in.Basis)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	var basis []string
+	if len(in.Basis) > 0 {
+		basis = in.Basis
+	}
+	c := &dkf.Claim{ID: dkf.NewID(dkf.TypeClaim), Subject: p.ID, Content: in.Content, Source: src, Context: dkf.Context{Scope: sc, Topics: topics}, Timestamp: ts, Evidential: dkf.Evidential(in.Evidential), Basis: basis, Confidence: conf}
 	if err := s.ws.Create(c); err != nil {
 		return errResult(err), nil, nil
 	}
@@ -347,7 +356,17 @@ func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in a
 	}
 	out := map[string]any{"claim": c, "path": s.rel(c.ID)}
 	if w := query.QuoteAbsentLocally(s.ws, src.Document); w != "" {
-		out["warnings"] = []string{w}
+		warnings = append(warnings, w)
+	}
+	if len(basis) > 0 {
+		if g2, err := s.load(); err == nil {
+			if msg := query.ScopeWiderThanInputs(g2, c); msg != "" {
+				warnings = append(warnings, msg)
+			}
+		}
+	}
+	if len(warnings) > 0 {
+		out["warnings"] = warnings
 	}
 	return okResult("Asserted " + c.ID + " about " + p.Label), out, nil
 }

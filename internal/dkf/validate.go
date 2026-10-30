@@ -25,6 +25,16 @@ const (
 	// CodeInvalidPromotion: a promotion record's claims list is malformed, or
 	// names something that carries no scope.
 	CodeInvalidPromotion = "invalid_promotion"
+	// CodeBasisNotInferred: a basis on a claim that is not inferred, or on a
+	// synthesis. An observation's evidence is a document, a position has none,
+	// and a synthesis cites through inputs. The file is still read: it cannot
+	// be corrected, so a reader that rejected it would strand it.
+	CodeBasisNotInferred = "basis_not_inferred"
+	// CodeEmptyBasis: `basis: []`, which means nothing absence does not.
+	CodeEmptyBasis = "empty_basis"
+	// CodeSelfBasis: a claim names itself as what it was inferred from.
+	// Reported apart from cycle, whose fix is elsewhere in the graph.
+	CodeSelfBasis = "self_basis"
 )
 
 // Problem is one field-level defect in an object.
@@ -123,11 +133,47 @@ func ValidateClaim(c *Claim) Problems {
 	if c.Evidential == EvidentialHeld && c.Confidence != nil {
 		ps = append(ps, Problem{Code: CodeConfidenceOnHeld, Field: "confidence", Message: "a held claim carries no confidence: a position is not mistaken in the way a probability describes"})
 	}
+	ps = append(ps, checkBasis(c)...)
 	ps = append(ps, checkConfidence(c.Confidence)...)
 	if c.Retracted != nil {
 		ps = append(ps, ValidateRetracted(c.Retracted)...)
 	}
 	return ps
+}
+
+// checkBasis checks what a basis can be checked for without the workspace.
+// Whether each id exists is a referential check, made by validate.
+func checkBasis(c *Claim) Problems {
+	if c.Basis == nil {
+		return nil
+	}
+	var ps Problems
+	if c.Evidential != EvidentialInferred {
+		ps = append(ps, Problem{Code: CodeBasisNotInferred, Field: "basis", Message: fmt.Sprintf(
+			"only an inferred claim carries a basis; this claim is %s", evidentialOrUndeclared(c.Evidential))})
+	}
+	if len(c.Basis) == 0 {
+		ps = append(ps, Problem{Code: CodeEmptyBasis, Field: "basis", Message: "an empty basis means nothing its absence does not; omit it"})
+	}
+	for i, id := range c.Basis {
+		f := fmt.Sprintf("basis[%d]", i)
+		switch {
+		case !IsValidID(id):
+			ps = append(ps, Problem{Code: CodeInvalidID, Field: f, Message: fmt.Sprintf("invalid identifier %q", id)})
+		case !IsAssertionID(id):
+			ps = append(ps, Problem{Code: CodeInvalidID, Field: f, Message: fmt.Sprintf("a basis cites claims and syntheses, not %q", id)})
+		case id == c.ID:
+			ps = append(ps, Problem{Code: CodeSelfBasis, Field: f, Message: "a claim cannot be inferred from itself"})
+		}
+	}
+	return ps
+}
+
+func evidentialOrUndeclared(e Evidential) string {
+	if e == "" {
+		return "undeclared"
+	}
+	return string(e)
 }
 
 // ValidateSynthesis checks field-level constraints of a synthesis.
@@ -170,6 +216,9 @@ func ValidateSynthesis(s *Synthesis) Problems {
 	}
 	ps = append(ps, checkContext(s.Context)...)
 	ps = append(ps, checkConfidence(s.Confidence)...)
+	if s.StrayBasis != nil {
+		ps = append(ps, Problem{Code: CodeBasisNotInferred, Field: "basis", Message: "a synthesis cites through inputs and carries no basis; the basis is ignored"})
+	}
 	if s.Retracted != nil {
 		ps = append(ps, ValidateRetracted(s.Retracted)...)
 	}

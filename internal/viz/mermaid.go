@@ -27,6 +27,8 @@ func Mermaid(m *Model) string {
 	for _, e := range m.Edges {
 		arrow, label := "-->", e.Role
 		switch e.Kind {
+		case EdgeBasis:
+			arrow, label = "-.->", "basis"
 		case EdgeSuperseded:
 			arrow, label = "-.->", "superseded by"
 		case EdgeMerge:
