@@ -258,7 +258,6 @@ func errResult(err error) *sdk.CallToolResult {
 	}
 }
 
-// okResult pairs a one-line text summary with the structured value.
 // withDataText appends a successful tool result's structured content to its
 // text as JSON. Clients such as Claude Desktop hand the model only the text,
 // so without it the model sees the summary ("3 topics") and none of the data.
@@ -277,6 +276,7 @@ func withDataText(next sdk.MethodHandler) sdk.MethodHandler {
 	}
 }
 
+// okResult pairs a one-line text summary with the structured value.
 func okResult(summary string) *sdk.CallToolResult {
 	return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: summary}}}
 }

@@ -36,4 +36,4 @@
 
 - [x] 7.1 Run `go test ./...`, `golangci-lint run`, and `openspec validate recall-query --strict`.
 - [x] 7.2 Check upstream nodelogicau/particulars#37: if `White_Space` is accepted as an edge, change `isEdge`, flip the test from 1.1, and add the whitespace scenarios to the delta spec; otherwise leave a note on #12.
-- [ ] 7.3 Before tagging, run particulars-bench over one cached ingest with the release build (A), with this change (B′ at the default limit), and at limits 5 and 20; confirm or change the default of 10 and report it on #12.
+- [ ] 7.3 Before tagging, run particulars-bench over one cached ingest with `f63ed46` (A: the last build before this change, which already repeats MCP results as text; the v0.14.0 release doesn't, so its agent sees only counts, per #15), with this change (B′ at the default limit), and at limits 5 and 20; confirm or change the default of 10 and report it on #12.
