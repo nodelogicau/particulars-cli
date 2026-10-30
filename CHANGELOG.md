@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.15.0 — recall by query, and inferences that name their basis
 
 - **An inferred claim names its basis: `claim assert --basis <id>`.** An
   `inferred` claim can now list the claims and syntheses it was inferred from,
