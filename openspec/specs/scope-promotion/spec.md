@@ -3,9 +3,7 @@
 ## Purpose
 
 Sharing immutable knowledge more widely without rewriting it: the promotion record and its file layout, effective scope and its ordering, the widen-only and no-cascade rules, the `publish` verb and its MCP tool, retraction and reversion, and the validation that keeps a promotion honest. A claim's scope is fixed when it is written; an object's *effective* scope is that scope widened by the non-retracted promotions covering it.
-
 ## Requirements
-
 ### Requirement: Promotion records
 A promotion record SHALL be stored at `publishes/pub_<uuidv7>.yaml` with fields serialised in the order `id`, `type` (`publish`), `claims`, `scope`, `reason` (optional), `source`, `timestamp`, `retracted` (optional). `claims` SHALL list at least one claim or synthesis id and SHALL NOT contain a particular or merge id. `scope` SHALL be a valid scope. `source` SHALL carry at least one of `author` or `harness`, as every other record does. The `pub` prefix SHALL be accepted by both the lenient and the canonical identifier patterns, so that a minted promotion id is never reported as `legacy_id`.
 
@@ -48,11 +46,15 @@ A promotion naming a scope narrower than the **asserted** scope of any object it
 - **THEN** the record is written, its effective scope remains `public`, and `validate` reports a warning rather than an error
 
 ### Requirement: Promotion does not cascade
-Promoting a synthesis SHALL NOT promote the assertions it cites. Implementations SHALL NOT offer an option that promotes a synthesis together with its inputs in one act, because that is the silent lineage-widening the rule exists to prevent; promoting a chain SHALL require naming each object.
+Promoting a synthesis SHALL NOT promote the assertions it cites, and promoting an inferred claim SHALL NOT promote the members of its `basis`. Implementations SHALL NOT offer an option that promotes a synthesis together with its inputs, or an inferred claim together with its basis, in one act, because that is the silent lineage-widening the rule exists to prevent; promoting a chain SHALL require naming each object.
 
 #### Scenario: Inputs stay where they were
 - **WHEN** a synthesis citing two `personal` claims is promoted to `organisation`
 - **THEN** the synthesis's effective scope is `organisation` and both claims remain `personal`
+
+#### Scenario: A basis stays where it was
+- **WHEN** an inferred claim whose basis lists two `personal` claims is promoted to `public`
+- **THEN** only the inferred claim becomes `public`, the basis members remain `personal`, and the promotion reports `scope_wider_than_inputs` naming them
 
 ### Requirement: Publish verb
 `particulars publish <id>... --scope <s> [--reason <text>] [provenance flags]` SHALL write one promotion record covering the named objects. It SHALL accept claim and synthesis ids only, and SHALL NOT resolve labels, URIs, or aliases — promotion is the one operation whose mistakes cannot be undone for a consumer that has already fetched the result, so the caller SHALL name exactly what is promoted. An id that does not exist SHALL exit 3. With `--json` the result SHALL carry the record and any `scope_wider_than_inputs` findings the promotion caused or cleared.
@@ -130,3 +132,15 @@ Promotion SHALL report, without refusing, when any object it covers carries a do
 #### Scenario: Unquoted promotion is silent
 - **WHEN** no promoted object carries a quote
 - **THEN** no disclosure is reported
+
+### Requirement: A basis is treated as inputs for disclosure
+For `scope_wider_than_inputs`, the members of an inferred claim's `basis` SHALL be treated as that claim's inputs. The condition SHALL be evaluated for an inferred claim when it is asserted, during `validate`, and whenever `publish` or `knowledge_publish` writes a promotion that covers the claim or covers any of its basis members. The findings that hold after the promotion SHALL be carried in the result exactly as for a synthesis, so a finding the promotion cleared is absent from it. The condition SHALL remain a warning and SHALL NOT prevent the write.
+
+#### Scenario: A shared rule from personal instances
+- **WHEN** `claim assert --evidential inferred --scope organisation --basis clm_p` is run and `clm_p` is `personal`
+- **THEN** the claim is written and the result carries `scope_wider_than_inputs` naming `clm_p`
+
+#### Scenario: Promoting a basis member clears the condition
+- **WHEN** an `organisation` inferred claim is warned for its `personal` basis member, and `publish <member> --scope organisation` is run
+- **THEN** the promotion's result carries no `scope_wider_than_inputs` finding for the inferred claim, though the promotion did not name it, and `validate` no longer reports it
+

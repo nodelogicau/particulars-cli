@@ -3,9 +3,7 @@
 ## Purpose
 
 The agent-facing skill embedded in the binary: `skill show` and `skill install` with per-harness presets (Claude Code, GitHub Copilot, the neutral `.agents/skills` location, Cursor rules, and an `AGENTS.md` section), version stamping and ownership markers, the never-overwrite-a-foreign-file rule, and the `--check` drift mode for CI.
-
 ## Requirements
-
 ### Requirement: The skill is embedded in the binary
 The binary SHALL embed `skills/particulars/SKILL.md` at build time. The embedded text, rendered for output, SHALL have its frontmatter `metadata.version` set to the binary version (without a leading `v`) and SHALL carry, immediately after the frontmatter's closing `---`, a marker line of the form `<!-- installed by particulars <version>; regenerate with: particulars skill install -->`. The rendered body SHALL otherwise be byte-identical to the repository file.
 
@@ -151,3 +149,15 @@ The embedded skill body SHALL direct its reader to read the workspace register o
 #### Scenario: An MCP client does not call the verb
 - **WHEN** a client has received the register in the server's instructions
 - **THEN** the skill tells it no call is needed
+
+### Requirement: The skill teaches an inference to name its basis
+The embedded skill body SHALL direct its reader, before asserting an `inferred` claim, to recall what the workspace holds and to pass the claims and syntheses it reasoned from as `--basis` (or `basis` over MCP). It SHALL state that a rule of thumb is an inferred claim whose basis is its instances, that a later counterexample is reconciled as a `qualification` synthesis citing the rule and the counterexample rather than by changing the rule, and that a basis is evidence and does not synthesise what it names. It SHALL NOT tell the reader to choose `held` to avoid naming a basis. The installed copy at `.claude/skills/particulars/SKILL.md` SHALL be regenerated from the binary so the CI check passes.
+
+#### Scenario: An inference after recall
+- **WHEN** a reader following the skill concludes something from three claims it recalled
+- **THEN** it asserts the conclusion with `--evidential inferred` and those three ids as `--basis`
+
+#### Scenario: A counterexample
+- **WHEN** a reader following the skill finds a claim that contradicts a rule of thumb
+- **THEN** it creates a `qualification` synthesis citing both, and leaves the rule unchanged
+

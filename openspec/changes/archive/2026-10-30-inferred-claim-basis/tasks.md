@@ -57,4 +57,4 @@
 
 - [x] 10.1 Run `go test ./...`, `golangci-lint run` and `openspec validate inferred-claim-basis --strict`.
 - [x] 10.2 Smoke-test against a copy of `~/IdeaProjects/particulars-knowledge`. `validate` should report only `inferred_without_basis` as new, and `conflicts` output should be unchanged.
-- [ ] 10.3 Archive `recall-query` before archiving this change, then close #14 with a link to the commit.
+- [x] 10.3 Archive `recall-query` before archiving this change (archived 2026-10-30), so the two changes' syncs to `knowledge-query` and `mcp-server` apply in order. Closing #14 follows the archive.

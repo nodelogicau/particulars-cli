@@ -3,9 +3,7 @@
 ## Purpose
 
 Drawing a workspace so a reader can see its shape: the dialectic for one particular — claims and syntheses joined by typed input edges, with the current belief, unreconciled and stale assertions, retractions, and cross-particular inputs each rendered distinctly — and a map of every particular joined by merge records. Covers the two formats (Graphviz DOT and Mermaid), node identity and determinism, scope handling, and the flags that bound the lineage view.
-
 ## Requirements
-
 ### Requirement: Visual export formats
 `particulars export --format dot|mermaid [--subject <particular>] [--depth <n>] [--include-retracted] [--scope <s>] [--out <path>]` SHALL emit the workspace as a graph description in the named format: `dot` as a Graphviz `digraph`, `mermaid` as a Mermaid `flowchart`. With `--out` it SHALL write to that file, otherwise to stdout. `--json` SHALL emit a summary object (`{format, view, nodes, edges, path?}`) rather than the diagram. The command SHALL NOT perform any network request and SHALL NOT require Graphviz or any renderer to be installed.
 
@@ -26,11 +24,15 @@ Drawing a workspace so a reader can see its shape: the dialectic for one particu
 - **THEN** it succeeds
 
 ### Requirement: The lineage view
-With `--subject <particular>`, the export SHALL render the dialectic for that particular's merge equivalence class: one node per claim and per synthesis, and one edge per synthesis input, directed from the input to the synthesis and labelled with the input's role. The subject SHALL be resolvable by id, URI, label, or alias, and an ambiguous subject SHALL exit 2 listing the candidates, as elsewhere. Cross-particular inputs SHALL be included as nodes, since they are part of the reasoning, and SHALL be marked as belonging to another particular.
+With `--subject <particular>`, the export SHALL render the dialectic for that particular's merge equivalence class: one node per claim and per synthesis, one edge per synthesis input, directed from the input to the synthesis and labelled with the input's role, and one edge per basis member of an inferred claim, directed from the member to the claim, labelled `basis`, and drawn in a line style distinct from input edges (dotted in DOT, `-.->` in Mermaid, where the `basis` label tells it from a superseded-by edge). The subject SHALL be resolvable by id, URI, label, or alias, and an ambiguous subject SHALL exit 2 listing the candidates, as elsewhere. Cross-particular inputs and basis members SHALL be included as nodes, since they are part of the reasoning, and SHALL be marked as belonging to another particular.
 
 #### Scenario: Roles are visible on the edges
 - **WHEN** a synthesis cites one claim as `thesis` and another as `antithesis` and the lineage view is rendered
 - **THEN** the two edges are labelled `thesis` and `antithesis` respectively
+
+#### Scenario: Basis edges are distinguishable
+- **WHEN** an inferred claim in the view lists two claims in its basis
+- **THEN** two edges run from those claims to it, each labelled `basis` and drawn in the basis line style
 
 #### Scenario: Subject resolution
 - **WHEN** `--subject` names a label that matches no particular
@@ -44,8 +46,12 @@ With `--subject <particular>`, the export SHALL render the dialectic for that pa
 - **WHEN** a synthesis in the view cites a claim whose subject is a different particular outside the class
 - **THEN** that claim appears as a node marked as belonging to another particular
 
+#### Scenario: Cross-particular basis member
+- **WHEN** an inferred claim in the view lists in its basis a claim about a particular outside the class
+- **THEN** that claim appears as a node marked as belonging to another particular
+
 ### Requirement: Conflict state is rendered, not merely present
-The lineage view SHALL distinguish, by visual attribute rather than by text alone, the assertions the workspace treats differently: the `current` synthesis SHALL be emphasised, assertions in `unsynthesised` SHALL be marked as not yet reconciled, and syntheses in `stale` SHALL be marked as citing a retracted input. The attributes SHALL be legible in both formats without external styling.
+The lineage view SHALL distinguish, by visual attribute rather than by text alone, the assertions the workspace treats differently: the `current` synthesis SHALL be emphasised, assertions in `unsynthesised` SHALL be marked as not yet reconciled, and claims and syntheses in `stale` SHALL be marked as citing a retracted object. The attributes SHALL be legible in both formats without external styling.
 
 #### Scenario: The current belief is distinguishable
 - **WHEN** a particular has two non-retracted syntheses and the lineage view is rendered
@@ -57,6 +63,10 @@ The lineage view SHALL distinguish, by visual attribute rather than by text alon
 
 #### Scenario: Stale syntheses are marked
 - **WHEN** a synthesis cites a retracted input, directly or transitively
+- **THEN** its node carries the stale attribute
+
+#### Scenario: Stale inferred claims are marked
+- **WHEN** an inferred claim's basis lists a retracted claim
 - **THEN** its node carries the stale attribute
 
 ### Requirement: Retracted objects are excluded unless requested
@@ -120,8 +130,13 @@ The visual formats SHALL include `personal` knowledge by default, because emitti
 - **THEN** that claim appears
 
 ### Requirement: Depth bounds the lineage view
-`--depth <n>` SHALL limit the lineage view to `n` levels of inputs from the subject's current belief, as `lineage --depth` does. Omitted, the view SHALL cover the whole closure for the equivalence class.
+`--depth <n>` SHALL limit the lineage view to `n` levels of inputs and basis members from the subject's current belief, as `lineage --depth` does, with each kind of edge counting as one level. Omitted, the view SHALL cover the whole closure for the equivalence class.
 
 #### Scenario: Bounded traversal
 - **WHEN** a chain of syntheses four levels deep is rendered with `--depth 2`
 - **THEN** only the first two levels of inputs appear
+
+#### Scenario: A basis counts as a level
+- **WHEN** the current synthesis cites an inferred claim whose basis lists one claim about a particular outside the class, and the view is rendered with `--depth 1`
+- **THEN** the inferred claim appears and its basis member does not
+
