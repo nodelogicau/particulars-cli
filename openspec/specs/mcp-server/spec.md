@@ -3,9 +3,7 @@
 ## Purpose
 
 The stdio Model Context Protocol front-end: one server bound to one workspace, the DKF specification's tool surface plus two labelled extensions, results identical to the CLI's `--json`, error mapping, provenance defaulted from the client handshake, instructions and prompt delivery, and write serialisation.
-
 ## Requirements
-
 ### Requirement: Stdio MCP server bound to one workspace
 `particulars serve --mcp [--workspace <dir>] [--author] [--harness] [--model]` SHALL run a Model Context Protocol server over stdio, bound at startup to exactly one workspace resolved as every verb does (flag, `DKF_WORKSPACE`, then `dkf.yaml`/`.dkf` discovery from the working directory). Without a workspace it SHALL exit with code 5 and a message on stderr. It SHALL write nothing to stdout except JSON-RPC. `serve` without `--mcp` SHALL be a usage error.
 
@@ -18,7 +16,7 @@ The stdio Model Context Protocol front-end: one server bound to one workspace, t
 - **THEN** the process exits with code 5 and stdout is empty
 
 ### Requirement: Spec tool surface
-The server SHALL expose tools named exactly `particular_define`, `particular_resolve`, `particular_merge`, `claim_assert`, `claim_retract`, `synthesis_create`, `knowledge_recall`, `conflict_detect`, `lineage_trace`, and `knowledge_publish`, with the parameter names given in the DKF specification (`synthesis_create` additionally takes `particular_id`; `knowledge_publish` takes `claim_ids`, `scope`, `source`, and optional `reason`). `claim_assert` SHALL take a required `evidential` of `observed`, `inferred`, or `held`, with no default, refusing `confidence` together with `held`; it SHALL accept `source.document` as either a string or a mapping of `ref`, `author`, `hash`, and `quote`, accepting `uri` as a legacy alias for `ref` and refusing a mapping carrying both. `source.author` and `document.author` SHALL accept a particular id, URI, or bare name, resolved for writing per `source-attribution`: an unknown id or an ambiguous per-call name is an error result; a server-flag or workspace default that is ambiguous is written unchanged. `claim_retract` SHALL accept an optional `kind`. `synthesis_create` SHALL accept `method` only from the closed vocabulary. `knowledge_recall` SHALL accept an optional `author` — an id, URI, label, or alias — returning the objects asserted by or reported from that particular's merge class, each entry carrying `relations` (`asserted`, `reported`, or both), combinable with `particular_id`, `scope`, `topics`, and `include_retracted`. Parameters that identify a particular SHALL accept an id, URI, label, or alias; `knowledge_publish` SHALL accept claim and synthesis ids only. Each tool's structured result SHALL equal the corresponding CLI verb's `--json` output. Query tools SHALL be annotated read-only; `particular_define` idempotent; no tool destructive.
+The server SHALL expose tools named exactly `particular_define`, `particular_resolve`, `particular_merge`, `claim_assert`, `claim_retract`, `synthesis_create`, `knowledge_recall`, `conflict_detect`, `lineage_trace`, and `knowledge_publish`, with the parameter names given in the DKF specification (`synthesis_create` additionally takes `particular_id`; `knowledge_publish` takes `claim_ids`, `scope`, `source`, and optional `reason`). `claim_assert` SHALL take a required `evidential` of `observed`, `inferred`, or `held`, with no default, refusing `confidence` together with `held`; it SHALL accept `source.document` as either a string or a mapping of `ref`, `author`, `hash`, and `quote`, accepting `uri` as a legacy alias for `ref` and refusing a mapping carrying both. `source.author` and `document.author` SHALL accept a particular id, URI, or bare name, resolved for writing per `source-attribution`: an unknown id or an ambiguous per-call name is an error result; a server-flag or workspace default that is ambiguous is written unchanged. `claim_retract` SHALL accept an optional `kind`. `synthesis_create` SHALL accept `method` only from the closed vocabulary. `knowledge_recall` SHALL accept an optional `author` — an id, URI, label, or alias — returning the objects asserted by or reported from that particular's merge class, each entry carrying `relations` (`asserted`, `reported`, or both), combinable with `particular_id`, `scope`, `topics`, and `include_retracted`. `knowledge_recall` SHALL accept an optional `query`, free text, that performs recall by query as defined for `recall --query` in `knowledge-query`, combinable with `author`, `scope`, `topics`, `include_retracted`, and `limit`, where `limit` counts particulars; passing both `query` and `particular_id` SHALL be a usage error, and `query` SHALL NOT be treated as a particular reference. Parameters that identify a particular SHALL accept an id, URI, label, or alias; `knowledge_publish` SHALL accept claim and synthesis ids only. Each tool's structured result SHALL equal the corresponding CLI verb's `--json` output. Query tools SHALL be annotated read-only; `particular_define` idempotent; no tool destructive.
 
 #### Scenario: Assert then recall
 - **WHEN** a client calls `particular_define{label: "Project X"}`, then `claim_assert{particular_id: "Project X", content: "Uses Postgres", evidential: "observed"}`, then `knowledge_recall{particular_id: "Project X"}`
@@ -47,6 +45,18 @@ The server SHALL expose tools named exactly `particular_define`, `particular_res
 #### Scenario: Recall by author over MCP
 - **WHEN** a client calls `knowledge_recall{author: "ben"}`
 - **THEN** the result equals `particulars recall --author ben --json`, each entry carrying `relations`
+
+#### Scenario: Recall by query over MCP
+- **WHEN** a client calls `knowledge_recall{query: "what is the session timeout?"}`
+- **THEN** the result equals `particulars recall --query "what is the session timeout?" --json`, grouped by particular with `resolution` on each
+
+#### Scenario: A name passed as query
+- **WHEN** a client calls `knowledge_recall{query: "Project X"}` and a particular is labelled `Project X`
+- **THEN** that particular is the first in `particulars` with `resolution: label`, not an error and not a flat `entries` list
+
+#### Scenario: Query and particular together over MCP
+- **WHEN** a client calls `knowledge_recall{particular_id: "Project X", query: "timeout"}`
+- **THEN** the tool returns a usage error result
 
 ### Requirement: Conflict detection over a claim set
 `conflict_detect` SHALL accept either `particular_id` or `claim_ids[]` (exactly one). With `claim_ids`, the given set SHALL be the universe: `current` is the most recent non-retracted synthesis in the set, `unsynthesised` the members not in its transitive inputs, `stale` the member syntheses citing a retracted object; `priority` is `|unsynthesised| + |stale|`.
@@ -173,3 +183,4 @@ The descriptions and parameter schemas of `claim_assert` and `particular_define`
 #### Scenario: Define does not invite document particulars
 - **WHEN** a client reads `particular_define`'s description
 - **THEN** its URI examples name identities, not articles or feeds, and it states that a particular is a thing in the world, not a document being read
+
