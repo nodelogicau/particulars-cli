@@ -72,12 +72,16 @@ homebrew_casks:
       verified: github.com/nodelogicau/particulars-cli/
     binaries:
       - particulars
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/particulars"]
-          end
+    # Homebrew deprecated `postflight` blocks for third-party casks in favour of
+    # `postflight_steps`, a closed step DSL with no Ruby. GoReleaser's hooks only
+    # emit the old block, so the stanza is written out here. Homebrew expands
+    # {{staged_path}} itself; it is escaped from GoReleaser's own templating.
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/particulars"]
+        end
+      end
 
 changelog:
   use: github
