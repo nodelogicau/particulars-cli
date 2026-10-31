@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **MCP accepts the rest of the CLI-shaped arguments (#18).** A re-run of
+  particulars-bench on v0.16.0 still refused 157 of 1,075 `claim_assert`
+  calls, nearly all for arguments shaped like CLI flags. `claim_assert` now
+  takes top-level `topics` as shorthand for `context.topics`, joining the two
+  lists without duplicates. Every tool that takes `source` accepts
+  `source.document_author` (or `source.document-author`) as shorthand for
+  the document's author, resolved as the nested form is. And a quote, hash,
+  or document author given both nested and as shorthand is refused only when
+  the two values differ: the same value twice loses nothing, so it is written
+  once. The MCP preamble names the new shorthand.
+
 ## v0.16.0 — MCP that meets smaller models halfway
 
 - **MCP accepts `quote` and `hash` beside `source.document`.** Every tool that

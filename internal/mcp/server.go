@@ -130,8 +130,8 @@ func mcpPreamble() string {
 	b.WriteString("The skill below is written for the `particulars` command line. Over MCP there is no shell and no `particulars` tool: each command it names is one of this server's tools, listed here. Ignore `--json` — every tool result is already structured. Flags become parameters; for `claim assert`:\n\n")
 	b.WriteString("- `--subject` → `particular_id`\n")
 	b.WriteString("- `--document` → `source.document` (a string, or an object with `ref`)\n")
-	b.WriteString("- `--document-author`, `--quote`, `--document-hash` → `source.document.author`, `.quote`, `.hash`; `quote` and `hash` may also be given directly on `source`\n")
-	b.WriteString("- `--topic` → `context.topics`\n")
+	b.WriteString("- `--document-author`, `--quote`, `--document-hash` → `source.document.author`, `.quote`, `.hash`; each may also be given directly on `source` as `document_author`, `quote`, `hash`\n")
+	b.WriteString("- `--topic` → `context.topics` (or top-level `topics`)\n")
 	b.WriteString("- `--hash-document` has no MCP equivalent: pass `hash` yourself, or omit it\n\n")
 	b.WriteString("| Command in the skill | Tool |\n|---|---|\n")
 	for _, m := range cliTools {
@@ -209,6 +209,11 @@ type sourceIn struct {
 	// because the CLI spells them as flags beside --document.
 	Quote string `json:"quote,omitempty" jsonschema:"shorthand for source.document's quote; needs source.document"`
 	Hash  string `json:"hash,omitempty" jsonschema:"shorthand for source.document's hash; needs source.document"`
+	// DocumentAuthor is shorthand for the document's author, spelled as the
+	// CLI's --document-author; plain author already names the asserter. The
+	// hyphenated key is accepted because models send it as often as not.
+	DocumentAuthor       string `json:"document_author,omitempty" jsonschema:"shorthand for source.document's author (who produced what was read; for testimony, who told you); needs source.document"`
+	DocumentAuthorHyphen string `json:"document-author,omitempty" jsonschema:"the same as document_author"`
 }
 
 // documentIn is source.document as decoded: a string or a mapping. It is
@@ -243,23 +248,37 @@ func withSource[In any]() *jsonschema.Schema {
 	return s
 }
 
-// withShorthand folds source.quote and source.hash into doc. Setting a field
-// both ways is refused rather than one silently winning, since a quote is
-// evidence and the losing one would be gone; without a per-call document
-// there is nothing for the quote to be from.
+// withShorthand folds source.quote, source.hash and source.document_author
+// into doc. Setting a field both ways with different values is refused rather
+// than one silently winning, since a quote is evidence and the losing one
+// would be gone; without a per-call document there is nothing for the quote
+// to be from.
 func withShorthand(in *sourceIn, doc dkf.Document) (dkf.Document, error) {
+	author := in.DocumentAuthor
+	if in.DocumentAuthorHyphen != "" {
+		if author != "" && author != in.DocumentAuthorHyphen {
+			return doc, apperr.Usage("pass document author once: as source.document_author or source.document-author, not both")
+		}
+		author = in.DocumentAuthorHyphen
+	}
 	for _, f := range []struct {
-		name, short string
-		into        *string
-	}{{"quote", in.Quote, &doc.Quote}, {"hash", in.Hash, &doc.Hash}} {
+		name, key, field, short string
+		into                    *string
+	}{
+		{"quote", "quote", "quote", in.Quote, &doc.Quote},
+		{"hash", "hash", "hash", in.Hash, &doc.Hash},
+		{"document author", "document_author", "author", author, &doc.Author},
+	} {
 		if f.short == "" {
 			continue
 		}
 		if in.Document == nil {
-			return doc, apperr.Usage("source.%s needs source.document: pass {\"document\": {\"ref\": …, \"%s\": …}}", f.name, f.name)
+			return doc, apperr.Usage("source.%s needs source.document: pass {\"document\": {\"ref\": …, \"%s\": …}}", f.key, f.field)
 		}
-		if *f.into != "" {
-			return doc, apperr.Usage("pass %s once: in source.document or as source.%s, not both", f.name, f.name)
+		// The same value given both ways loses nothing; only a second,
+		// different value would be dropped, so only that is refused.
+		if *f.into != "" && *f.into != f.short {
+			return doc, apperr.Usage("pass %s once: in source.document or as source.%s, not both", f.name, f.key)
 		}
 		*f.into = f.short
 	}
