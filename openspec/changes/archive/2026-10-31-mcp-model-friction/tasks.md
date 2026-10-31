@@ -21,4 +21,4 @@
 - [x] 4.1 `docs/mcp.md`: document the `source.quote` / `source.hash` shorthand, naming the nested form as canonical, and the preamble
 - [x] 4.2 `CHANGELOG.md`: add an Unreleased entry referencing #16
 - [x] 4.3 Run `go test ./...` and `golangci-lint run`
-- [ ] 4.4 After release, re-run particulars-bench at the #16 settings (bench `4b5d19f`, oracle with 70 questions, Haiku 5.5 ingest). Record the `claim_assert` error count and the unknown-tool count against the baseline (834 of 1,686, and 58), and comment the result on #16
+- [x] 4.4 After release, re-run particulars-bench at the #16 settings (bench `4b5d19f`, oracle with 70 questions, Haiku 5.5 ingest). Record the `claim_assert` error count and the unknown-tool count against the baseline (834 of 1,686, and 58), and comment the result on #16
