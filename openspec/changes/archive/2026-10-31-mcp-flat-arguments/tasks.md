@@ -23,4 +23,4 @@
 
 - [x] 4.1 `docs/mcp.md`: add the shorthand to the `synthesis_create` row and describe it once for both tools, including the document merge. Add a `CHANGELOG.md` Unreleased entry that references #18
 - [x] 4.2 Run `go test ./...` and `golangci-lint run`
-- [ ] 4.3 After release, re-run particulars-bench at the #16 settings, record the `claim_assert` errors (16 of 891 on v0.18.0) and the `synthesis_create` errors (8 of 22), and open or update an issue with the result
+- [x] 4.3 After release, re-run particulars-bench at the #16 settings, record the `claim_assert` errors (16 of 891 on v0.18.0) and the `synthesis_create` errors (8 of 22), and open or update an issue with the result
