@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **`claim_assert` accepts the CLI's source flags as top-level arguments
+  (#18).** On v0.17.0, 80 of the 85 remaining `claim_assert` refusals in
+  particulars-bench came from nine sessions that sent `document`, `quote`,
+  and `document_author` beside `particular_id`, with no `source` at all —
+  `claim assert`'s flags, one-for-one. These are now shorthand for the same
+  `source` fields, folded in before any check, so they meet the nested
+  form's rules and write the same file. The MCP preamble goes back to
+  stating only the nested form: naming the shorthand there coincided with
+  the flattening, and the schema still describes it.
+
 ## v0.17.0 — MCP takes the flags models reach for
 
 - **MCP accepts the rest of the CLI-shaped arguments (#18).** A re-run of

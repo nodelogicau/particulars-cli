@@ -630,6 +630,74 @@ func TestSourceShorthand(t *testing.T) {
 	}
 }
 
+// claim_assert accepts the CLI's flags as top-level fields, folding them into
+// source so the nested form's rules apply (#18).
+func TestTopLevelSource(t *testing.T) {
+	h := newHarness(t, "claude-ai", "ben")
+	h.ok("particular_define", map[string]any{"label": "Billing"})
+	h.ok("particular_define", map[string]any{"label": "Jane", "aliases": []string{"jane"}})
+	assert := func(extra map[string]any) map[string]any {
+		m := map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443"}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	docOf := func(r map[string]any) any {
+		return r["claim"].(map[string]any)["source"].(map[string]any)["document"]
+	}
+	nested := h.ok("claim_assert", assert(map[string]any{"source": map[string]any{"document": map[string]any{"ref": "chat session 1", "quote": "listens on 443", "author": "jane"}}}))
+	flat := h.ok("claim_assert", assert(map[string]any{"document": "chat session 1", "quote": "listens on 443", "document_author": "jane",
+		"scope": "personal", "topics": []string{"ports"}, "timestamp": "2023-05-24T00:36:00Z"}))
+	if got, want := docOf(flat), docOf(nested); !reflect.DeepEqual(got, want) {
+		t.Errorf("flat CLI shape %v, nested %v", got, want)
+	}
+	mapping := h.ok("claim_assert", assert(map[string]any{"document": map[string]any{"ref": "chat session 1", "quote": "listens on 443"}, "document-author": "jane"}))
+	if got, want := docOf(mapping), docOf(nested); !reflect.DeepEqual(got, want) {
+		t.Errorf("top-level mapping %v, nested %v", got, want)
+	}
+	same := h.ok("claim_assert", assert(map[string]any{"document": "chat session 1", "quote": "listens on 443",
+		"source": map[string]any{"document": "chat session 1", "quote": "listens on 443", "document_author": "jane"}}))
+	if got, want := docOf(same), docOf(nested); !reflect.DeepEqual(got, want) {
+		t.Errorf("same values both ways %v, nested %v", got, want)
+	}
+
+	before, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims"))
+	for _, c := range []struct {
+		args map[string]any
+		want string
+	}{
+		{map[string]any{"document": "docs/a.md", "source": map[string]any{"document": "docs/b.md"}}, "pass document once"},
+		{map[string]any{"document": "docs/a.md", "source": map[string]any{"document": map[string]any{"ref": "docs/a.md"}}}, "pass document once"},
+		{map[string]any{"document": "docs/a.md", "quote": "one", "source": map[string]any{"quote": "two"}}, "pass quote once"},
+		{map[string]any{"quote": "listens on 443"}, "source.quote needs source.document"},
+	} {
+		if text := h.fail("claim_assert", assert(c.args), "usage"); !strings.Contains(text, c.want) {
+			t.Errorf("%v: %q, want %q", c.args, text, c.want)
+		}
+	}
+	if after, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims")); len(after) != len(before) {
+		t.Error("a refused claim must not be written")
+	}
+
+	tools, err := h.cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range tools.Tools {
+		if tl.Name != "claim_assert" {
+			continue
+		}
+		b, _ := json.Marshal(tl.InputSchema)
+		var m map[string]any
+		_ = json.Unmarshal(b, &m)
+		doc, _ := m["properties"].(map[string]any)["document"].(map[string]any)
+		if branches, _ := doc["anyOf"].([]any); len(branches) != 2 {
+			t.Errorf("top-level document should be string | object, got %v", doc)
+		}
+	}
+}
+
 // Every tool taking source states source.document's two forms in its input
 // schema, and the quote shorthand beside it (#16).
 func TestSourceDocumentSchema(t *testing.T) {
@@ -685,9 +753,16 @@ func TestInstructionsMapCommandsToTools(t *testing.T) {
 		t.Fatalf("the preamble should precede the skill body: %d, %d", pre, skillAt)
 	}
 	preamble := ins[pre:skillAt]
-	for _, want := range []string{"no `particulars` tool", "| `particulars particular resolve` | `particular_resolve` |", "| `particulars recall` | `knowledge_recall`", "the register is included below", "as `document_author`, `quote`, `hash`", "or top-level `topics`"} {
+	for _, want := range []string{"no `particulars` tool", "| `particulars particular resolve` | `particular_resolve` |", "| `particulars recall` | `knowledge_recall`", "the register is included below"} {
 		if !strings.Contains(preamble, want) {
 			t.Errorf("preamble lacks %q", want)
+		}
+	}
+	// The preamble teaches the nested form only: naming the shorthand there
+	// coincided with models flattening further (#18). The schema still has it.
+	for _, unwanted := range []string{"may also be given", "top-level"} {
+		if strings.Contains(preamble, unwanted) {
+			t.Errorf("preamble should not teach shorthand, but says %q", unwanted)
 		}
 	}
 

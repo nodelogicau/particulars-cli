@@ -130,8 +130,8 @@ func mcpPreamble() string {
 	b.WriteString("The skill below is written for the `particulars` command line. Over MCP there is no shell and no `particulars` tool: each command it names is one of this server's tools, listed here. Ignore `--json` — every tool result is already structured. Flags become parameters; for `claim assert`:\n\n")
 	b.WriteString("- `--subject` → `particular_id`\n")
 	b.WriteString("- `--document` → `source.document` (a string, or an object with `ref`)\n")
-	b.WriteString("- `--document-author`, `--quote`, `--document-hash` → `source.document.author`, `.quote`, `.hash`; each may also be given directly on `source` as `document_author`, `quote`, `hash`\n")
-	b.WriteString("- `--topic` → `context.topics` (or top-level `topics`)\n")
+	b.WriteString("- `--document-author`, `--quote`, `--document-hash` → `source.document.author`, `.quote`, `.hash`\n")
+	b.WriteString("- `--topic` → `context.topics`\n")
 	b.WriteString("- `--hash-document` has no MCP equivalent: pass `hash` yourself, or omit it\n\n")
 	b.WriteString("| Command in the skill | Tool |\n|---|---|\n")
 	for _, m := range cliTools {
