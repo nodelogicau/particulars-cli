@@ -569,8 +569,11 @@ func TestSourceShorthand(t *testing.T) {
 		want string
 	}{
 		{map[string]any{"document": map[string]any{"ref": "docs/a.md", "quote": "one"}, "quote": "two"}, "pass quote once"},
-		{map[string]any{"document": map[string]any{"ref": "docs/a.md", "hash": hash}, "hash": hash}, "pass hash once"},
+		{map[string]any{"document": map[string]any{"ref": "docs/a.md", "hash": hash}, "hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"}, "pass hash once"},
+		{map[string]any{"document": map[string]any{"ref": "docs/a.md", "author": "jane"}, "document_author": "ben"}, "pass document author once"},
+		{map[string]any{"document": "docs/a.md", "document_author": "jane", "document-author": "ben"}, "pass document author once"},
 		{map[string]any{"quote": "the sentence"}, "source.quote needs source.document"},
+		{map[string]any{"document_author": "jane"}, "source.document_author needs source.document"},
 		{map[string]any{"document": "docs/a.md", "quote": " \n"}, "source.quote is blank"},
 	} {
 		if text := h.fail("claim_assert", assert(c.src), "usage"); !strings.Contains(text, c.want) {
@@ -579,6 +582,43 @@ func TestSourceShorthand(t *testing.T) {
 	}
 	if after, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims")); len(after) != len(before) {
 		t.Error("a refused claim must not be written")
+	}
+
+	// The same value given both ways loses nothing, so it is accepted.
+	twice := h.ok("claim_assert", assert(map[string]any{"document": map[string]any{"ref": "chat session 1", "quote": "listens on 443", "hash": hash}, "quote": "listens on 443", "hash": hash}))
+	if got, want := docOf(twice, "claim"), docOf(nested, "claim"); !reflect.DeepEqual(got, want) {
+		t.Errorf("equal values twice %v, nested %v", got, want)
+	}
+
+	// Both spellings of the document author write what the nested form does,
+	// resolved to the particular's uri.
+	byAuthor := h.ok("claim_assert", assert(map[string]any{"document": map[string]any{"ref": "conversation with Jane", "author": "jane"}}))
+	for _, key := range []string{"document_author", "document-author"} {
+		flat := h.ok("claim_assert", assert(map[string]any{"document": "conversation with Jane", key: "jane"}))
+		if got, want := docOf(flat, "claim"), docOf(byAuthor, "claim"); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: %v, nested %v", key, got, want)
+		}
+	}
+	h.ok("claim_assert", assert(map[string]any{"document": map[string]any{"ref": "docs/a.md", "author": "jane"}, "document_author": "jane"}))
+	unknown := "par_00000000-0000-7000-8000-000000000000"
+	nestedErr := h.fail("claim_assert", assert(map[string]any{"document": map[string]any{"ref": "docs/a.md", "author": unknown}}), "not_found")
+	if text := h.fail("claim_assert", assert(map[string]any{"document": "docs/a.md", "document_author": unknown}), "not_found"); text != nestedErr {
+		t.Errorf("unknown shorthand author: %q, want the nested form's %q", text, nestedErr)
+	}
+
+	// Top-level topics join context.topics, context first, once each.
+	tc := h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443",
+		"topics": []string{"billing", "ports"}, "context": map[string]any{"topics": []string{"ports", "infra"}}})
+	if got := tc["claim"].(map[string]any)["context"].(map[string]any)["topics"]; !reflect.DeepEqual(got, []any{"ports", "infra", "billing"}) {
+		t.Errorf("topics union: %v", got)
+	}
+	tc = h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443", "topics": []string{"billing"}})
+	if got := tc["claim"].(map[string]any)["context"].(map[string]any)["topics"]; !reflect.DeepEqual(got, []any{"billing"}) {
+		t.Errorf("topics shorthand alone: %v", got)
+	}
+	nestedBlank := h.fail("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443", "context": map[string]any{"topics": []string{""}}}, "invalid")
+	if text := h.fail("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443", "topics": []string{""}}, "invalid"); text != nestedBlank {
+		t.Errorf("blank shorthand topic: %q, want the nested form's %q", text, nestedBlank)
 	}
 
 	// Every tool taking source shares it.
@@ -621,8 +661,8 @@ func TestSourceDocumentSchema(t *testing.T) {
 		if d, _ := doc["description"].(string); !strings.Contains(d, "what was read") {
 			t.Errorf("%s: source.document lost its description: %v", name, doc)
 		}
-		if props["quote"] == nil || props["hash"] == nil {
-			t.Errorf("%s: source should carry the quote and hash shorthand", name)
+		if props["quote"] == nil || props["hash"] == nil || props["document_author"] == nil {
+			t.Errorf("%s: source should carry the quote, hash, and document_author shorthand", name)
 		}
 	}
 
@@ -645,7 +685,7 @@ func TestInstructionsMapCommandsToTools(t *testing.T) {
 		t.Fatalf("the preamble should precede the skill body: %d, %d", pre, skillAt)
 	}
 	preamble := ins[pre:skillAt]
-	for _, want := range []string{"no `particulars` tool", "| `particulars particular resolve` | `particular_resolve` |", "| `particulars recall` | `knowledge_recall`", "the register is included below"} {
+	for _, want := range []string{"no `particulars` tool", "| `particulars particular resolve` | `particular_resolve` |", "| `particulars recall` | `knowledge_recall`", "the register is included below", "as `document_author`, `quote`, `hash`", "or top-level `topics`"} {
 		if !strings.Contains(preamble, want) {
 			t.Errorf("preamble lacks %q", want)
 		}

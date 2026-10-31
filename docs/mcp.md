@@ -216,7 +216,7 @@ parameters accept an id, URI, label, or alias):
 | `particular_define` | `label`, `uri?`, `aliases[]?` | `{particular, created}` |
 | `particular_resolve` | `query` | `{particular}` — `null` when nothing matches |
 | `particular_merge` | `uri_a`, `uri_b`, `reason?`, `source?` | `{merge, sides, path}` |
-| `claim_assert` | `particular_id`, `content`, `evidential`, `source?`, `context?`, `confidence?`, `scope?`, `timestamp?` | `{claim, path}` |
+| `claim_assert` | `particular_id`, `content`, `evidential`, `source?`, `context?`, `confidence?`, `scope?`, `topics[]?`, `timestamp?` | `{claim, path}` |
 | `claim_retract` | `claim_id`, `reason`, `source?`, `superseded_by?` | `{id, type, retracted}` |
 | `synthesis_create` | `particular_id`, `content`, `inputs[{id, role, weight?}]`, `unresolved`, `source?`, `method?`, `context?`, `confidence?`, `timestamp?` | `{synthesis, path, warnings}` |
 | `knowledge_recall` | `particular_id?` (or `query?`), `author?`, `topics[]?`, `scope?`, `include_retracted?`, `limit?` | `{entries, count, subject?, class?, author?}`; author-filtered entries carry `relations` (`asserted`/`reported`) |
@@ -231,15 +231,19 @@ particulars extensions (not part of the DKF tool set):
 | `unresolved_list` | `{entries: [{particular, label, uri, members?, synthesis, timestamp, unresolved, unsynthesised}], count}` — each current synthesis's `unresolved`, oldest first; `particular_id?`, `scope?`, `include_none?` |
 | `workspace_status` | root, id, base-uri, counts, `validate` summary, conflict reports, and — inside a git checkout — `git.uncommitted` file paths (read-only) |
 
-`source` is `{author?, harness?, model?, document?, quote?, hash?}`; `context` is `{scope?, topics[]?}`.
+`source` is `{author?, harness?, model?, document?, quote?, hash?, document_author?}`; `context` is `{scope?, topics[]?}`.
 `author` is a particular reference — id, URI, or name; a defined particular is
 written as its `uri`. `document` is a string, or a mapping of `ref` (`uri` is
 the legacy alias), `author` (who produced what was read — for testimony, who
-told you), `hash`, and `quote`. The nested form is canonical, but `quote` and
-`hash` may also be given directly on `source`, as shorthand: `{document:
-"chat session 1", quote: "…"}` writes the same file as `{document: {ref:
-"chat session 1", quote: "…"}}`. The shorthand needs a `document`, and a field
-set both ways is refused.
+told you), `hash`, and `quote`. The nested form is canonical, but `quote`,
+`hash`, and `document_author` (or `document-author`) may also be given
+directly on `source`, as shorthand: `{document: "chat session 1", quote:
+"…"}` writes the same file as `{document: {ref: "chat session 1", quote:
+"…"}}`. The shorthand needs a `document`; a field set both ways is accepted
+when the values are equal and refused when they differ. On `claim_assert`,
+top-level `scope` and `topics` are shorthand for `context.scope` and
+`context.topics`; `context.scope` wins over `scope`, and the two topic lists
+are joined, `context.topics` first, without duplicates.
 
 A successful result carries its output as structured content and again as a
 JSON text block after a one-line summary, since some clients (Claude Desktop

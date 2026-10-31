@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -289,6 +290,7 @@ type assertIn struct {
 	Context      *contextIn `json:"context,omitempty"`
 	Confidence   *float64   `json:"confidence,omitempty" jsonschema:"0..1; 0.9+ seen directly, 0.6-0.8 inferred"`
 	Scope        string     `json:"scope,omitempty" jsonschema:"shorthand for context.scope"`
+	Topics       []string   `json:"topics,omitempty" jsonschema:"shorthand for context.topics; both are written, without duplicates"`
 	Timestamp    string     `json:"timestamp,omitempty" jsonschema:"RFC 3339 assertion time; backdate when recording a dated document"`
 }
 
@@ -322,6 +324,13 @@ func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in a
 			scopeIn = in.Context.Scope
 		}
 		topics = in.Context.Topics
+	}
+	// Topics are a set, so the shorthand joins context.topics rather than
+	// one of them winning as scope's must.
+	for _, t := range in.Topics {
+		if !slices.Contains(topics, t) {
+			topics = append(topics, t)
+		}
 	}
 	sc, err := s.scope(scopeIn)
 	if err != nil {
