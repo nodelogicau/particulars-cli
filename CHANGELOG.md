@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.17.0 — MCP takes the flags models reach for
 
 - **MCP accepts the rest of the CLI-shaped arguments (#18).** A re-run of
   particulars-bench on v0.16.0 still refused 157 of 1,075 `claim_assert`
