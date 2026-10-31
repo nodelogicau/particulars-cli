@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.16.0 — MCP that meets smaller models halfway
 
 - **MCP accepts `quote` and `hash` beside `source.document`.** Every tool that
   takes `source` now accepts `source.quote` and `source.hash` as shorthand
@@ -16,6 +16,9 @@
   maps each command the skill names to its tool (or to none), and says the
   register needs no call. Models had been calling `particulars` and
   `particulars_register` as tools (#16).
+- **The Homebrew cask uses `postflight_steps`.** Homebrew deprecates a Ruby
+  `postflight` block in third-party casks; the quarantine removal now uses
+  the step DSL instead. Installs behave as before.
 
 ## v0.15.0 — recall by query, and inferences that name their basis
 
