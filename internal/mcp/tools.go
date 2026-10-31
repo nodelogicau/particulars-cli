@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -292,6 +293,52 @@ type assertIn struct {
 	Scope        string     `json:"scope,omitempty" jsonschema:"shorthand for context.scope"`
 	Topics       []string   `json:"topics,omitempty" jsonschema:"shorthand for context.topics; both are written, without duplicates"`
 	Timestamp    string     `json:"timestamp,omitempty" jsonschema:"RFC 3339 assertion time; backdate when recording a dated document"`
+	// The source fields below are the CLI's claim assert flags spelled as
+	// arguments, the shape a model sends when it copies the command line.
+	// They are folded into source by foldSource, so source's rules apply.
+	Document             documentIn `json:"document,omitempty" jsonschema:"shorthand for source.document"`
+	Quote                string     `json:"quote,omitempty" jsonschema:"shorthand for source.document's quote; needs a document"`
+	Hash                 string     `json:"hash,omitempty" jsonschema:"shorthand for source.document's hash; needs a document"`
+	DocumentAuthor       string     `json:"document_author,omitempty" jsonschema:"shorthand for source.document's author; needs a document"`
+	DocumentAuthorHyphen string     `json:"document-author,omitempty" jsonschema:"the same as document_author"`
+}
+
+// foldSource moves claim_assert's top-level source fields into its source,
+// so they meet the same checks as the nested form. A field given both ways
+// is accepted when the values are equal and refused when they differ, as
+// within source itself.
+func foldSource(in *assertIn) (*sourceIn, error) {
+	if in.Document == nil && in.Quote == "" && in.Hash == "" && in.DocumentAuthor == "" && in.DocumentAuthorHyphen == "" {
+		return in.Source, nil
+	}
+	src := sourceIn{}
+	if in.Source != nil {
+		src = *in.Source
+	}
+	if in.Document != nil {
+		if src.Document != nil && !reflect.DeepEqual(src.Document, in.Document) {
+			return nil, apperr.Usage("pass document once: at the top level or in source, not both")
+		}
+		src.Document = in.Document
+	}
+	for _, f := range []struct {
+		name, top string
+		into      *string
+	}{
+		{"quote", in.Quote, &src.Quote},
+		{"hash", in.Hash, &src.Hash},
+		{"document_author", in.DocumentAuthor, &src.DocumentAuthor},
+		{"document-author", in.DocumentAuthorHyphen, &src.DocumentAuthorHyphen},
+	} {
+		if f.top == "" {
+			continue
+		}
+		if *f.into != "" && *f.into != f.top {
+			return nil, apperr.Usage("pass %s once: at the top level or in source, not both", f.name)
+		}
+		*f.into = f.top
+	}
+	return &src, nil
 }
 
 func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in assertIn) (*sdk.CallToolResult, any, error) {
@@ -306,6 +353,10 @@ func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in a
 	}
 	if strings.TrimSpace(in.Content) == "" {
 		return errResult(apperr.Usage("content is required")), nil, nil
+	}
+	folded, err := foldSource(&in)
+	if err != nil {
+		return errResult(err), nil, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -344,7 +395,7 @@ func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in a
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	src, err := s.source(g, req, in.Source, false)
+	src, err := s.source(g, req, folded, false)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
