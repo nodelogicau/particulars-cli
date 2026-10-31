@@ -662,13 +662,33 @@ func TestTopLevelSource(t *testing.T) {
 		t.Errorf("same values both ways %v, nested %v", got, want)
 	}
 
+	// A string document is a mapping holding only its ref, so it merges with
+	// the mapping it names; two partial mappings merge field by field.
+	for _, args := range []map[string]any{
+		{"document": "chat session 1", "source": map[string]any{"document": map[string]any{"ref": "chat session 1", "quote": "listens on 443", "author": "jane"}}},
+		{"document": map[string]any{"ref": "chat session 1", "quote": "listens on 443"}, "source": map[string]any{"document": map[string]any{"uri": "chat session 1", "author": "jane"}}},
+	} {
+		if got, want := docOf(h.ok("claim_assert", assert(args))), docOf(nested); !reflect.DeepEqual(got, want) {
+			t.Errorf("%v: merged %v, nested %v", args, got, want)
+		}
+	}
+
+	// harness and model fold into source like the document fields.
+	hm := h.ok("claim_assert", assert(map[string]any{"harness": "bench", "model": "m1", "source": map[string]any{"harness": "bench"}}))
+	if s := hm["claim"].(map[string]any)["source"].(map[string]any); s["harness"] != "bench" || s["model"] != "m1" {
+		t.Errorf("top-level harness and model: %v", s)
+	}
+
 	before, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims"))
 	for _, c := range []struct {
 		args map[string]any
 		want string
 	}{
-		{map[string]any{"document": "docs/a.md", "source": map[string]any{"document": "docs/b.md"}}, "pass document once"},
-		{map[string]any{"document": "docs/a.md", "source": map[string]any{"document": map[string]any{"ref": "docs/a.md"}}}, "pass document once"},
+		{map[string]any{"document": "docs/a.md", "source": map[string]any{"document": "docs/b.md"}}, "pass document.ref once"},
+		{map[string]any{"document": "docs/a.md", "source": map[string]any{"document": map[string]any{"ref": "docs/b.md", "quote": "q"}}}, "pass document.ref once"},
+		{map[string]any{"document": map[string]any{"ref": "docs/a.md", "quote": "one"}, "source": map[string]any{"document": map[string]any{"ref": "docs/a.md", "quote": "two"}}}, "pass document.quote once"},
+		{map[string]any{"harness": "bench", "source": map[string]any{"harness": "other"}}, "pass harness once"},
+		{map[string]any{"document": "docs/a.md", "source": map[string]any{"document": map[string]any{"ref": "docs/a.md", "page": 3}}}, `no field "page"`},
 		{map[string]any{"document": "docs/a.md", "quote": "one", "source": map[string]any{"quote": "two"}}, "pass quote once"},
 		{map[string]any{"quote": "listens on 443"}, "source.quote needs source.document"},
 	} {
@@ -694,6 +714,57 @@ func TestTopLevelSource(t *testing.T) {
 		doc, _ := m["properties"].(map[string]any)["document"].(map[string]any)
 		if branches, _ := doc["anyOf"].([]any); len(branches) != 2 {
 			t.Errorf("top-level document should be string | object, got %v", doc)
+		}
+	}
+}
+
+// synthesis_create shares claim_assert's top-level shorthand, so a flattened
+// synthesis writes what the nested one does.
+func TestFlatSynthesis(t *testing.T) {
+	h := newHarness(t, "claude-ai", "ben")
+	h.ok("particular_define", map[string]any{"label": "Billing"})
+	cid := id(h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443"}), "claim")
+	base := func(extra map[string]any) map[string]any {
+		m := map[string]any{"particular_id": "Billing", "content": "443", "unresolved": "None identified", "inputs": []map[string]any{{"id": cid, "role": "thesis"}}}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	strip := func(r map[string]any) map[string]any {
+		s := r["synthesis"].(map[string]any)
+		return map[string]any{"source": s["source"], "context": s["context"]}
+	}
+	nested := strip(h.ok("synthesis_create", base(map[string]any{
+		"source":  map[string]any{"harness": "bench", "model": "m1", "document": map[string]any{"ref": "review notes", "quote": "the sentence"}},
+		"context": map[string]any{"scope": "organisation", "topics": []string{"goals", "ports"}}})))
+	flat := strip(h.ok("synthesis_create", base(map[string]any{
+		"harness": "bench", "model": "m1", "document": "review notes", "quote": "the sentence",
+		"scope": "organisation", "topics": []string{"goals"}, "context": map[string]any{"topics": []string{"goals", "ports"}}})))
+	if !reflect.DeepEqual(flat, nested) {
+		t.Errorf("flat synthesis %v, nested %v", flat, nested)
+	}
+	h.fail("synthesis_create", base(map[string]any{"harness": "bench", "source": map[string]any{"harness": "other"}}), "usage")
+
+	tools, err := h.cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range tools.Tools {
+		if tl.Name != "synthesis_create" {
+			continue
+		}
+		b, _ := json.Marshal(tl.InputSchema)
+		var m map[string]any
+		_ = json.Unmarshal(b, &m)
+		props := m["properties"].(map[string]any)
+		for _, k := range []string{"scope", "topics", "document", "quote", "hash", "document_author", "harness", "model"} {
+			if props[k] == nil {
+				t.Errorf("synthesis_create schema lacks top-level %s", k)
+			}
+		}
+		if branches, _ := props["document"].(map[string]any)["anyOf"].([]any); len(branches) != 2 {
+			t.Errorf("synthesis_create top-level document should be string | object: %v", props["document"])
 		}
 	}
 }

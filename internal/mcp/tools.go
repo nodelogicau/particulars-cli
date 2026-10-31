@@ -1,10 +1,10 @@
 package mcp
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/url"
-	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -290,55 +290,117 @@ type assertIn struct {
 	Source       *sourceIn  `json:"source,omitempty"`
 	Context      *contextIn `json:"context,omitempty"`
 	Confidence   *float64   `json:"confidence,omitempty" jsonschema:"0..1; 0.9+ seen directly, 0.6-0.8 inferred"`
-	Scope        string     `json:"scope,omitempty" jsonschema:"shorthand for context.scope"`
-	Topics       []string   `json:"topics,omitempty" jsonschema:"shorthand for context.topics; both are written, without duplicates"`
 	Timestamp    string     `json:"timestamp,omitempty" jsonschema:"RFC 3339 assertion time; backdate when recording a dated document"`
-	// The source fields below are the CLI's claim assert flags spelled as
-	// arguments, the shape a model sends when it copies the command line.
-	// They are folded into source by foldSource, so source's rules apply.
+	// flatIn carries the CLI's flags spelled as top-level arguments (scope,
+	// topics, document, quote, …); foldContext and foldSource move them into
+	// context and source.
+	flatIn
+}
+
+// flatIn is the top-level shorthand claim_assert and synthesis_create share:
+// the CLI's flags spelled as arguments, the shape a model sends when it
+// copies the command line. Embedding keeps the wire shape and the schema
+// flat, and one fold for both tools keeps them from drifting apart.
+type flatIn struct {
+	Scope                string     `json:"scope,omitempty" jsonschema:"shorthand for context.scope"`
+	Topics               []string   `json:"topics,omitempty" jsonschema:"shorthand for context.topics; both are written, without duplicates"`
 	Document             documentIn `json:"document,omitempty" jsonschema:"shorthand for source.document"`
 	Quote                string     `json:"quote,omitempty" jsonschema:"shorthand for source.document's quote; needs a document"`
 	Hash                 string     `json:"hash,omitempty" jsonschema:"shorthand for source.document's hash; needs a document"`
 	DocumentAuthor       string     `json:"document_author,omitempty" jsonschema:"shorthand for source.document's author; needs a document"`
 	DocumentAuthorHyphen string     `json:"document-author,omitempty" jsonschema:"the same as document_author"`
+	Harness              string     `json:"harness,omitempty" jsonschema:"shorthand for source.harness (defaults to the connected client)"`
+	Model                string     `json:"model,omitempty" jsonschema:"shorthand for source.model"`
 }
 
-// foldSource moves claim_assert's top-level source fields into its source,
-// so they meet the same checks as the nested form. A field given both ways
-// is accepted when the values are equal and refused when they differ, as
-// within source itself.
-func foldSource(in *assertIn) (*sourceIn, error) {
-	if in.Document == nil && in.Quote == "" && in.Hash == "" && in.DocumentAuthor == "" && in.DocumentAuthorHyphen == "" {
-		return in.Source, nil
+// foldContext applies scope and topics to the nested context: context.scope
+// wins, as one scope must, while topics are a set, so the two lists join.
+func (f flatIn) foldContext(ctx *contextIn) (string, []string) {
+	scope := f.Scope
+	var topics []string
+	if ctx != nil {
+		if ctx.Scope != "" {
+			scope = ctx.Scope
+		}
+		topics = slices.Clone(ctx.Topics)
+	}
+	for _, t := range f.Topics {
+		if !slices.Contains(topics, t) {
+			topics = append(topics, t)
+		}
+	}
+	return scope, topics
+}
+
+// foldSource moves the top-level source fields into the nested source, so
+// they meet the same checks as the nested form. A field given both ways is
+// accepted when the values are equal and refused when they differ, as within
+// source itself; two documents merge field by field, since a string document
+// is only a mapping holding its ref.
+func (f flatIn) foldSource(in *sourceIn) (*sourceIn, error) {
+	if f.Document == nil && f.Quote == "" && f.Hash == "" && f.DocumentAuthor == "" && f.DocumentAuthorHyphen == "" && f.Harness == "" && f.Model == "" {
+		return in, nil
 	}
 	src := sourceIn{}
-	if in.Source != nil {
-		src = *in.Source
+	if in != nil {
+		src = *in
 	}
-	if in.Document != nil {
-		if src.Document != nil && !reflect.DeepEqual(src.Document, in.Document) {
-			return nil, apperr.Usage("pass document once: at the top level or in source, not both")
+	if f.Document != nil {
+		doc, err := mergeDocuments(f.Document, src.Document)
+		if err != nil {
+			return nil, err
 		}
-		src.Document = in.Document
+		src.Document = doc
 	}
-	for _, f := range []struct {
+	for _, fl := range []struct {
 		name, top string
 		into      *string
 	}{
-		{"quote", in.Quote, &src.Quote},
-		{"hash", in.Hash, &src.Hash},
-		{"document_author", in.DocumentAuthor, &src.DocumentAuthor},
-		{"document-author", in.DocumentAuthorHyphen, &src.DocumentAuthorHyphen},
+		{"quote", f.Quote, &src.Quote},
+		{"hash", f.Hash, &src.Hash},
+		{"document_author", f.DocumentAuthor, &src.DocumentAuthor},
+		{"document-author", f.DocumentAuthorHyphen, &src.DocumentAuthorHyphen},
+		{"harness", f.Harness, &src.Harness},
+		{"model", f.Model, &src.Model},
 	} {
-		if f.top == "" {
+		if fl.top == "" {
 			continue
 		}
-		if *f.into != "" && *f.into != f.top {
-			return nil, apperr.Usage("pass %s once: at the top level or in source, not both", f.name)
+		if *fl.into != "" && *fl.into != fl.top {
+			return nil, apperr.Usage("pass %s once: at the top level or in source, not both", fl.name)
 		}
-		*f.into = f.top
+		*fl.into = fl.top
 	}
 	return &src, nil
+}
+
+// mergeDocuments combines a top-level document with source.document. Each is
+// read as a document first, so "x" and {ref: "x", quote: …} agree; a field
+// set on one side is kept, and one set differently on both is refused.
+func mergeDocuments(top, nested documentIn) (documentIn, error) {
+	if nested == nil {
+		return top, nil
+	}
+	a, err := documentFrom(top)
+	if err != nil {
+		return nil, err
+	}
+	b, err := documentFrom(nested)
+	if err != nil {
+		return nil, err
+	}
+	merged := map[string]any{}
+	for _, f := range []struct{ name, a, b string }{
+		{"ref", a.Ref, b.Ref}, {"author", a.Author, b.Author}, {"hash", a.Hash, b.Hash}, {"quote", a.Quote, b.Quote},
+	} {
+		if f.a != "" && f.b != "" && f.a != f.b {
+			return nil, apperr.Usage("pass document.%s once: at the top level and in source they differ", f.name)
+		}
+		if v := cmp.Or(f.a, f.b); v != "" {
+			merged[f.name] = v
+		}
+	}
+	return merged, nil
 }
 
 func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in assertIn) (*sdk.CallToolResult, any, error) {
@@ -354,7 +416,7 @@ func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in a
 	if strings.TrimSpace(in.Content) == "" {
 		return errResult(apperr.Usage("content is required")), nil, nil
 	}
-	folded, err := foldSource(&in)
+	folded, err := in.foldSource(in.Source)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
@@ -368,21 +430,7 @@ func (s *Server) claimAssert(ctx context.Context, req *sdk.CallToolRequest, in a
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	scopeIn := in.Scope
-	var topics []string
-	if in.Context != nil {
-		if in.Context.Scope != "" {
-			scopeIn = in.Context.Scope
-		}
-		topics = in.Context.Topics
-	}
-	// Topics are a set, so the shorthand joins context.topics rather than
-	// one of them winning as scope's must.
-	for _, t := range in.Topics {
-		if !slices.Contains(topics, t) {
-			topics = append(topics, t)
-		}
-	}
+	scopeIn, topics := in.foldContext(in.Context)
 	sc, err := s.scope(scopeIn)
 	if err != nil {
 		return errResult(err), nil, nil
@@ -496,6 +544,9 @@ type synthesisIn struct {
 	Context      *contextIn `json:"context,omitempty"`
 	Confidence   *float64   `json:"confidence,omitempty"`
 	Timestamp    string     `json:"timestamp,omitempty" jsonschema:"RFC 3339; current is chosen by timestamp then id"`
+	// flatIn carries the same top-level shorthand as claim_assert; see
+	// foldContext and foldSource.
+	flatIn
 }
 
 func (s *Server) synthesisCreate(ctx context.Context, req *sdk.CallToolRequest, in synthesisIn) (*sdk.CallToolResult, any, error) {
@@ -504,6 +555,10 @@ func (s *Server) synthesisCreate(ctx context.Context, req *sdk.CallToolRequest, 
 	}
 	if strings.TrimSpace(in.Unresolved) == "" {
 		return errResult(apperr.Usage("unresolved is required; state what remains, or \"None identified\"")), nil, nil
+	}
+	folded, err := in.foldSource(in.Source)
+	if err != nil {
+		return errResult(err), nil, nil
 	}
 	if len(in.Inputs) == 0 {
 		return errResult(apperr.Usage("at least one input is required")), nil, nil
@@ -547,11 +602,7 @@ func (s *Server) synthesisCreate(ctx context.Context, req *sdk.CallToolRequest, 
 			warnings = append(warnings, "input "+i.ID+" is retracted")
 		}
 	}
-	scopeIn := ""
-	var topics []string
-	if in.Context != nil {
-		scopeIn, topics = in.Context.Scope, in.Context.Topics
-	}
+	scopeIn, topics := in.foldContext(in.Context)
 	sc, err := s.scope(scopeIn)
 	if err != nil {
 		return errResult(err), nil, nil
@@ -564,7 +615,7 @@ func (s *Server) synthesisCreate(ctx context.Context, req *sdk.CallToolRequest, 
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	src, err := s.source(g, req, in.Source, true)
+	src, err := s.source(g, req, folded, true)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
