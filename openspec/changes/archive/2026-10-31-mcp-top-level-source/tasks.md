@@ -18,4 +18,4 @@
 
 - [x] 3.1 `docs/mcp.md`: add `document?`, `quote?`, `hash?` and `document_author?` to the `claim_assert` row and describe them as shorthand. Add a `CHANGELOG.md` Unreleased entry referencing #18
 - [x] 3.2 Run `go test ./...` and `golangci-lint run`
-- [ ] 3.3 After release, re-run particulars-bench at the #16 settings. Record the `claim_assert` errors against v0.17.0 (85 of 962) and the number of sessions sending top-level source fields (9 of 70), comment the result on #18, and close it if the flat shape no longer fails
+- [x] 3.3 After release, re-run particulars-bench at the #16 settings. Record the `claim_assert` errors against v0.17.0 (85 of 962) and the number of sessions sending top-level source fields (9 of 70), comment the result on #18, and close it if the flat shape no longer fails
