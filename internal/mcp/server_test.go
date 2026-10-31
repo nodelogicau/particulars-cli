@@ -536,3 +536,137 @@ func TestKnowledgeRecallByQuery(t *testing.T) {
 	}
 	h.fail("knowledge_recall", map[string]any{"particular_id": "Project X", "query": "timeout"}, "usage")
 }
+
+// source.quote and source.hash are shorthand for the document's fields: the
+// flat shape a model sends first writes what the nested one does (#16).
+func TestSourceShorthand(t *testing.T) {
+	h := newHarness(t, "claude-ai", "ben")
+	h.ok("particular_define", map[string]any{"label": "Billing"})
+	h.ok("particular_define", map[string]any{"label": "Jane", "aliases": []string{"jane"}})
+	assert := func(src map[string]any) map[string]any {
+		return map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443", "source": src}
+	}
+	docOf := func(r map[string]any, key string) any {
+		return r[key].(map[string]any)["source"].(map[string]any)["document"]
+	}
+	const hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	flat := h.ok("claim_assert", assert(map[string]any{"document": "chat session 1", "quote": "listens on 443", "hash": hash}))
+	nested := h.ok("claim_assert", assert(map[string]any{"document": map[string]any{"ref": "chat session 1", "quote": "listens on 443", "hash": hash}}))
+	if got, want := docOf(flat, "claim"), docOf(nested, "claim"); !reflect.DeepEqual(got, want) {
+		t.Errorf("flat %v, nested %v", got, want)
+	}
+
+	// The shorthand fills a mapping document's empty field.
+	r := h.ok("claim_assert", assert(map[string]any{"document": map[string]any{"ref": "docs/a.md", "author": "jane"}, "quote": "the sentence"}))
+	d := docOf(r, "claim").(map[string]any)
+	if d["ref"] != "docs/a.md" || d["quote"] != "the sentence" || !strings.HasPrefix(d["author"].(string), "urn:") {
+		t.Errorf("mapping + shorthand: %v", d)
+	}
+
+	before, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims"))
+	for _, c := range []struct {
+		src  map[string]any
+		want string
+	}{
+		{map[string]any{"document": map[string]any{"ref": "docs/a.md", "quote": "one"}, "quote": "two"}, "pass quote once"},
+		{map[string]any{"document": map[string]any{"ref": "docs/a.md", "hash": hash}, "hash": hash}, "pass hash once"},
+		{map[string]any{"quote": "the sentence"}, "source.quote needs source.document"},
+		{map[string]any{"document": "docs/a.md", "quote": " \n"}, "source.quote is blank"},
+	} {
+		if text := h.fail("claim_assert", assert(c.src), "usage"); !strings.Contains(text, c.want) {
+			t.Errorf("%v: %q, want %q", c.src, text, c.want)
+		}
+	}
+	if after, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims")); len(after) != len(before) {
+		t.Error("a refused claim must not be written")
+	}
+
+	// Every tool taking source shares it.
+	cid := id(flat, "claim")
+	s := h.ok("synthesis_create", map[string]any{"particular_id": "Billing", "content": "443", "unresolved": "None identified",
+		"inputs": []map[string]any{{"id": cid, "role": "thesis"}}, "source": map[string]any{"document": "review notes", "quote": "the sentence"}})
+	if d := docOf(s, "synthesis").(map[string]any); d["ref"] != "review notes" || d["quote"] != "the sentence" {
+		t.Errorf("synthesis shorthand: %v", d)
+	}
+}
+
+// Every tool taking source states source.document's two forms in its input
+// schema, and the quote shorthand beside it (#16).
+func TestSourceDocumentSchema(t *testing.T) {
+	h := newHarness(t, "claude-ai", "ben")
+	tools, err := h.cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemas := map[string]map[string]any{}
+	for _, tl := range tools.Tools {
+		b, _ := json.Marshal(tl.InputSchema)
+		var m map[string]any
+		_ = json.Unmarshal(b, &m)
+		schemas[tl.Name] = m
+	}
+	for _, name := range []string{"claim_assert", "synthesis_create", "claim_retract", "knowledge_publish", "particular_merge"} {
+		src, _ := schemas[name]["properties"].(map[string]any)["source"].(map[string]any)
+		props, _ := src["properties"].(map[string]any)
+		doc, _ := props["document"].(map[string]any)
+		branches, _ := doc["anyOf"].([]any)
+		if len(branches) != 2 || branches[0].(map[string]any)["type"] != "string" {
+			t.Errorf("%s: source.document should be string | object, got %v", name, doc)
+			continue
+		}
+		obj, _ := branches[1].(map[string]any)["properties"].(map[string]any)
+		if obj["ref"] == nil || obj["quote"] == nil {
+			t.Errorf("%s: object form should list ref and quote: %v", name, obj)
+		}
+		if d, _ := doc["description"].(string); !strings.Contains(d, "what was read") {
+			t.Errorf("%s: source.document lost its description: %v", name, doc)
+		}
+		if props["quote"] == nil || props["hash"] == nil {
+			t.Errorf("%s: source should carry the quote and hash shorthand", name)
+		}
+	}
+
+	// An unknown key is refused by documentFrom, naming it, not by the schema.
+	h.ok("particular_define", map[string]any{"label": "Billing"})
+	text := h.fail("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443",
+		"source": map[string]any{"document": map[string]any{"ref": "a.md", "page": "3"}}}, "usage")
+	if !strings.Contains(text, `no field "page"`) {
+		t.Errorf("unknown document key: %q", text)
+	}
+}
+
+// The instructions translate the skill's commands into tools before the skill
+// is read, so a model does not call `particulars` as a tool (#16).
+func TestInstructionsMapCommandsToTools(t *testing.T) {
+	h := newHarness(t, "claude-ai", "ben")
+	ins := h.cs.InitializeResult().Instructions
+	pre, skillAt := strings.Index(ins, "## Using this skill over MCP"), strings.Index(ins, "Recall **before** you assert")
+	if pre < 0 || skillAt < 0 || pre > skillAt {
+		t.Fatalf("the preamble should precede the skill body: %d, %d", pre, skillAt)
+	}
+	preamble := ins[pre:skillAt]
+	for _, want := range []string{"no `particulars` tool", "| `particulars particular resolve` | `particular_resolve` |", "| `particulars recall` | `knowledge_recall`", "the register is included below"} {
+		if !strings.Contains(preamble, want) {
+			t.Errorf("preamble lacks %q", want)
+		}
+	}
+
+	// The mapping names exactly the registered tools: adding a tool without a
+	// row, or keeping a row for a removed tool, fails here.
+	tools, err := h.cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered, mapped := map[string]bool{}, map[string]bool{}
+	for _, tl := range tools.Tools {
+		registered[tl.Name] = true
+	}
+	for _, m := range cliTools {
+		if m.Tool != "" {
+			mapped[m.Tool] = true
+		}
+	}
+	if !reflect.DeepEqual(registered, mapped) {
+		t.Errorf("registered tools %v, mapped %v", registered, mapped)
+	}
+}

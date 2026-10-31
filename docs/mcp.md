@@ -132,10 +132,19 @@ the same command by hand from the same directory to see the message.
 
 ## What the model is told
 
-The `initialize` instructions carry three things, in this order: the skill
-body, which states the general discipline; this workspace's register, which
-states what it already uses; and the workspace conventions, which are a
-person's commentary on those facts and so are read last.
+The `initialize` instructions carry four things, in this order: a short
+preamble that maps the skill's `particulars` commands to this server's tools;
+the skill body, which states the general discipline; this workspace's
+register, which states what it already uses; and the workspace conventions,
+which are a person's commentary on those facts and so are read last.
+
+The skill is written for the command line, and the preamble is what keeps a
+model from following it literally over MCP. Without it, a model calls tools
+named `particulars` or `particulars_register` and gets unknown-tool errors. The
+preamble says there is no shell and no `particulars` tool, that `--json` does
+not apply, how the `claim assert` flags become `source` parameters, and which
+tool serves each command, or that it has none. It also says the register needs
+no call, because it is already in the instructions.
 
 ### The workspace register
 
@@ -222,11 +231,15 @@ particulars extensions (not part of the DKF tool set):
 | `unresolved_list` | `{entries: [{particular, label, uri, members?, synthesis, timestamp, unresolved, unsynthesised}], count}` — each current synthesis's `unresolved`, oldest first; `particular_id?`, `scope?`, `include_none?` |
 | `workspace_status` | root, id, base-uri, counts, `validate` summary, conflict reports, and — inside a git checkout — `git.uncommitted` file paths (read-only) |
 
-`source` is `{author?, harness?, model?, document?}`; `context` is `{scope?, topics[]?}`.
+`source` is `{author?, harness?, model?, document?, quote?, hash?}`; `context` is `{scope?, topics[]?}`.
 `author` is a particular reference — id, URI, or name; a defined particular is
 written as its `uri`. `document` is a string, or a mapping of `ref` (`uri` is
 the legacy alias), `author` (who produced what was read — for testimony, who
-told you), `hash`, and `quote`.
+told you), `hash`, and `quote`. The nested form is canonical, but `quote` and
+`hash` may also be given directly on `source`, as shorthand: `{document:
+"chat session 1", quote: "…"}` writes the same file as `{document: {ref:
+"chat session 1", quote: "…"}}`. The shorthand needs a `document`, and a field
+set both ways is refused.
 
 A successful result carries its output as structured content and again as a
 JSON text block after a one-line summary, since some clients (Claude Desktop
