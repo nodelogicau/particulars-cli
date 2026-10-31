@@ -27,4 +27,4 @@
 - [x] 4.1 Update the preamble's `--topic` and `--document-author` lines (design D4). Extend `TestInstructionsMapCommandsToTools` or a sibling test to check that they mention the shorthand
 - [x] 4.2 `docs/mcp.md`: document `topics` and `document_author` as shorthand, keeping the nested form canonical. Add a `CHANGELOG.md` Unreleased entry referencing #18
 - [x] 4.3 Run `go test ./...` and `golangci-lint run`
-- [ ] 4.4 After release, re-run particulars-bench at the #16 settings, record the `claim_assert` errors against the v0.16.0 baseline (157 of 1,075), and comment the result on #18
+- [x] 4.4 After release, re-run particulars-bench at the #16 settings, record the `claim_assert` errors against the v0.16.0 baseline (157 of 1,075), and comment the result on #18
