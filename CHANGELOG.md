@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.19.0 — one set of flat arguments, and documents that merge
 
 - **`synthesis_create` takes the same top-level shorthand as `claim_assert`,
   and a document given both ways merges (#18).** On v0.18.0, 8 of 22
