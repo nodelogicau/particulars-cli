@@ -218,7 +218,7 @@ parameters accept an id, URI, label, or alias):
 | `particular_merge` | `uri_a`, `uri_b`, `reason?`, `source?` | `{merge, sides, path}` |
 | `claim_assert` | `particular_id`, `content`, `evidential`, `source?`, `context?`, `confidence?`, `scope?`, `topics[]?`, `timestamp?`, `document?`, `quote?`, `hash?`, `document_author?` | `{claim, path}` |
 | `claim_retract` | `claim_id`, `reason`, `source?`, `superseded_by?` | `{id, type, retracted}` |
-| `synthesis_create` | `particular_id`, `content`, `inputs[{id, role, weight?}]`, `unresolved`, `source?`, `method?`, `context?`, `confidence?`, `timestamp?` | `{synthesis, path, warnings}` |
+| `synthesis_create` | `particular_id`, `content`, `inputs[{id, role, weight?}]`, `unresolved`, `source?`, `method?`, `context?`, `confidence?`, `timestamp?`, and the top-level shorthand below | `{synthesis, path, warnings}` |
 | `knowledge_recall` | `particular_id?` (or `query?`), `author?`, `topics[]?`, `scope?`, `include_retracted?`, `limit?` | `{entries, count, subject?, class?, author?}`; author-filtered entries carry `relations` (`asserted`/`reported`) |
 | `conflict_detect` | `particular_id` **or** `claim_ids[]` | `{reports, count}` / a report for the set |
 | `lineage_trace` | `claim_id`, `depth?` | provenance tree |
@@ -240,14 +240,17 @@ told you), `hash`, and `quote`. The nested form is canonical, but `quote`,
 directly on `source`, as shorthand: `{document: "chat session 1", quote:
 "…"}` writes the same file as `{document: {ref: "chat session 1", quote:
 "…"}}`. The shorthand needs a `document`; a field set both ways is accepted
-when the values are equal and refused when they differ. On `claim_assert`,
-top-level `scope` and `topics` are shorthand for `context.scope` and
-`context.topics`; `context.scope` wins over `scope`, and the two topic lists
-are joined, `context.topics` first, without duplicates. `claim_assert` also
-takes `document`, `quote`, `hash`, and `document_author` at the top level —
-the CLI's flags spelled as arguments — folding them into `source` with the
-same rules: equal values given both ways are accepted, differing ones are
-refused.
+when the values are equal and refused when they differ.
+
+`claim_assert` and `synthesis_create` also take the CLI's flags spelled as
+top-level arguments. `scope` and `topics` are shorthand for `context.scope`
+and `context.topics`: `context.scope` wins over `scope`, and the two topic
+lists are joined, `context.topics` first, without duplicates. `document`,
+`quote`, `hash`, `document_author`, `harness`, and `model` fold into `source`
+with the rules above: equal values given both ways are accepted, differing
+ones are refused. A document given both ways merges field by field, a string
+counting as `{ref: string}` — so `document: "session 1"` beside
+`source.document: {ref: "session 1", quote: "…"}` writes the mapping.
 
 A successful result carries its output as structured content and again as a
 JSON text block after a one-line summary, since some clients (Claude Desktop

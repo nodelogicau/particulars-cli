@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **`synthesis_create` takes the same top-level shorthand as `claim_assert`,
+  and a document given both ways merges (#18).** On v0.18.0, 8 of 22
+  `synthesis_create` calls in particulars-bench were refused for a top-level
+  `harness`, `topics`, or `scope`; both tools now share one set of flat
+  arguments — `scope`, `topics`, `document`, `quote`, `hash`,
+  `document_author`, and now `harness` and `model` — folded into `context`
+  and `source` by the same code. Half of the 16 remaining `claim_assert`
+  refusals were `document: "session X"` beside `source.document: {ref:
+  "session X", quote: …}`, refused because a string never equalled a
+  mapping. The two now merge field by field, a string counting as its
+  `ref`; only a field set to different values is refused.
+
 ## v0.18.0 — claim assert, as a model would spell it
 
 - **`claim_assert` accepts the CLI's source flags as top-level arguments
