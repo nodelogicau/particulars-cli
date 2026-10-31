@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.18.0 — claim assert, as a model would spell it
 
 - **`claim_assert` accepts the CLI's source flags as top-level arguments
   (#18).** On v0.17.0, 80 of the 85 remaining `claim_assert` refusals in
