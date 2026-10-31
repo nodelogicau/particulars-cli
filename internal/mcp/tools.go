@@ -22,16 +22,16 @@ func (s *Server) registerTools() {
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "particular_resolve", Annotations: readOnly,
 		Description: "Find a particular by id, URI, label, or alias (label/alias case-insensitive). Returns particular: null when nothing matches. Call this before defining or asserting to avoid duplicates."},
 		s.particularResolve)
-	sdk.AddTool(s.srv, &sdk.Tool{Name: "particular_merge", Annotations: additive,
+	sdk.AddTool(s.srv, &sdk.Tool{Name: "particular_merge", InputSchema: withSource[mergeIn](), Annotations: additive,
 		Description: "Declare that two URIs denote the same particular. Writes a merge record; nothing is rewritten. Merged particulars form one class for knowledge_recall and conflict_detect. Undo with claim_retract on the merge id."},
 		s.particularMerge)
-	sdk.AddTool(s.srv, &sdk.Tool{Name: "claim_assert", Annotations: additive,
+	sdk.AddTool(s.srv, &sdk.Tool{Name: "claim_assert", InputSchema: withSource[assertIn](), Annotations: additive,
 		Description: "Record one falsifiable statement about a particular, with evidence in source.document and calibrated confidence. The statement is about the thing in the world; what you read goes in source.document (who produced it in document.author) — content that names an article or URL is a citation, not a claim. Recall first (knowledge_recall) so you extend or reconcile rather than duplicate. An inferred claim names what it was inferred from in basis — a rule of thumb lists its instances. Claims are immutable; correct them with claim_retract + a new claim, or a synthesis."},
 		s.claimAssert)
-	sdk.AddTool(s.srv, &sdk.Tool{Name: "claim_retract", Annotations: additive,
+	sdk.AddTool(s.srv, &sdk.Tool{Name: "claim_retract", InputSchema: withSource[retractIn](), Annotations: additive,
 		Description: "Append a retracted block (reason, source, optional superseded_by) to a claim, synthesis, merge, or promotion record. Retracting a promotion returns the objects it covered to the scope they would have had without it. Never deletes; provenance is preserved. Syntheses that cite a retracted input become stale until re-synthesised."},
 		s.claimRetract)
-	sdk.AddTool(s.srv, &sdk.Tool{Name: "synthesis_create", Annotations: additive,
+	sdk.AddTool(s.srv, &sdk.Tool{Name: "synthesis_create", InputSchema: withSource[synthesisIn](), Annotations: additive,
 		Description: "Record a synthesis you have already reasoned: inputs with roles (thesis = the belief challenged, antithesis = the challenger; weight primary|qualifying), content carrying the reasoning, and the mandatory unresolved — state what remains open, or exactly 'None identified'. A synthesis is itself a claim and becomes the current belief for its particular."},
 		s.synthesisCreate)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "knowledge_recall", Annotations: readOnly,
@@ -43,7 +43,7 @@ func (s *Server) registerTools() {
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "lineage_trace", Annotations: readOnly,
 		Description: "Provenance tree of a claim or synthesis: inputs with roles, recursively, including retracted ancestors and their superseded_by successors."},
 		s.lineageTrace)
-	sdk.AddTool(s.srv, &sdk.Tool{Name: "knowledge_publish", Annotations: additive,
+	sdk.AddTool(s.srv, &sdk.Tool{Name: "knowledge_publish", InputSchema: withSource[publishIn](), Annotations: additive,
 		Description: "Share claims and syntheses more widely by writing a promotion record. Claims are immutable, so scope is never rewritten: effective scope is the asserted scope widened by the promotions covering an object. Promotion may only widen — reduce exposure by retracting the promotion, not by promoting downwards — and never cascades, so promote a synthesis's inputs too when the chain should be traversable. Names objects by id only. Explicit and deliberate; not a default."},
 		s.knowledgePublish)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "topics_list", Annotations: readOnly,

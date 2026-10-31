@@ -12,10 +12,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/nodelogicau/particulars-cli/internal/apperr"
@@ -93,13 +95,70 @@ func (s *Server) MCP() *sdk.Server { return s.srv }
 // Run serves a single session over t until the client disconnects.
 func (s *Server) Run(ctx context.Context, t sdk.Transport) error { return s.srv.Run(ctx, t) }
 
+// cliTools maps each command the skill names to the tool that serves it, or
+// to none. The skill is written for the command line and shared with every
+// harness, so over MCP it is translated rather than rewritten: without this a
+// model calls the commands as tools — `particulars`, `particulars_register` —
+// and gets an unknown-tool error for each (#16). A test holds the tools named
+// here equal to the tools registered.
+var cliTools = []struct {
+	CLI        []string
+	Tool, Note string
+}{
+	{[]string{"particular resolve"}, "particular_resolve", ""},
+	{[]string{"particular define"}, "particular_define", ""},
+	{[]string{"particular merge"}, "particular_merge", ""},
+	{[]string{"claim assert"}, "claim_assert", ""},
+	{[]string{"synthesis create"}, "synthesis_create", ""},
+	{[]string{"recall"}, "knowledge_recall", "by particular, query, author, or topic"},
+	{[]string{"conflicts"}, "conflict_detect", ""},
+	{[]string{"unresolved"}, "unresolved_list", ""},
+	{[]string{"lineage"}, "lineage_trace", ""},
+	{[]string{"publish"}, "knowledge_publish", ""},
+	{[]string{"retract", "claim retract"}, "claim_retract", ""},
+	{[]string{"topics"}, "topics_list", ""},
+	{[]string{"workspace", "validate"}, "workspace_status", "carries the validate summary"},
+	{[]string{"register"}, "", "no call needed: the register is included below"},
+	{[]string{"export", "index", "init", "skill install"}, "", "no MCP equivalent: the human runs these"},
+}
+
+// mcpPreamble tells a model reading the skill over MCP how its commands map
+// to tools. It sits before the skill so the translation is read first.
+func mcpPreamble() string {
+	var b strings.Builder
+	b.WriteString("## Using this skill over MCP\n\n")
+	b.WriteString("The skill below is written for the `particulars` command line. Over MCP there is no shell and no `particulars` tool: each command it names is one of this server's tools, listed here. Ignore `--json` — every tool result is already structured. Flags become parameters; for `claim assert`:\n\n")
+	b.WriteString("- `--subject` → `particular_id`\n")
+	b.WriteString("- `--document` → `source.document` (a string, or an object with `ref`)\n")
+	b.WriteString("- `--document-author`, `--quote`, `--document-hash` → `source.document.author`, `.quote`, `.hash`; `quote` and `hash` may also be given directly on `source`\n")
+	b.WriteString("- `--topic` → `context.topics`\n")
+	b.WriteString("- `--hash-document` has no MCP equivalent: pass `hash` yourself, or omit it\n\n")
+	b.WriteString("| Command in the skill | Tool |\n|---|---|\n")
+	for _, m := range cliTools {
+		tool := "`" + m.Tool + "`"
+		if m.Tool == "" {
+			tool = "—"
+		}
+		if m.Note != "" {
+			tool += " (" + m.Note + ")"
+		}
+		cmds := make([]string, len(m.CLI))
+		for i, c := range m.CLI {
+			cmds[i] = "`particulars " + c + "`"
+		}
+		fmt.Fprintf(&b, "| %s | %s |\n", strings.Join(cmds, ", "), tool)
+	}
+	b.WriteString("\nTool names follow the DKF specification; topics_list, unresolved_list, and workspace_status are particulars extensions.\n\n")
+	return b.String()
+}
+
 // Instructions is the text sent at initialize and via the prompt.
 func (s *Server) Instructions() string { return s.instructions() }
 
 func (s *Server) instructions() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "This particulars server is bound to the DKF workspace at %s (id %s). Everything you write lands as YAML files there for a human to review — typically through a git pull request; nothing is committed for you.\n\n", s.ws.Root, s.ws.Config.Workspace.ID)
-	b.WriteString("Tool names follow the DKF specification (particular_*, claim_*, synthesis_create, knowledge_recall, conflict_detect, lineage_trace, knowledge_publish); topics_list and workspace_status are particulars extensions.\n")
+	b.WriteString(mcpPreamble())
 	b.Write(skill.Body())
 	// What this workspace already uses, generated from the files. It sits
 	// between the skill and the conventions because the skill states the
@@ -140,10 +199,74 @@ type sourceIn struct {
 	Harness string `json:"harness,omitempty" jsonschema:"the AI harness, if one was involved (defaults to the connected client's name)"`
 	Model   string `json:"model,omitempty" jsonschema:"the model, if known"`
 	// Document is a union: a bare reference, or a mapping of uri/hash/quote.
-	// It is typed as any because the schema the SDK infers from a struct would
-	// reject the string form, and a bare reference must stay valid — it is not
-	// inferior provenance.
-	Document any `json:"document,omitempty" jsonschema:"what was read to make the assertion: a path, URL, or command as a string — or an object with ref (uri is the legacy alias), optional author (who produced what was read: a particular id, URI, or name — for testimony, who told you), optional hash (sha256:…), and optional quote (the sentence that supports the claim, verbatim)"`
+	// It is an empty interface because the schema the SDK infers from a struct
+	// would reject the string form, and a bare reference must stay valid — it
+	// is not inferior provenance. Its schema is documentSchema, so the shape
+	// is stated where a model reads it rather than only in this description.
+	Document documentIn `json:"document,omitempty" jsonschema:"what was read to make the assertion: a path, URL, or command as a string — or an object with ref (uri is the legacy alias), optional author (who produced what was read: a particular id, URI, or name — for testimony, who told you), optional hash (sha256:…), and optional quote (the sentence that supports the claim, verbatim)"`
+	// Quote and Hash are shorthand for the document's fields, as scope is
+	// for context.scope: the flat shape is the one a model reaches for first,
+	// because the CLI spells them as flags beside --document.
+	Quote string `json:"quote,omitempty" jsonschema:"shorthand for source.document's quote; needs source.document"`
+	Hash  string `json:"hash,omitempty" jsonschema:"shorthand for source.document's hash; needs source.document"`
+}
+
+// documentIn is source.document as decoded: a string or a mapping. It is
+// named so that inferring a tool's schema can give it documentSchema.
+type documentIn interface{}
+
+// documentSchema states both forms of source.document. The object form
+// leaves additional properties open on purpose: an unknown key then reaches
+// documentFrom, whose refusal names the key and the fields allowed, rather
+// than failing the SDK's anyOf with a message that names neither.
+func documentSchema() *jsonschema.Schema {
+	str := func(d string) *jsonschema.Schema { return &jsonschema.Schema{Type: "string", Description: d} }
+	return &jsonschema.Schema{AnyOf: []*jsonschema.Schema{
+		{Type: "string"},
+		{Type: "object", Properties: map[string]*jsonschema.Schema{
+			"ref":    str("a path, URL, or command"),
+			"uri":    str("legacy alias for ref"),
+			"author": str("who produced what was read: a particular id, URI, or name"),
+			"hash":   str("sha256:… of the document as read"),
+			"quote":  str("the sentence that supports the claim, verbatim"),
+		}},
+	}}
+}
+
+// withSource infers the input schema of a tool whose input carries a source
+// block, giving source.document its stated shape.
+func withSource[In any]() *jsonschema.Schema {
+	s, err := jsonschema.For[In](&jsonschema.ForOptions{TypeSchemas: map[reflect.Type]*jsonschema.Schema{reflect.TypeFor[documentIn](): documentSchema()}})
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+// withShorthand folds source.quote and source.hash into doc. Setting a field
+// both ways is refused rather than one silently winning, since a quote is
+// evidence and the losing one would be gone; without a per-call document
+// there is nothing for the quote to be from.
+func withShorthand(in *sourceIn, doc dkf.Document) (dkf.Document, error) {
+	for _, f := range []struct {
+		name, short string
+		into        *string
+	}{{"quote", in.Quote, &doc.Quote}, {"hash", in.Hash, &doc.Hash}} {
+		if f.short == "" {
+			continue
+		}
+		if in.Document == nil {
+			return doc, apperr.Usage("source.%s needs source.document: pass {\"document\": {\"ref\": …, \"%s\": …}}", f.name, f.name)
+		}
+		if *f.into != "" {
+			return doc, apperr.Usage("pass %s once: in source.document or as source.%s, not both", f.name, f.name)
+		}
+		*f.into = f.short
+	}
+	if doc.Quote != "" && !doc.HasQuote() {
+		return doc, apperr.Usage("source.quote is blank; omit it rather than recording nothing")
+	}
+	return doc, nil
 }
 
 // documentFrom accepts the string or the mapping form of a document. The
@@ -213,6 +336,9 @@ func (s *Server) source(g *store.Graph, req clientInfoer, in *sourceIn, needHarn
 			e.Model = in.Model
 		}
 		doc, derr := documentFrom(in.Document)
+		if derr == nil {
+			doc, derr = withShorthand(in, doc)
+		}
 		if derr != nil {
 			return dkf.Source{}, derr
 		}

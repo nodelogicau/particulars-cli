@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- **MCP accepts `quote` and `hash` beside `source.document`.** Every tool that
+  takes `source` now accepts `source.quote` and `source.hash` as shorthand
+  for the document's fields, so `{document: "…", quote: "…"}` writes the
+  same file as the nested form. A small model sends the flat shape first,
+  because the CLI spells them as flags beside `--document`; every
+  `claim_assert` refusal particulars-bench traced was this shape. The
+  shorthand needs a `document`, and a field set both ways is refused.
+  `source.document`'s two forms are now stated in each tool's input schema
+  (#16).
+- **The MCP instructions translate the skill's commands into tools.** A
+  preamble before the skill says there is no shell and no `particulars` tool,
+  maps each command the skill names to its tool (or to none), and says the
+  register needs no call. Models had been calling `particulars` and
+  `particulars_register` as tools (#16).
+
 ## v0.15.0 — recall by query, and inferences that name their basis
 
 - **An inferred claim names its basis: `claim assert --basis <id>`.** An
