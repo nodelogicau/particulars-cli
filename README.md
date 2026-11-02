@@ -343,11 +343,19 @@ from the directories. `dkf/0.1` is the flat tree above, and is what `init`
 writes. `dkf/0.2`, declared by DKF v0.2, shards every type directory by the
 month the id was minted — `claims/2026-11/clm_….yaml`, with `legacy/` for ids
 that are not UUIDv7 — and `validate` reports a file outside the month its id
-derives as `misplaced_file`. This release **reads** `dkf/0.2` but does not yet
-write it: in a `dkf/0.2` workspace every read verb works and every write is
-refused (`read_only_format`) until the index writer and `migrate` land
-([#11](https://github.com/nodelogicau/particulars-cli/issues/11)). Any other
-`format` is refused by name.
+derives as `misplaced_file`. Any other `format` is refused by name.
+
+In a `dkf/0.2` workspace the index is a root `index.yaml` — the current and
+previous month's entries and retractions, and a `segments` list — plus one
+`index/<YYYY-MM>.yaml` per **sealed** month (any month two or more before the
+newest id's) and `index/legacy.yaml`. Every write touches only the root, or
+the legacy document; the first mint of a new month seals the month before last
+into its segment, and a sealed segment is never rewritten. A branch that stays
+open across two month boundaries and is then merged lands a file in a sealed
+month: `validate` fails with `late_merge`, and the remedy is to re-mint the
+branch's objects before merging. `init` still writes `dkf/0.1`; moving a
+workspace to `dkf/0.2` arrives with `migrate`
+([#11](https://github.com/nodelogicau/particulars-cli/issues/11)).
 
 `validate` also checks time in either layout: an id or timestamp later than
 the validator's clock warns (`future_time`), and an id two or more months ahead

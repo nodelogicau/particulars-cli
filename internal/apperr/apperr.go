@@ -72,8 +72,8 @@ func Classify(err error) *Error {
 		return &Error{Code: ExitRuntime, ErrCode: "conflict", Err: err}
 	case errors.Is(err, store.ErrUnsupportedFormat):
 		return &Error{Code: ExitRuntime, ErrCode: "unsupported_format", Err: err}
-	case errors.Is(err, store.ErrReadOnlyFormat):
-		return &Error{Code: ExitRuntime, ErrCode: "read_only_format", Err: err}
+	case errors.Is(err, store.ErrSealedMonth):
+		return &Error{Code: ExitRuntime, ErrCode: "sealed_month", Err: err}
 	}
 	return &Error{Code: ExitRuntime, ErrCode: "runtime", Err: err}
 }
@@ -86,6 +86,6 @@ func IsDomain(err error) bool {
 	var p *dkf.Problem
 	return errors.As(err, &ee) || errors.Is(err, store.ErrNoWorkspace) || errors.Is(err, store.ErrNotFound) ||
 		errors.Is(err, store.ErrAlreadyExists) || errors.Is(err, store.ErrAlreadyRetracted) ||
-		errors.Is(err, store.ErrUnsupportedFormat) || errors.Is(err, store.ErrReadOnlyFormat) ||
+		errors.Is(err, store.ErrUnsupportedFormat) || errors.Is(err, store.ErrSealedMonth) ||
 		errors.As(err, &ps) || errors.As(err, &p)
 }

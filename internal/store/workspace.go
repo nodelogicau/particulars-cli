@@ -50,9 +50,6 @@ var (
 	// ErrUnsupportedFormat marks a dkf.yaml whose format this release does
 	// not read.
 	ErrUnsupportedFormat = errors.New("unsupported format")
-	// ErrReadOnlyFormat refuses a write in a workspace whose format this
-	// release reads but does not write.
-	ErrReadOnlyFormat = errors.New("this release reads dkf/0.2 but does not write it yet (particulars-cli#11)")
 )
 
 // Workspace is an opened DKF directory.
@@ -230,7 +227,11 @@ func Init(dir string, cfg Config) (*Workspace, error) {
 		return nil, err
 	}
 	w := &Workspace{Root: abs, Config: cfg}
-	if err := w.WriteIndex(&Index{Format: dkf.WriteFormat}); err != nil {
+	idx := &Index{Format: cfg.Format}
+	if w.Sharded() {
+		idx.kind = kindRoot
+	}
+	if err := w.WriteIndex(idx); err != nil {
 		return nil, err
 	}
 	return w, nil
@@ -272,15 +273,6 @@ func shard(id string) string {
 // LegacyShard holds, in a sharded workspace, objects whose ids carry no
 // minting month.
 const LegacyShard = "legacy"
-
-// writable refuses a write in a workspace this release reads but does not
-// write. It runs before anything touches the disk.
-func (w *Workspace) writable() error {
-	if w.Sharded() {
-		return ErrReadOnlyFormat
-	}
-	return nil
-}
 
 // Dir returns the absolute directory holding objects of type t.
 func (w *Workspace) Dir(t dkf.Type) string { return filepath.Join(w.Root, dirFor(t)) }
@@ -356,8 +348,10 @@ func (w *Workspace) ReadAssertion(id string) (dkf.Assertion, error) {
 // Create validates and writes a new object file with create-exclusive
 // semantics, creating the type directory if needed. It never overwrites.
 func (w *Workspace) Create(obj dkf.Object) error {
-	if err := w.writable(); err != nil {
-		return err
+	if minted, ok := dkf.MintedAt(obj.ObjectID()); ok && w.Sharded() {
+		if err := w.sealedGuard(minted, "the new id's instant"); err != nil {
+			return err
+		}
 	}
 	if ps := dkf.ValidateObject(obj); len(ps) > 0 {
 		return ps
@@ -379,9 +373,6 @@ func (w *Workspace) Create(obj dkf.Object) error {
 // WriteParticular rewrites a particular file. Particulars are the only
 // mutable object type ("create or update" in the spec).
 func (w *Workspace) WriteParticular(p *dkf.Particular) error {
-	if err := w.writable(); err != nil {
-		return err
-	}
 	if ps := dkf.ValidateParticular(p); len(ps) > 0 {
 		return ps
 	}
@@ -403,8 +394,10 @@ func (w *Workspace) WriteParticular(p *dkf.Particular) error {
 // file without altering existing bytes, re-parses to confirm validity, and
 // restores the original on failure. Returns the updated object.
 func (w *Workspace) Retract(id string, r *dkf.Retracted) (dkf.Retractable, error) {
-	if err := w.writable(); err != nil {
-		return nil, err
+	if w.Sharded() {
+		if err := w.sealedGuard(r.Timestamp, "the retraction's timestamp"); err != nil {
+			return nil, err
+		}
 	}
 	if ps := dkf.ValidateRetracted(r); len(ps) > 0 {
 		return nil, ps

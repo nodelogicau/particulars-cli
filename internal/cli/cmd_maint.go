@@ -33,7 +33,12 @@ command regenerates it from scratch (resolving merge conflicts by rebuild).
 				if err != nil {
 					return err
 				}
-				if err := a.emit(map[string]any{"clean": diff.Clean(), "missing": diff.Missing, "extra": diff.Extra, "changed": diff.Changed, "bytes_differ": diff.BytesDiffer}, func(w io.Writer) {
+				out := map[string]any{"clean": diff.Clean(), "missing": diff.Missing, "extra": diff.Extra, "changed": diff.Changed, "bytes_differ": diff.BytesDiffer}
+				if ws.Sharded() {
+					out["late_merge"], out["segments_missing"], out["segments_extra"] = diff.LateMerge, diff.SegmentsMissing, diff.SegmentsExtra
+					out["retracted_missing"], out["retracted_extra"] = diff.RetractedMissing, diff.RetractedExtra
+				}
+				if err := a.emit(out, func(w io.Writer) {
 					if diff.Clean() {
 						fmt.Fprintln(w, "index.yaml is up to date")
 						return
@@ -48,24 +53,50 @@ command regenerates it from scratch (resolving merge conflicts by rebuild).
 					for _, id := range diff.Changed {
 						fmt.Fprintf(w, "  changed  %s\n", id)
 					}
+					for _, l := range []struct {
+						label string
+						ids   []string
+					}{
+						{"late merge", diff.LateMerge}, {"segment missing", diff.SegmentsMissing}, {"segment extra", diff.SegmentsExtra},
+						{"retracted, not indexed", diff.RetractedMissing}, {"indexed retracted, not in files", diff.RetractedExtra},
+					} {
+						for _, id := range l.ids {
+							fmt.Fprintf(w, "  %s  %s\n", l.label, id)
+						}
+					}
 					if diff.BytesDiffer && len(diff.Missing)+len(diff.Extra)+len(diff.Changed) == 0 {
 						fmt.Fprintln(w, "  (entries match but formatting differs)")
 					}
 				}); err != nil {
 					return err
 				}
+				if len(diff.LateMerge) > 0 {
+					return checkFailedErr("a file arrived in a sealed month (a late merge); re-mint it on its branch — `particulars index` cannot repair a sealed segment")
+				}
 				if !diff.Clean() {
-					return checkFailedErr("index.yaml differs from a rebuild; run `particulars index`")
+					return checkFailedErr("the index differs from a rebuild; run `particulars index`")
 				}
 				return nil
 			}
 			idx, err := ws.RebuildIndex()
-			if err != nil {
+			var sealed *store.SealedSegmentsError
+			if err != nil && !errors.As(err, &sealed) {
 				return err
 			}
-			return a.emit(map[string]any{"entries": len(idx.Entries), "path": store.IndexFile}, func(w io.Writer) {
-				fmt.Fprintf(w, "Rebuilt %s with %s\n", store.IndexFile, plural(len(idx.Entries), "entry"))
-			})
+			// Every document's entries: the root's own, and each segment's count.
+			n := len(idx.Entries)
+			for _, seg := range idx.Segments {
+				n += seg.Count
+			}
+			if err := a.emit(map[string]any{"entries": n, "path": store.IndexFile, "segments": len(idx.Segments)}, func(w io.Writer) {
+				fmt.Fprintf(w, "Rebuilt %s with %s\n", store.IndexFile, plural(n, "entry"))
+			}); err != nil {
+				return err
+			}
+			if sealed != nil {
+				return checkFailedErr("%s", sealed.Error())
+			}
+			return nil
 		}),
 	}
 	cmd.Flags().BoolVar(&check, "check", false, "verify without writing; exit 4 on drift")

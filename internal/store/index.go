@@ -20,15 +20,39 @@ const IndexFile = "index.yaml"
 // fields (scope, topics, timestamp, retracted) that let recall filter without
 // opening files. It is always regenerable from the object files.
 type Index struct {
-	Format  string  `yaml:"format"`
-	Entries []Entry `yaml:"entries"`
+	Format string `yaml:"format"`
+	// Segments and Retracted belong to the dkf/0.2 documents: the root lists
+	// its sealed segments and carries the open months' retractions; a sealed
+	// segment carries its month's retractions. A dkf/0.1 index has neither.
+	Segments  []SegmentRef `yaml:"segments,omitempty"`
+	Entries   []Entry      `yaml:"entries"`
+	Retracted []string     `yaml:"retracted,omitempty"`
 	// Unknown holds entries whose type this implementation does not
 	// recognise, preserved as raw nodes: a future record type must survive a
 	// rebuild unchanged, or an older tool turns a read-compatibility gap into
 	// data loss in the cache. Kept apart from Entries so every consumer
 	// ignores them without knowing they exist.
 	Unknown []*yaml.Node `yaml:"-"`
+	// kind is which document this is, deciding the keys it is written with.
+	kind docKind
 }
+
+// SegmentRef is one entry of a dkf/0.2 root's segments list.
+type SegmentRef struct {
+	Path  string `yaml:"path" json:"path"`
+	Count int    `yaml:"count" json:"count"`
+}
+
+// docKind distinguishes the flat dkf/0.1 index from the three dkf/0.2
+// documents. They share one shape and differ only in which keys they carry.
+type docKind int
+
+const (
+	kindFlat docKind = iota
+	kindRoot
+	kindSegment
+	kindLegacy
+)
 
 // knownEntryType reports whether a type string is one this implementation
 // maintains itself. Anything else is a newer conforming writer's row.
@@ -59,7 +83,7 @@ func nodeField(n *yaml.Node, key string) string {
 // []*yaml.Node struct fields, and preservation wants the document's own
 // nodes anyway, so the row survives byte-faithfully.
 func (idx *Index) UnmarshalYAML(n *yaml.Node) error {
-	idx.Format, idx.Entries, idx.Unknown = "", nil, nil
+	idx.Format, idx.Entries, idx.Unknown, idx.Segments, idx.Retracted = "", nil, nil, nil, nil
 	if n.Kind != yaml.MappingNode {
 		return fmt.Errorf("index: expected a mapping, got kind %v", n.Kind)
 	}
@@ -68,6 +92,14 @@ func (idx *Index) UnmarshalYAML(n *yaml.Node) error {
 		switch k.Value {
 		case "format":
 			idx.Format = v.Value
+		case "segments":
+			if err := v.Decode(&idx.Segments); err != nil {
+				return err
+			}
+		case "retracted":
+			if err := v.Decode(&idx.Retracted); err != nil {
+				return err
+			}
 		case "entries":
 			if v.Kind != yaml.SequenceNode {
 				continue
@@ -257,13 +289,41 @@ func (idx *Index) Upsert(e Entry) {
 	idx.sort()
 }
 
-// EncodeIndex renders the index deterministically.
+// EncodeIndex renders the index deterministically, with the keys its kind
+// carries in the order the specification's examples use.
 func EncodeIndex(idx *Index) ([]byte, error) {
 	if idx.Entries == nil {
 		idx.Entries = []Entry{}
 	}
+	if idx.Retracted == nil {
+		idx.Retracted = []string{}
+	}
+	if idx.Segments == nil {
+		idx.Segments = []SegmentRef{}
+	}
+	var doc any
+	switch idx.kind {
+	case kindRoot:
+		doc = struct {
+			Format    string       `yaml:"format"`
+			Segments  []SegmentRef `yaml:"segments"`
+			Entries   []Entry      `yaml:"entries"`
+			Retracted []string     `yaml:"retracted"`
+		}{idx.Format, idx.Segments, idx.Entries, idx.Retracted}
+	case kindSegment:
+		doc = struct {
+			Format    string   `yaml:"format"`
+			Entries   []Entry  `yaml:"entries"`
+			Retracted []string `yaml:"retracted"`
+		}{idx.Format, idx.Entries, idx.Retracted}
+	default: // kindFlat, kindLegacy
+		doc = struct {
+			Format  string  `yaml:"format"`
+			Entries []Entry `yaml:"entries"`
+		}{idx.Format, idx.Entries}
+	}
 	var root yaml.Node
-	if err := root.Encode(idx); err != nil {
+	if err := root.Encode(doc); err != nil {
 		return nil, err
 	}
 	if len(idx.Unknown) > 0 {
@@ -343,9 +403,6 @@ func (w *Workspace) ReadIndex() (*Index, []byte, error) {
 
 // WriteIndex writes the index atomically.
 func (w *Workspace) WriteIndex(idx *Index) error {
-	if err := w.writable(); err != nil {
-		return err
-	}
 	data, err := EncodeIndex(idx)
 	if err != nil {
 		return err
@@ -356,9 +413,16 @@ func (w *Workspace) WriteIndex(idx *Index) error {
 // RebuildIndex regenerates index.yaml from the object files, ignoring any
 // existing content. Files that fail to load are skipped (they are reported by
 // validate) so a rebuild always succeeds on an otherwise readable tree.
+//
+// In a dkf/0.2 workspace it returns the root, and a *SealedSegmentsError
+// beside it when a sealed segment differs from the files (see rebuildSharded).
 func (w *Workspace) RebuildIndex() (*Index, error) {
-	if err := w.writable(); err != nil {
-		return nil, err
+	if w.Sharded() {
+		s, err := w.rebuildSharded()
+		if s == nil {
+			return nil, err
+		}
+		return s.Root, err
 	}
 	g, err := w.Load()
 	if err != nil {
@@ -392,6 +456,9 @@ func (w *Workspace) RebuildIndex() (*Index, error) {
 // UpsertIndex updates the entry for obj. If the index is missing or
 // unparseable it falls back to a full rebuild.
 func (w *Workspace) UpsertIndex(obj dkf.Object) error {
+	if w.Sharded() {
+		return w.upsertSharded(obj)
+	}
 	idx, _, err := w.ReadIndex()
 	if err != nil {
 		_, err = w.RebuildIndex()
@@ -408,22 +475,30 @@ type IndexDiff struct {
 	Extra   []string `json:"extra"`   // in index, not in files
 	Changed []string `json:"changed"` // present in both, content differs
 	// BytesDiffer is true when the files differ byte-for-byte even if the
-	// entry sets are equal (ordering, formatting, or format field).
+	// entry sets are equal (ordering, formatting, or format field). In a
+	// dkf/0.2 workspace it concerns the root.
 	BytesDiffer bool `json:"bytes_differ"`
+	// The dkf/0.2 findings: ids of files in a sealed month's directories that
+	// its segment lacks; segment paths absent or listed in error; and
+	// retracted ids the committed documents lack or carry in excess.
+	LateMerge        []string `json:"late_merge,omitempty"`
+	SegmentsMissing  []string `json:"segments_missing,omitempty"`
+	SegmentsExtra    []string `json:"segments_extra,omitempty"`
+	RetractedMissing []string `json:"retracted_missing,omitempty"`
+	RetractedExtra   []string `json:"retracted_extra,omitempty"`
 }
 
 // Clean reports whether the committed index matches a rebuild exactly.
 func (d IndexDiff) Clean() bool {
-	return !d.BytesDiffer && len(d.Missing) == 0 && len(d.Extra) == 0 && len(d.Changed) == 0
+	return !d.BytesDiffer && len(d.Missing)+len(d.Extra)+len(d.Changed)+len(d.LateMerge)+
+		len(d.SegmentsMissing)+len(d.SegmentsExtra)+len(d.RetractedMissing)+len(d.RetractedExtra) == 0
 }
 
 // CheckIndex compares the committed index with a fresh rebuild without writing.
 // A missing index is reported as every entry missing.
 func (w *Workspace) CheckIndex() (IndexDiff, error) {
-	// The dkf/0.2 index is a root plus sealed segments; this release does
-	// not read it, so it neither compares nor reports one as drift.
 	if w.Sharded() {
-		return IndexDiff{}, ErrReadOnlyFormat
+		return w.checkSharded()
 	}
 	g, err := w.Load()
 	if err != nil {
@@ -458,26 +533,8 @@ func (w *Workspace) CheckIndex() (IndexDiff, error) {
 	// absence means false, and an object retracted after the index was
 	// committed must fail the check.
 	for i := range want.Entries {
-		ge, ok := gotBy[want.Entries[i].ID]
-		if !ok {
-			continue
-		}
-		we := &want.Entries[i]
-		we.Unknown, we.raw = ge.Unknown, ge.raw
-		if ge.Scope == "" {
-			we.Scope = ""
-		}
-		if len(ge.Topics) == 0 {
-			we.Topics = nil
-		}
-		if ge.Timestamp == "" {
-			we.Timestamp = ""
-		}
-		if ge.Author == "" {
-			we.Author = ""
-		}
-		if ge.DocumentAuthor == "" {
-			we.DocumentAuthor = ""
+		if ge, ok := gotBy[want.Entries[i].ID]; ok {
+			want.Entries[i] = maskEntry(want.Entries[i], ge)
 		}
 	}
 	wantBytes, err := EncodeIndex(want)
@@ -505,6 +562,29 @@ func (w *Workspace) CheckIndex() (IndexDiff, error) {
 	sort.Strings(d.Extra)
 	sort.Strings(d.Changed)
 	return d, nil
+}
+
+// maskEntry returns the rebuilt entry want as the committed entry got would
+// show it if nothing had changed: got's unknown fields carried across, and
+// each MAY field mirroring an immutable property cleared where got lacks it.
+func maskEntry(want, got Entry) Entry {
+	want.Unknown, want.raw = got.Unknown, got.raw
+	if got.Scope == "" {
+		want.Scope = ""
+	}
+	if len(got.Topics) == 0 {
+		want.Topics = nil
+	}
+	if got.Timestamp == "" {
+		want.Timestamp = ""
+	}
+	if got.Author == "" {
+		want.Author = ""
+	}
+	if got.DocumentAuthor == "" {
+		want.DocumentAuthor = ""
+	}
+	return want
 }
 
 func entriesEqual(a, b Entry) bool {

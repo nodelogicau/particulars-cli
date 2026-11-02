@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"io/fs"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -38,8 +36,8 @@ func populate(t *testing.T) (claim string) {
 }
 
 // shard rewrites a flat workspace as dkf/0.2: each object file moves to the
-// month its id derives (or legacy/), byte-identical, and dkf.yaml's format
-// changes. index.yaml is left as it was; this release does not read it.
+// month its id derives (or legacy/), byte-identical, dkf.yaml's format
+// changes, and the index is rebuilt in the dkf/0.2 shape.
 func shard(t *testing.T, dir string) {
 	t.Helper()
 	for _, td := range []string{"particulars", "claims", "syntheses", "merges", "publishes"} {
@@ -67,30 +65,12 @@ func shard(t *testing.T, dir string) {
 	if err := os.WriteFile(cfg, []byte(strings.Replace(string(b), "format: dkf/0.1", "format: dkf/0.2", 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// treeHash fingerprints every file under dir, so a refusal can be shown to
-// have left the workspace byte-identical.
-func treeHash(t *testing.T, dir string) string {
-	t.Helper()
-	h := sha256.New()
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		b, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		rel, _ := filepath.Rel(dir, p)
-		h.Write([]byte(rel + "\x00"))
-		h.Write(b)
-		return nil
-	})
-	if err != nil {
+	if err := os.Remove(filepath.Join(dir, "index.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	return hex.EncodeToString(h.Sum(nil))
+	if r := run(t, "", "index"); r.code != 0 {
+		t.Fatalf("rebuilding the sharded index: %d %s", r.code, r.stderr)
+	}
 }
 
 // withoutPaths drops file paths from a JSON result, the one thing that
@@ -151,13 +131,13 @@ func TestShardedReadsLikeFlat(t *testing.T) {
 		}
 	}
 
-	// validate passes; the one finding is that the index went unchecked.
+	// validate passes, the sharded index included.
 	r := run(t, "", "validate", "--json")
 	if r.code != 0 || r.js["errors"].(float64) != 0 {
 		t.Fatalf("validate on sharded: %d %s", r.code, r.stdout)
 	}
-	if !strings.Contains(r.stdout, query.CodeIndexUnchecked) {
-		t.Errorf("validate should warn %s: %s", query.CodeIndexUnchecked, r.stdout)
+	if strings.Contains(r.stdout, "index_") {
+		t.Errorf("validate reports an index finding: %s", r.stdout)
 	}
 }
 
@@ -225,12 +205,12 @@ func TestShardedMisplacedFiles(t *testing.T) {
 	}
 }
 
-// A dkf/0.2 workspace refuses every write and is left byte-identical.
-func TestShardedIsReadOnly(t *testing.T) {
+// Every write verb works in a dkf/0.2 workspace and leaves its index equal
+// to a rebuild, writing only the open documents.
+func TestShardedWrites(t *testing.T) {
 	dir := initWS(t)
 	claim := populate(t)
 	shard(t, dir)
-	before := treeHash(t, dir)
 	for _, args := range [][]string{
 		{"particular", "define", "--label", "New"},
 		{"particular", "define", "--label", "Project X", "--alias", "another"},
@@ -238,17 +218,17 @@ func TestShardedIsReadOnly(t *testing.T) {
 		{"synthesis", "create", "--subject", "Project X", "--content", "s", "--unresolved", "none", "--input", claim + ":thesis"},
 		{"retract", claim, "--reason", "r"},
 		{"particular", "merge", "Project X", "Other", "--reason", "same"},
-		{"publish", claim, "--scope", "public"},
 		{"index"},
-		{"index", "--check"},
 	} {
-		r := run(t, "", append(args, "--json")...)
-		if r.code != 1 || r.errCode(t) != "read_only_format" {
-			t.Errorf("%v: exit %d, code %q; want 1 read_only_format (%s)", args, r.code, r.errCode(t), r.stderr)
+		if r := run(t, "", append(args, "--json")...); r.code != 0 {
+			t.Fatalf("%v: exit %d %s", args, r.code, r.stderr)
 		}
-		if after := treeHash(t, dir); after != before {
-			t.Fatalf("%v changed the workspace", args)
+		if r := run(t, "", "index", "--check", "--json"); r.code != 0 {
+			t.Fatalf("after %v the index is stale: %s", args, r.stdout)
 		}
+	}
+	if r := run(t, "", "validate", "--json"); r.code != 0 || r.js["errors"].(float64) != 0 {
+		t.Errorf("validate after writes: %d %s", r.code, r.stdout)
 	}
 	// export is a read verb: it writes derived output outside the workspace.
 	out := filepath.Join(t.TempDir(), "graph.mmd")
@@ -316,5 +296,34 @@ func TestTimeChecks(t *testing.T) {
 				t.Errorf("sharded=%v %s: far_future_id %v, want %v: %s", sharded, tc.name, got, tc.farError, r.stdout)
 			}
 		}
+	}
+}
+
+// A machine whose clock is months behind the workspace is refused with
+// sealed_month, and writes nothing.
+func TestShardedSealedMonthRefusal(t *testing.T) {
+	dir := initWS(t)
+	define(t, "Project X")
+	shard(t, dir)
+	// A particular minted three months from now makes this machine's clock
+	// three months behind the workspace.
+	ahead := time.Now().UTC().AddDate(0, 3, 0)
+	ms := ahead.UnixMilli()
+	id := fmt.Sprintf("par_%08x-%04x-7000-8000-000000000001", ms>>16, ms&0xffff)
+	month, _ := dkf.MonthOf(id)
+	body := fmt.Sprintf("id: %s\ntype: particular\nuri: urn:dkf:x:ahead\nlabel: Ahead\n", id)
+	if err := os.MkdirAll(filepath.Join(dir, "particulars", month), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "particulars", month, id+".yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadDir(filepath.Join(dir, "claims"))
+	r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Project X", "--content", "x", "--json")
+	if r.code != 1 || r.errCode(t) != "sealed_month" || !strings.Contains(r.stderr, month) {
+		t.Errorf("assert on a slow clock: %d %s", r.code, r.stderr)
+	}
+	if after, _ := os.ReadDir(filepath.Join(dir, "claims")); len(after) != len(before) {
+		t.Error("a refused mint created a month directory")
 	}
 }

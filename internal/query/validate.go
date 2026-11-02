@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -70,11 +71,16 @@ const (
 	CodeLegacyID         = "legacy_id"
 	// CodeUnsupportedFormat: dkf.yaml declares a format this release does
 	// not read. CodeMisplacedFile: a dkf/0.2 file that is not where its id
-	// derives (reported by store.Load). CodeIndexUnchecked: the dkf/0.2 index
-	// is not yet read, so validate did not compare it.
+	// derives (reported by store.Load).
 	CodeUnsupportedFormat = "unsupported_format"
 	CodeMisplacedFile     = "misplaced_file"
-	CodeIndexUnchecked    = "index_unchecked"
+	// CodeLateMerge: a file in a sealed month's directories that its segment
+	// lacks — a branch open across two month boundaries; re-mint on the
+	// branch. CodeSealedRetraction: a sealed segment's retracted list and the
+	// files disagree — a retraction dated into a sealed month. Either means a
+	// sealed segment is no longer safe to cache.
+	CodeLateMerge        = "late_merge"
+	CodeSealedRetraction = "sealed_retraction"
 	// CodeFutureTime: an id instant or timestamp after the validator's
 	// clock — a warning, since either clock may be wrong. CodeFarFutureID: an
 	// id two or more months ahead, which would seal the month correct writers
@@ -482,18 +488,38 @@ func Validate(w *store.Workspace) (Findings, error) {
 
 	// Index consistency.
 	diff, err := w.CheckIndex()
-	if errors.Is(err, store.ErrReadOnlyFormat) {
-		add(SeverityWarning, store.IndexFile, CodeIndexUnchecked, "the dkf/0.2 index is not checked: this release reads dkf/0.2 objects but not its index yet (particulars-cli#11)")
-		sortFindings(fs)
-		return fs, nil
-	}
 	if err != nil {
 		return nil, err
 	}
+	// A late-merged file is also missing from its segment; it is reported
+	// once, as what it is, since `particulars index` cannot repair it.
+	late := map[string]bool{}
+	for _, id := range diff.LateMerge {
+		late[id] = true
+		add(SeverityError, g.Files[id], CodeLateMerge, fmt.Sprintf("%s arrived in a sealed month: %s does not list it, and a sealed segment is never rewritten; re-mint it on its branch before merging", id, store.SegmentFor(id)))
+	}
+	stale := diff
+	stale.LateMerge, stale.Missing = nil, slices.DeleteFunc(slices.Clone(diff.Missing), func(id string) bool { return late[id] })
 	if _, _, rerr := w.ReadIndex(); errors.Is(rerr, store.ErrNotFound) {
 		add(SeverityWarning, store.IndexFile, CodeIndexMissing, "index.yaml is absent; run `particulars index`")
-	} else if !diff.Clean() {
-		add(SeverityError, store.IndexFile, CodeIndexStale, fmt.Sprintf("index.yaml differs from a rebuild (missing %d, extra %d, changed %d); run `particulars index`", len(diff.Missing), len(diff.Extra), len(diff.Changed)))
+	} else if !stale.Clean() {
+		add(SeverityError, store.IndexFile, CodeIndexStale, fmt.Sprintf("the index differs from a rebuild (missing %d, extra %d, changed %d, retracted %d, segments %d); run `particulars index`",
+			len(stale.Missing), len(stale.Extra), len(stale.Changed), len(stale.RetractedMissing)+len(stale.RetractedExtra), len(stale.SegmentsMissing)+len(stale.SegmentsExtra)))
+	}
+	sealed, err := w.SealedRetractions(g)
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range sealed {
+		path := g.Files[m.ID]
+		if path == "" {
+			path = m.Segment
+		}
+		msg := fmt.Sprintf("%s is retracted in a sealed month but %s does not list it: the retraction was dated into a sealed month or merged late", m.ID, m.Segment)
+		if !m.InFiles {
+			msg = fmt.Sprintf("%s lists %s as retracted that month, but the files do not", m.Segment, m.ID)
+		}
+		add(SeverityError, path, CodeSealedRetraction, msg)
 	}
 
 	sortFindings(fs)
