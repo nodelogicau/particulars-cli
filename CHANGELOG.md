@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.20.0 — dkf/0.2: sharded by month, and a plugin for ChatGPT and Codex
 
 - **`particulars migrate` moves a workspace to `dkf/0.2` (#11).** It rewrites
   the `format` line in `dkf.yaml` (keeping comments and other keys), renames

@@ -17,7 +17,7 @@
 - [x] 3.3 Add the `plugin` target to `Makefile` (and to `.PHONY`).
 - [x] 3.4 Wire into `.goreleaser.yaml`: run the script during the release build, and add `dist/*-plugin.zip` to `release.extra_files` and `checksum.extra_files`.
 - [x] 3.5 Add a test or CI step that runs `make plugin`, unzips the result, and diffs `skills/particulars/SKILL.md` against `dist/particulars skill show`.
-- [ ] 3.6 Run `goreleaser release --snapshot --clean` locally and confirm both the `.mcpb` and the plugin zip are produced and checksummed.
+- [x] 3.6 Run `goreleaser release --snapshot --clean` locally and confirm both the `.mcpb` and the plugin zip are produced and checksummed.
 
 ## 4. Documentation
 
