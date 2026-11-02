@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **`particulars migrate` moves a workspace to `dkf/0.2` (#11).** It rewrites
+  the `format` line in `dkf.yaml` (keeping comments and other keys), renames
+  every object file byte-identical to its month directory, and regenerates the
+  index — nothing an object asserts changes, so git sees renames. `--dry-run`
+  reports the moves and the months that will seal. It refuses, writing
+  nothing, while any file fails to load; a migration cut short is reported as
+  misplaced files, and running `migrate` again finishes it.
+- **BREAKING: `init` writes `dkf/0.2`.** A workspace created by this release
+  is unreadable to binaries before it, which refuse its format by name.
+  `init --format dkf/0.1` keeps the flat layout for a workspace whose CI or
+  collaborators pin an older binary; `dkf/0.1` stays fully supported.
 - **Works in `dkf/0.2` workspaces (#11, stages 1 and 2).** DKF v0.2 shards
   every type directory by the month each id was minted
   (`claims/2026-11/clm_….yaml`, `legacy/` for ids that are not UUIDv7), and
@@ -17,8 +28,7 @@
   file merged into a sealed month: re-mint it on its branch), and
   `sealed_retraction` (a retraction dated into a sealed month). Minting or
   retracting into a sealed month is refused with `sealed_month`, which only a
-  clock more than a month slow can reach. `init` still writes `dkf/0.1`;
-  `migrate` is the next stage.
+  clock more than a month slow can reach.
 - **`validate` checks time it cannot have seen.** In either layout, an id or
   timestamp later than the validator's clock warns (`future_time`), and an id
   two or more months ahead fails (`far_future_id`). A date-only timestamp for

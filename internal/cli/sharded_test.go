@@ -97,7 +97,7 @@ func withoutPaths(v any) any {
 
 // A dkf/0.2 workspace reads exactly as its dkf/0.1 equivalent.
 func TestShardedReadsLikeFlat(t *testing.T) {
-	dir := initWS(t)
+	dir := initWS(t, "--format", "dkf/0.1") // flat, so shard() is a real migration
 	claim := populate(t)
 	verbs := [][]string{
 		{"recall", "Project X", "--include-retracted"},
@@ -143,7 +143,7 @@ func TestShardedReadsLikeFlat(t *testing.T) {
 
 // Each way a file can be out of place is reported once and never read.
 func TestShardedMisplacedFiles(t *testing.T) {
-	dir := initWS(t)
+	dir := initWS(t, "--format", "dkf/0.1") // flat, so shard() is a real migration
 	define(t, "Project X")
 	claim := assert(t, "Project X", "Uses Postgres")
 	shard(t, dir)
@@ -208,7 +208,7 @@ func TestShardedMisplacedFiles(t *testing.T) {
 // Every write verb works in a dkf/0.2 workspace and leaves its index equal
 // to a rebuild, writing only the open documents.
 func TestShardedWrites(t *testing.T) {
-	dir := initWS(t)
+	dir := initWS(t, "--format", "dkf/0.1") // flat, so shard() is a real migration
 	claim := populate(t)
 	shard(t, dir)
 	for _, args := range [][]string{
@@ -242,7 +242,7 @@ func TestUnsupportedFormat(t *testing.T) {
 	dir := initWS(t)
 	cfg := filepath.Join(dir, "dkf.yaml")
 	b, _ := os.ReadFile(cfg)
-	if err := os.WriteFile(cfg, []byte(strings.Replace(string(b), "format: dkf/0.1", "format: dkf/0.3", 1)), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte(strings.Replace(string(b), "format: dkf/0.2", "format: dkf/0.3", 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	r := run(t, "", "recall", "--query", "x")
@@ -259,7 +259,7 @@ func TestUnsupportedFormat(t *testing.T) {
 // Moving the validator's clock back stands in for an id minted ahead of it.
 func TestTimeChecks(t *testing.T) {
 	for _, sharded := range []bool{false, true} {
-		dir := initWS(t)
+		dir := initWS(t, "--format", "dkf/0.1") // flat, so shard() is a real migration
 		define(t, "Project X")
 		c := assert(t, "Project X", "Uses Postgres", "--timestamp", "2023-05-24T00:36:00Z")
 		if r := run(t, "", "retract", c, "--reason", "wrong"); r.code != 0 {
@@ -302,7 +302,7 @@ func TestTimeChecks(t *testing.T) {
 // A machine whose clock is months behind the workspace is refused with
 // sealed_month, and writes nothing.
 func TestShardedSealedMonthRefusal(t *testing.T) {
-	dir := initWS(t)
+	dir := initWS(t, "--format", "dkf/0.1") // flat, so shard() is a real migration
 	define(t, "Project X")
 	shard(t, dir)
 	// A particular minted three months from now makes this machine's clock

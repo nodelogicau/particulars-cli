@@ -107,6 +107,7 @@ func (g *generator) content(subject string, n int) string {
 func generateWorkspace(dir string, claims int, seed uint64) (genStats, error) {
 	g := &generator{r: rand.New(rand.NewPCG(seed, uint64(claims))), now: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)}
 	cfg := store.NewConfig()
+	cfg.Format = dkf.Format01 // a fixture with fixed past dates; the layout has its own tests (sharded_test.go)
 	cfg.Workspace.ID = g.uuidAt(g.now)
 	w, err := store.Init(dir, cfg)
 	if err != nil {

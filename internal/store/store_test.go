@@ -17,6 +17,7 @@ var ts = time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
 func newWS(t *testing.T) *Workspace {
 	t.Helper()
 	cfg := NewConfig()
+	cfg.Format = dkf.Format01 // a fixture with fixed past dates; the layout has its own tests (sharded_test.go)
 	cfg.Defaults.Source.Author = "ben"
 	w, err := Init(filepath.Join(t.TempDir(), "kb"), cfg)
 	if err != nil {

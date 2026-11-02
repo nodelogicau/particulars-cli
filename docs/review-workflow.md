@@ -35,8 +35,8 @@ every DKF workspace version history, authorship, diffs, and a review UI.
    agent (branch)                      human (PR)                      main
    ──────────────                      ──────────                      ────
    particulars claim assert …   ─┐
-   particulars claim assert …    ├──▶  + claims/clm_….yaml  ×2
-   particulars synthesis create ┘       + syntheses/syn_….yaml
+   particulars claim assert …    ├──▶  + claims/2026-11/clm_….yaml  ×2
+   particulars synthesis create ┘       + syntheses/2026-11/syn_….yaml
                                         ± index.yaml
                                               │
                                         read the YAML, follow the

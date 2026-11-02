@@ -14,7 +14,7 @@ import (
 )
 
 func (a *app) initCmd() *cobra.Command {
-	var baseURI, author, harness, scope string
+	var baseURI, author, harness, scope, format string
 	var pointer bool
 	cmd := &cobra.Command{
 		Use:   "init [dir] [--pointer]",
@@ -40,6 +40,12 @@ anywhere under the current directory find the workspace without DKF_WORKSPACE.`,
 				return usageErr("--pointer needs a workspace directory other than the current directory, e.g. `particulars init ./knowledge --pointer`")
 			}
 			cfg := store.NewConfig()
+			switch format {
+			case dkf.Format02, dkf.Format01:
+				cfg.Format = format
+			default:
+				return usageErr("invalid --format %q: must be %s (the default) or %s", format, dkf.Format02, dkf.Format01)
+			}
 			normalised := dkf.NormaliseBaseURI(baseURI)
 			wasNormalised := normalised != strings.TrimSpace(baseURI)
 			cfg.Workspace.BaseURI = normalised
@@ -93,6 +99,7 @@ anywhere under the current directory find the workspace without DKF_WORKSPACE.`,
 	cmd.Flags().StringVar(&author, "author", "", "default source.author for claims")
 	cmd.Flags().StringVar(&harness, "harness", "", "default harness for claims and syntheses")
 	cmd.Flags().StringVar(&scope, "scope", "", "default scope: personal|organisation|public (default personal)")
+	cmd.Flags().StringVar(&format, "format", dkf.WriteFormat, "workspace format: dkf/0.2 (sharded by month) or dkf/0.1 (flat, for binaries before v0.20.0)")
 	cmd.Flags().BoolVar(&pointer, "pointer", false, "also write ./.dkf pointing at dir")
 	return cmd
 }

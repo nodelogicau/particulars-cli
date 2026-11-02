@@ -244,8 +244,11 @@ the same way (`retract <mrg_id>`); merges cannot be superseded.
 Work on a branch. The YAML you produce is the PR; the human's merge is the
 acceptance. Commit the object files **and** `index.yaml` (the tool keeps it
 current). If `index.yaml` ever conflicts on merge, run `particulars index` — do
-not resolve it by hand. Do not push or open PRs unless the user's workflow says
-to.
+not resolve it by hand. If `validate` reports `late_merge`, the branch stayed
+open across two month boundaries and its files landed in a sealed month: assert
+those objects again (new ids, the current month), delete the never-merged files,
+and never edit `index/` segments. Do not push or open PRs unless the user's
+workflow says to.
 
 **Show the shape, not just the diff.** When you write a branch up for a human —
 a PR body, a review comment, a summary — draw each particular you touched:

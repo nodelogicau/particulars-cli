@@ -83,12 +83,13 @@ Everything lands as files:
 
 ```
 knowledge/
-  dkf.yaml                 workspace marker + defaults
-  particulars/par_….yaml
-  claims/clm_….yaml
-  syntheses/syn_….yaml
-  merges/mrg_….yaml        merge records (two URIs declared the same particular)
-  index.yaml               derived manifest (regenerate with `particulars index`)
+  dkf.yaml                     workspace marker + defaults
+  particulars/2026-11/par_….yaml
+  claims/2026-11/clm_….yaml    one directory per month an id was minted in
+  syntheses/2026-11/syn_….yaml
+  merges/2026-11/mrg_….yaml    merge records (two URIs declared the same particular)
+  index.yaml                   derived manifest: the open months (regenerate with `particulars index`)
+  index/2026-08.yaml           a sealed month's entries, never rewritten
 ```
 
 ## How review works
@@ -339,11 +340,14 @@ serialises to the same bytes.
 conflicts on it, run `particulars index` rather than resolving by hand.
 
 **Layouts.** `dkf.yaml`'s `format` names the layout, and the CLI never infers it
-from the directories. `dkf/0.1` is the flat tree above, and is what `init`
-writes. `dkf/0.2`, declared by DKF v0.2, shards every type directory by the
-month the id was minted — `claims/2026-11/clm_….yaml`, with `legacy/` for ids
-that are not UUIDv7 — and `validate` reports a file outside the month its id
-derives as `misplaced_file`. Any other `format` is refused by name.
+from the directories. `dkf/0.2`, declared by DKF v0.2 and what `init` writes,
+shards every type directory by the month the id was minted —
+`claims/2026-11/clm_….yaml`, with `legacy/` for ids that are not UUIDv7 — and
+`validate` reports a file outside the month its id derives as
+`misplaced_file`. `dkf/0.1` is the flat layout (`claims/clm_….yaml`, one
+`index.yaml`); the CLI reads and writes it unchanged, and
+`init --format dkf/0.1` creates one for collaborators or CI pinned to a binary
+before v0.20.0, which refuse `dkf/0.2` by name. Any other `format` is refused.
 
 In a `dkf/0.2` workspace the index is a root `index.yaml` — the current and
 previous month's entries and retractions, and a `segments` list — plus one
@@ -353,9 +357,21 @@ the legacy document; the first mint of a new month seals the month before last
 into its segment, and a sealed segment is never rewritten. A branch that stays
 open across two month boundaries and is then merged lands a file in a sealed
 month: `validate` fails with `late_merge`, and the remedy is to re-mint the
-branch's objects before merging. `init` still writes `dkf/0.1`; moving a
-workspace to `dkf/0.2` arrives with `migrate`
-([#11](https://github.com/nodelogicau/particulars-cli/issues/11)).
+branch's objects before merging.
+
+**Migrating a workspace.** `particulars migrate --dry-run` lists the moves, the
+months that will seal, and any legacy ids; `particulars migrate` then rewrites
+`format` in `dkf.yaml` (that one line — comments and other keys are kept),
+renames every object file byte-identical to its month directory, and
+regenerates the index. Nothing an object asserts changes, so git records
+renames and signatures still verify. It refuses, writing nothing, while any
+file fails to load or a type directory holds other subdirectories with YAML in
+them. The format is rewritten first so that a migration cut short is loud —
+every unmoved file is reported as misplaced — and running `migrate` again
+finishes it. Merge or close open branches first: one opened before the
+migration adds flat files, and needs `particulars migrate` run on it after
+rebasing onto the migrated main. Commit the renames, `dkf.yaml`, and the index
+together, and pin CI to v0.20.0 or later.
 
 `validate` also checks time in either layout: an id or timestamp later than
 the validator's clock warns (`future_time`), and an id two or more months ahead

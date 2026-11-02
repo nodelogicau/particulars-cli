@@ -18,7 +18,9 @@ jobs:
       # Pin at or above the version that wrote the workspace. An older binary
       # does not read record types it predates: it rebuilds index.yaml without
       # their entries and reports index_stale, failing the job. Object files
-      # degrade gracefully for an older reader; the index does not.
+      # degrade gracefully for an older reader; the index does not. A dkf/0.2
+      # workspace (sharded by month — what `init` writes from v0.20.0) needs
+      # v0.20.0 or later: earlier binaries refuse its format by name.
       PARTICULARS_VERSION: v0.7.0
     steps:
       - uses: actions/checkout@v4

@@ -23,6 +23,7 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	cfg := store.NewConfig()
+	cfg.Format = dkf.Format01 // a fixture with fixed past dates; the layout has its own tests (sharded_test.go)
 	cfg.Defaults.Source.Author = "ben"
 	w, err := store.Init(filepath.Join(t.TempDir(), "kb"), cfg)
 	if err != nil {

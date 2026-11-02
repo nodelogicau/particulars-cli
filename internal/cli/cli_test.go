@@ -3,11 +3,14 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/nodelogicau/particulars-cli/internal/store"
 )
 
 type result struct {
@@ -72,6 +75,47 @@ func initWS(t *testing.T, extra ...string) string {
 	return dir
 }
 
+// objPath is where the workspace at dir keeps object id, in whichever layout
+// its dkf.yaml declares.
+func objPath(t *testing.T, dir, id string) string {
+	t.Helper()
+	ws, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := ws.Path(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// writeObj writes an object file by hand at its derived path, as a merge or
+// an editor would.
+func writeObj(t *testing.T, dir, id string, data []byte) {
+	t.Helper()
+	p := objPath(t, dir, id)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// objectFiles counts the object files under a type directory in either
+// layout, so "nothing was written" is checked rather than assumed.
+func objectFiles(dir string) int {
+	n := 0
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".yaml") {
+			n++
+		}
+		return nil
+	})
+	return n
+}
+
 func define(t *testing.T, label string, extra ...string) string {
 	t.Helper()
 	r := run(t, "", append([]string{"particular", "define", "--label", label, "--json"}, extra...)...)
@@ -118,7 +162,7 @@ func TestInitAndVersion(t *testing.T) {
 		t.Errorf("re-init should exit 1, got %d", r.code)
 	}
 	r := run(t, "", "version", "--json")
-	if r.code != 0 || r.js["format"] != "dkf/0.1" || !reflect.DeepEqual(r.js["reads"], []any{"dkf/0.1", "dkf/0.2"}) {
+	if r.code != 0 || r.js["format"] != "dkf/0.2" || !reflect.DeepEqual(r.js["reads"], []any{"dkf/0.1", "dkf/0.2"}) {
 		t.Errorf("version: %+v", r)
 	}
 	if r := run(t, "", "init", t.TempDir(), "--scope", "team"); r.code != 2 {
@@ -295,7 +339,7 @@ func TestRetract(t *testing.T) {
 	if r.code != 0 {
 		t.Fatalf("retract: %+v", r)
 	}
-	data, _ := os.ReadFile(filepath.Join(dir, "claims", a+".yaml"))
+	data, _ := os.ReadFile(objPath(t, dir, a))
 	if !strings.Contains(string(data), "\nretracted:\n") || !strings.Contains(string(data), "superseded-by: "+b) {
 		t.Errorf("file:\n%s", data)
 	}
@@ -458,9 +502,9 @@ func TestIndexAndValidate(t *testing.T) {
 		t.Errorf("clean validate: %+v", r)
 	}
 	// Hand-add a file → drift, validate error.
-	src, _ := os.ReadFile(filepath.Join(dir, "claims", a+".yaml"))
+	src, _ := os.ReadFile(objPath(t, dir, a))
 	copyID := "clm_01999999-0000-7000-8000-000000000001"
-	_ = os.WriteFile(filepath.Join(dir, "claims", copyID+".yaml"), bytes.Replace(src, []byte(a), []byte(copyID), 1), 0o644)
+	writeObj(t, dir, copyID, bytes.Replace(src, []byte(a), []byte(copyID), 1))
 	r := run(t, "", "index", "--check", "--json")
 	if r.code != 4 || r.js["missing"].([]any)[0] != copyID {
 		t.Errorf("drift: %+v", r)
@@ -589,7 +633,7 @@ func TestSynthesisSourceAndLegacy(t *testing.T) {
 	}
 	// Legacy produced-by file reads as source; validate warns.
 	legacy := "syn_01a00000-0000-7000-8000-00000000aaaa"
-	_ = os.WriteFile(filepath.Join(dir2, "syntheses", legacy+".yaml"), []byte("id: "+legacy+"\ntype: synthesis\nsubject: "+pid+"\ncontent: old\ninputs:\n  - id: "+x+"\n    role: thesis\nunresolved: n\nproduced-by:\n  harness: claude\n  model: m\ntimestamp: 2026-08-20T09:00:00Z\ncontext:\n  scope: personal\n"), 0o644)
+	writeObj(t, dir2, legacy, []byte("id: "+legacy+"\ntype: synthesis\nsubject: "+pid+"\ncontent: old\ninputs:\n  - id: "+x+"\n    role: thesis\nunresolved: n\nproduced-by:\n  harness: claude\n  model: m\ntimestamp: 2026-08-20T09:00:00Z\ncontext:\n  scope: personal\n"))
 	run(t, "", "index", "--json")
 	rc := run(t, "", "recall", "P", "--json")
 	var found bool
@@ -1306,7 +1350,7 @@ func TestPublishAndEffectiveScope(t *testing.T) {
 
 	// Promote the belief and its inputs: the workspace becomes exportable
 	// though no object file changed.
-	before, err := os.ReadFile(filepath.Join(ws, "syntheses", syn+".yaml"))
+	before, err := os.ReadFile(objPath(t, ws, syn))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1318,7 +1362,7 @@ func TestPublishAndEffectiveScope(t *testing.T) {
 	if pr["scope"] != "organisation" || len(pr["claims"].([]any)) != 3 {
 		t.Errorf("promotion record: %+v", pr)
 	}
-	if after, _ := os.ReadFile(filepath.Join(ws, "syntheses", syn+".yaml")); !bytes.Equal(before, after) {
+	if after, _ := os.ReadFile(objPath(t, ws, syn)); !bytes.Equal(before, after) {
 		t.Error("promotion must not modify the object it covers")
 	}
 	e := run(t, "", "export", "--format", "graph", "--json")
@@ -1495,7 +1539,7 @@ func TestVerifiableProvenance(t *testing.T) {
 	if got := run(t, "", "recall", "Project X", "--include-retracted", "--json"); got.code != 0 {
 		t.Fatalf("recall: %+v", got)
 	}
-	data, err := os.ReadFile(filepath.Join(ws, "claims", id+".yaml"))
+	data, err := os.ReadFile(objPath(t, ws, id))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1567,7 +1611,7 @@ func TestCorpusFactWarningsAggregate(t *testing.T) {
 	}
 	// Rewrite both files as v0.8.0 wrote them, so each carries the legacy key.
 	for _, id := range ids {
-		path := filepath.Join(ws, "claims", id+".yaml")
+		path := objPath(t, ws, id)
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
