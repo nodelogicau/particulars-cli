@@ -43,4 +43,4 @@
 
 - [x] 5.1 README: replace the read-only note with the `dkf/0.2` index shape, the sealing rule and the late-merge remedy (re-mint on the branch). Add a `CHANGELOG.md` Unreleased entry that references #11 and says `init` still writes `dkf/0.1`
 - [x] 5.2 Run `go test ./...` and `golangci-lint run`
-- [ ] 5.3 File the upstream question (nodelogicau/particulars): is updating a particular whose file is in a sealed month allowed? (design Open Questions)
+- [x] 5.3 File the upstream question (nodelogicau/particulars): is updating a particular whose file is in a sealed month allowed? (design Open Questions) — filed as nodelogicau/particulars#51, together with the wrong instant in the "Deriving a path" scenario
