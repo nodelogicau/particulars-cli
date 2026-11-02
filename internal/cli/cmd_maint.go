@@ -87,8 +87,11 @@ machine-checked, for instance — and are summarised rather than listed unless
 				// A present-but-malformed dkf.yaml is a validation failure, not a crash.
 				if !errors.Is(err, store.ErrNoWorkspace) && strings.Contains(err.Error(), store.ConfigFile) {
 					code := query.CodeParseError
-					if errors.Is(err, store.ErrInvalidBaseURI) {
+					switch {
+					case errors.Is(err, store.ErrInvalidBaseURI):
 						code = query.CodeInvalidBaseURI
+					case errors.Is(err, store.ErrUnsupportedFormat):
+						code = query.CodeUnsupportedFormat
 					}
 					fs := query.Findings{{Severity: query.SeverityError, Path: store.ConfigFile, Code: code, Message: err.Error()}}
 					return a.emitFindings(fs)
@@ -198,11 +201,11 @@ func (a *app) emitFindings(fs query.Findings) error {
 func (a *app) versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print the binary version and supported DKF format",
+		Short: "Print the binary version and the DKF formats it reads and writes",
 		Args:  cobra.NoArgs,
 		RunE: a.run(func(cmd *cobra.Command, args []string) error {
-			return a.emit(map[string]any{"version": version, "format": dkf.FormatVersion}, func(w io.Writer) {
-				fmt.Fprintf(w, "particulars %s (%s)\n", version, dkf.FormatVersion)
+			return a.emit(map[string]any{"version": version, "format": dkf.WriteFormat, "reads": dkf.ReadFormats}, func(w io.Writer) {
+				fmt.Fprintf(w, "particulars %s (writes %s; reads %s)\n", version, dkf.WriteFormat, strings.Join(dkf.ReadFormats, ", "))
 			})
 		}),
 	}

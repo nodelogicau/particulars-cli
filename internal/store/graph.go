@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -13,7 +14,7 @@ import (
 // FileProblem records a file that could not be loaded as a valid object.
 type FileProblem struct {
 	Path    string // relative to workspace root
-	Code    string // parse_error | id_mismatch | type_mismatch
+	Code    string // parse_error | id_mismatch | type_mismatch | misplaced_file
 	Message string
 }
 
@@ -65,45 +66,14 @@ func newGraph() *Graph {
 func (w *Workspace) Load() (*Graph, error) {
 	g := newGraph()
 	for _, t := range allTypes {
-		dir := w.Dir(t)
-		entries, err := os.ReadDir(dir)
-		if os.IsNotExist(err) {
-			continue
+		var err error
+		if w.Sharded() {
+			err = w.loadSharded(g, t)
+		} else {
+			err = w.loadFlat(g, t)
 		}
 		if err != nil {
 			return nil, err
-		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") || strings.HasPrefix(e.Name(), ".") {
-				continue
-			}
-			path := filepath.Join(dir, e.Name())
-			rel := w.Rel(path)
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return nil, err
-			}
-			obj, err := dkf.Decode(data)
-			if err != nil {
-				g.Problems = append(g.Problems, FileProblem{Path: rel, Code: "parse_error", Message: err.Error()})
-				continue
-			}
-			fileID := strings.TrimSuffix(e.Name(), ".yaml")
-			if obj.ObjectID() != fileID {
-				g.Problems = append(g.Problems, FileProblem{Path: rel, Code: "id_mismatch", Message: fmt.Sprintf("file name implies %s but id field is %q", fileID, obj.ObjectID())})
-				continue
-			}
-			if obj.ObjectType() != t {
-				g.Problems = append(g.Problems, FileProblem{Path: rel, Code: "type_mismatch", Message: fmt.Sprintf("file is in %s/ but type is %s", dirFor(t), obj.ObjectType())})
-				continue
-			}
-			if idType, err := dkf.TypeOfID(obj.ObjectID()); err != nil || idType != t {
-				g.Problems = append(g.Problems, FileProblem{Path: rel, Code: "type_mismatch", Message: fmt.Sprintf("id prefix does not match type %s", t)})
-				continue
-			}
-			g.Files[obj.ObjectID()] = rel
-			g.Raw[obj.ObjectID()] = data
-			g.add(obj)
 		}
 	}
 	for subj := range g.BySubject {
@@ -384,4 +354,123 @@ func (g *Graph) Objects() []dkf.Object {
 
 func sortAssertions(as []dkf.Assertion) {
 	sort.Slice(as, func(i, j int) bool { return as[i].ObjectID() < as[j].ObjectID() })
+}
+
+// monthDir matches a shard directory name: a real calendar month.
+var monthDir = regexp.MustCompile(`^[0-9]{4}-(0[1-9]|1[0-2])$`)
+
+// objectFile reports whether a directory entry is a file a reader considers:
+// a visible .yaml file. Anything else is ignored in either layout.
+func objectFile(e os.DirEntry) bool {
+	return !e.IsDir() && strings.HasSuffix(e.Name(), ".yaml") && !strings.HasPrefix(e.Name(), ".")
+}
+
+// loadFlat reads a dkf/0.1 type directory: object files directly inside it.
+// Subdirectories are not part of the layout and are skipped.
+func (w *Workspace) loadFlat(g *Graph, t dkf.Type) error {
+	dir := w.Dir(t)
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if objectFile(e) {
+			if err := w.loadFile(g, t, filepath.Join(dir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// loadSharded reads a dkf/0.2 type directory: month directories and legacy/.
+// A file anywhere else, or in a shard its id does not derive, is reported as
+// misplaced and never read as an object — the layout is not guessed.
+func (w *Workspace) loadSharded(g *Graph, t dkf.Type) error {
+	dir := w.Dir(t)
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		if !e.IsDir() {
+			if objectFile(e) {
+				w.misplaced(g, filepath.Join(dir, e.Name()))
+			}
+			continue
+		}
+		sub := filepath.Join(dir, e.Name())
+		files, err := os.ReadDir(sub)
+		if err != nil {
+			return err
+		}
+		shardDir := monthDir.MatchString(e.Name()) || e.Name() == LegacyShard
+		for _, f := range files {
+			if !objectFile(f) {
+				continue
+			}
+			path := filepath.Join(sub, f.Name())
+			want, err := w.Path(strings.TrimSuffix(f.Name(), ".yaml"))
+			if !shardDir || (err == nil && want != path) {
+				w.misplaced(g, path)
+				continue
+			}
+			if err := w.loadFile(g, t, path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// misplaced records a file that is not where the layout puts it, naming the
+// path its id derives when its name is an id.
+func (w *Workspace) misplaced(g *Graph, path string) {
+	rel := w.Rel(path)
+	msg := "not in a month or legacy directory; a dkf/0.2 reader does not read it"
+	if want, err := w.Path(strings.TrimSuffix(filepath.Base(path), ".yaml")); err == nil {
+		msg = fmt.Sprintf("misplaced: its id derives %s; a dkf/0.2 reader does not read it here", w.Rel(want))
+	}
+	g.Problems = append(g.Problems, FileProblem{Path: rel, Code: "misplaced_file", Message: msg})
+}
+
+// loadFile parses one object file and adds it to g, recording a problem
+// instead when it fails to parse or its id, name, and type disagree.
+func (w *Workspace) loadFile(g *Graph, t dkf.Type, path string) error {
+	rel := w.Rel(path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	obj, err := dkf.Decode(data)
+	if err != nil {
+		g.Problems = append(g.Problems, FileProblem{Path: rel, Code: "parse_error", Message: err.Error()})
+		return nil
+	}
+	fileID := strings.TrimSuffix(filepath.Base(path), ".yaml")
+	if obj.ObjectID() != fileID {
+		g.Problems = append(g.Problems, FileProblem{Path: rel, Code: "id_mismatch", Message: fmt.Sprintf("file name implies %s but id field is %q", fileID, obj.ObjectID())})
+		return nil
+	}
+	if obj.ObjectType() != t {
+		g.Problems = append(g.Problems, FileProblem{Path: rel, Code: "type_mismatch", Message: fmt.Sprintf("file is in %s/ but type is %s", dirFor(t), obj.ObjectType())})
+		return nil
+	}
+	if idType, err := dkf.TypeOfID(obj.ObjectID()); err != nil || idType != t {
+		g.Problems = append(g.Problems, FileProblem{Path: rel, Code: "type_mismatch", Message: fmt.Sprintf("id prefix does not match type %s", t)})
+		return nil
+	}
+	g.Files[obj.ObjectID()] = rel
+	g.Raw[obj.ObjectID()] = data
+	g.add(obj)
+	return nil
 }

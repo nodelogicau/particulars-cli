@@ -202,7 +202,7 @@ pushed by a workflow when a knowledge pull request is merged. See
 | `export --format graph [--schema]` | Emit Microsoft Graph items so merged knowledge is searchable in M365 Copilot (see [docs/graph.md](docs/graph.md)) |
 | `export --format dot\|mermaid [--subject P]` | Draw the workspace: one particular's dialectic, or a map of them all (see [docs/visualise.md](docs/visualise.md)) |
 | `skill show` / `skill install [--harness P]… [--user\|--dir D] [--file F] [--force] [--check]` | Print or install the embedded agent skill for Claude Code, Copilot, Cursor, or AGENTS.md |
-| `version` | Binary version and supported format (`dkf/0.1`) |
+| `version` | Binary version, the formats it reads (`dkf/0.1`, `dkf/0.2`), and the one it writes (`dkf/0.1`) |
 
 Run `particulars <verb> --help` for every flag.
 
@@ -337,6 +337,22 @@ serialises to the same bytes.
 
 `index.yaml` is a derived cache. Every mutating verb keeps it current; if a merge
 conflicts on it, run `particulars index` rather than resolving by hand.
+
+**Layouts.** `dkf.yaml`'s `format` names the layout, and the CLI never infers it
+from the directories. `dkf/0.1` is the flat tree above, and is what `init`
+writes. `dkf/0.2`, declared by DKF v0.2, shards every type directory by the
+month the id was minted — `claims/2026-11/clm_….yaml`, with `legacy/` for ids
+that are not UUIDv7 — and `validate` reports a file outside the month its id
+derives as `misplaced_file`. This release **reads** `dkf/0.2` but does not yet
+write it: in a `dkf/0.2` workspace every read verb works and every write is
+refused (`read_only_format`) until the index writer and `migrate` land
+([#11](https://github.com/nodelogicau/particulars-cli/issues/11)). Any other
+`format` is refused by name.
+
+`validate` also checks time in either layout: an id or timestamp later than
+the validator's clock warns (`future_time`), and an id two or more months ahead
+fails (`far_future_id`), since under `dkf/0.2` it would seal the month every
+correct writer is minting into.
 
 ## Scope of this release
 

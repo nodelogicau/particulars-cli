@@ -3,6 +3,7 @@ package dkf
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -887,5 +888,37 @@ func TestEvidentialField(t *testing.T) {
 	}
 	if ValidMethod("consensus") || ValidMethod("") {
 		t.Error("the method vocabulary is closed")
+	}
+}
+
+func TestMonthOf(t *testing.T) {
+	for _, c := range []struct {
+		id, month string
+		ok        bool
+	}{
+		{"clm_01a0f3c1-4d20-7b8e-9a11-6c2f4e7d9b03", "2026-09", true}, // upstream workspace-layout example (its bits encode 2026-09-30T19:18:46Z, not the 09-05 the scenario states; same month)
+		{"clm_01A0F3C1-4D20-7B8E-9A11-6C2F4E7D9B03", "2026-09", true}, // upper case is still a UUIDv7
+		{"clm_07m3zp9s2q1r4t8v", "", false},                           // draft-era id
+		{"clm_6f1c2e0a-3b4d-4c5e-8f60-718293a4b5c6", "", false},       // UUIDv4
+		{"clm_01a0f3c14d207b8e9a116c2f4e7d9b03", "", false},           // 32-hex, no hyphens
+		{"clm_01a0f3c1-4d20-7b8e-ca11-6c2f4e7d9b03", "", false},       // version 7, wrong variant
+		{"not-an-id", "", false},
+	} {
+		got, ok := MonthOf(c.id)
+		if got != c.month || ok != c.ok {
+			t.Errorf("MonthOf(%s) = %q, %v; want %q, %v", c.id, got, ok, c.month, c.ok)
+		}
+	}
+	// The last millisecond of a month is that month; the next is the next.
+	edge := time.Date(2026, 9, 30, 23, 59, 59, 999e6, time.UTC)
+	for _, c := range []struct {
+		at   time.Time
+		want string
+	}{{edge, "2026-09"}, {edge.Add(time.Millisecond), "2026-10"}} {
+		ms := c.at.UnixMilli()
+		id := fmt.Sprintf("clm_%08x-%04x-7000-8000-000000000000", ms>>16, ms&0xffff)
+		if got, _ := MonthOf(id); got != c.want {
+			t.Errorf("%s (%s): %s, want %s", id, c.at, got, c.want)
+		}
 	}
 }

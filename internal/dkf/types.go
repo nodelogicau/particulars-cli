@@ -8,8 +8,20 @@ package dkf
 
 import "time"
 
-// FormatVersion is the DKF format identifier written to dkf.yaml and index.yaml.
-const FormatVersion = "dkf/0.1"
+// Format identifiers. A dkf/0.1 workspace is flat; a dkf/0.2 workspace is
+// sharded by the minting month of each id (see MonthOf).
+const (
+	Format01 = "dkf/0.1"
+	Format02 = "dkf/0.2"
+)
+
+// ReadFormats are the formats this implementation reads. A workspace
+// declaring any other is refused rather than read in part.
+var ReadFormats = []string{Format01, Format02}
+
+// WriteFormat is the format written to a new workspace's dkf.yaml and to
+// index.yaml. dkf/0.2 is read but not yet written (particulars-cli#11).
+const WriteFormat = Format01
 
 // Type is a DKF object type.
 type Type string

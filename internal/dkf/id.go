@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -52,6 +53,37 @@ func NewUUID() string {
 		panic(fmt.Sprintf("dkf: uuid v7: %v", err))
 	}
 	return strings.ToLower(u.String())
+}
+
+// uuidForm is the hyphenated 36-character UUID string form, in either case.
+var uuidForm = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
+
+// MonthOf returns the UTC calendar month (YYYY-MM) of the minting instant in
+// id's UUIDv7, the shard a dkf/0.2 workspace files it under. It reports false
+// when no month derives — an identifier part that is not a hyphenated UUID of
+// version 7 and RFC 4122 variant — and such an id lives under legacy/. The
+// instant is the UUID's first 48 bits, Unix milliseconds.
+func MonthOf(id string) (string, bool) {
+	t, ok := MintedAt(id)
+	if !ok {
+		return "", false
+	}
+	return t.Format("2006-01"), true
+}
+
+// MintedAt returns the minting instant encoded in id's UUIDv7, in UTC, or
+// false when the id carries none (see MonthOf).
+func MintedAt(id string) (time.Time, bool) {
+	_, part, found := strings.Cut(id, "_")
+	if !found || !uuidForm.MatchString(part) {
+		return time.Time{}, false
+	}
+	u, err := uuid.Parse(part)
+	if err != nil || u.Version() != 7 || u.Variant() != uuid.RFC4122 {
+		return time.Time{}, false
+	}
+	ms := int64(u[0])<<40 | int64(u[1])<<32 | int64(u[2])<<24 | int64(u[3])<<16 | int64(u[4])<<8 | int64(u[5])
+	return time.UnixMilli(ms).UTC(), true
 }
 
 // NewID mints a new identifier for the given object type.

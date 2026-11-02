@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -117,7 +118,7 @@ func TestInitAndVersion(t *testing.T) {
 		t.Errorf("re-init should exit 1, got %d", r.code)
 	}
 	r := run(t, "", "version", "--json")
-	if r.code != 0 || r.js["format"] != "dkf/0.1" {
+	if r.code != 0 || r.js["format"] != "dkf/0.1" || !reflect.DeepEqual(r.js["reads"], []any{"dkf/0.1", "dkf/0.2"}) {
 		t.Errorf("version: %+v", r)
 	}
 	if r := run(t, "", "init", t.TempDir(), "--scope", "team"); r.code != 2 {
