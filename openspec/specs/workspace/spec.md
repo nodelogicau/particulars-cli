@@ -3,9 +3,7 @@
 ## Purpose
 
 Creation and discovery of a DKF workspace: `init`, the `dkf.yaml` marker/config file, and the on-disk directory layout.
-
 ## Requirements
-
 ### Requirement: Workspace initialisation
 `particulars init [dir] [--pointer]` SHALL create, in the target directory (default: current directory), the file `dkf.yaml`, the directories `particulars/`, `claims/`, `syntheses/`, `merges/`, and an empty `index.yaml`. It SHALL accept `--base-uri <uri>`, `--author <name>`, `--harness <name>`, and `--scope personal|organisation|public` (default `personal`) to populate `dkf.yaml`. A `--base-uri` lacking a trailing `/` SHALL be stored with one appended and the normalisation reported in the result. With `--pointer` and an explicit `dir` other than the current directory, it SHALL also write `./.dkf` containing the relative path to `dir`, refusing with exit code 1 if a `.dkf` with different content already exists; `--pointer` without such a `dir` SHALL be a usage error. It SHALL fail with exit code 1 if `dkf.yaml` already exists in the target directory.
 
@@ -30,7 +28,7 @@ Creation and discovery of a DKF workspace: `init`, the `dkf.yaml` marker/config 
 - **THEN** the command exits with code 1 and modifies nothing
 
 ### Requirement: dkf.yaml structure
-`dkf.yaml` SHALL contain `format: dkf/0.1`, `workspace.id` (a UUIDv7 minted at init), optional `workspace.base-uri` (which, when present, SHALL end in `/`), `defaults.scope`, and `defaults.source` with optional `author`, `harness`, `model`. Unknown keys SHALL be preserved on read and ignored. Opening a workspace whose `base-uri` lacks the trailing `/` SHALL fail with a message naming `dkf.yaml`.
+`dkf.yaml` SHALL contain `format`, `workspace.id` (a UUIDv7 minted at init), optional `workspace.base-uri` (which, when present, SHALL end in `/`), `defaults.scope`, and `defaults.source` with optional `author`, `harness`, `model`. `format` SHALL be one the CLI reads — `dkf/0.1` (the flat layout) or `dkf/0.2` (the sharded layout) — and the CLI SHALL write `dkf/0.1` into a new workspace. Opening a workspace whose `format` is any other value SHALL fail with a message naming `dkf.yaml`, the value found, and the formats the CLI reads. Unknown keys SHALL be preserved on read and ignored. Opening a workspace whose `base-uri` lacks the trailing `/` SHALL fail with a message naming `dkf.yaml`.
 
 #### Scenario: Workspace id minted
 - **WHEN** `particulars init` completes
@@ -43,6 +41,14 @@ Creation and discovery of a DKF workspace: `init`, the `dkf.yaml` marker/config 
 #### Scenario: Hand-edited base URI without slash
 - **WHEN** `dkf.yaml` is edited to `base-uri: https://example.com/particulars` and `recall` is run
 - **THEN** the command exits with code 1 and the error names `dkf.yaml`
+
+#### Scenario: A format the CLI does not read
+- **WHEN** `dkf.yaml` says `format: dkf/0.3` and `recall` is run
+- **THEN** the command exits with code 1 and the error names `dkf.yaml`, `dkf/0.3`, and `dkf/0.1, dkf/0.2`
+
+#### Scenario: A sharded workspace opens
+- **WHEN** `dkf.yaml` says `format: dkf/0.2` and `recall` is run
+- **THEN** the command reads the workspace and succeeds
 
 ### Requirement: Explicit workspace path
 When `--workspace <dir>` or `$DKF_WORKSPACE` is given, the CLI SHALL use that directory as the workspace root if it contains `dkf.yaml`; otherwise, if it contains a `.dkf` pointer file, it SHALL resolve the pointer exactly as discovery does — one hop, target MUST contain `dkf.yaml` — and report the resolution as `pointer`. A directory containing neither SHALL fail with exit code 5 naming the directory and both file names.
@@ -79,11 +85,23 @@ When no explicit workspace is given, the CLI SHALL search the current directory 
 - **THEN** the command exits with code 5 and the message names `/repo/.dkf` and `/repo/knowledge`
 
 ### Requirement: Directory layout
-Objects SHALL be stored one per file at `<root>/particulars/<id>.yaml`, `<root>/claims/<id>.yaml`, and `<root>/syntheses/<id>.yaml` according to their type. The CLI SHALL create a missing type directory on first write rather than failing.
+Objects SHALL be stored one per file in the type directory for their id's prefix — `particulars`, `claims`, `syntheses`, `merges`, or `publishes` — laid out as `dkf.yaml`'s `format` declares, never inferred from the directory contents. In a `dkf/0.1` workspace the file SHALL be `<root>/<type-dir>/<id>.yaml`. In a `dkf/0.2` workspace it SHALL be `<root>/<type-dir>/<YYYY-MM>/<id>.yaml`, where `<YYYY-MM>` is the UTC calendar month of the UUIDv7 timestamp in the id, or `<root>/<type-dir>/legacy/<id>.yaml` when the id's identifier part is not a UUID of version 7. The path SHALL be derived from the id alone. The CLI SHALL create a missing type directory on first write rather than failing.
 
 #### Scenario: Synthesis file location
-- **WHEN** a synthesis with id `syn_X` is created
+- **WHEN** a synthesis with id `syn_X` is created in a `dkf/0.1` workspace
 - **THEN** the file `<root>/syntheses/syn_X.yaml` exists
+
+#### Scenario: Reading a sharded claim
+- **WHEN** a `dkf/0.2` workspace holds `claims/2026-09/clm_01a0f3c1-4d20-7b8e-9a11-6c2f4e7d9b03.yaml`, whose id's UUIDv7 timestamp falls in September 2026, and `recall` names its subject
+- **THEN** the claim is returned
+
+#### Scenario: Reading a legacy id
+- **WHEN** a `dkf/0.2` workspace holds `claims/legacy/clm_07m3zp9s2q1r4t8v.yaml`
+- **THEN** the claim is read like any other
+
+#### Scenario: Assertion time does not move a file
+- **WHEN** a claim carrying `timestamp: 2019-03-01T00:00:00Z` has an id minted in September 2026
+- **THEN** its derived path is under `claims/2026-09/`
 
 ### Requirement: Workspace verb
 `particulars workspace` SHALL print the resolved workspace root and how it was resolved — `flag`, `env`, `dkf.yaml`, or `pointer` — together with `workspace.id` and `base-uri`; with `--json` as `{"root", "via", "pointer"?, "id", "base_uri"}`. When no workspace resolves it SHALL exit with code 5.
@@ -143,3 +161,15 @@ A workspace MAY carry a conventions document for agents: `dkf.md` at the workspa
 #### Scenario: Absolute path is invalid on every platform
 - **WHEN** `dkf.yaml` has `workspace.conventions: /etc/motd`
 - **THEN** the key is treated as unset and reported as `conventions_invalid`
+
+### Requirement: A dkf/0.2 workspace is read-only in this release
+Until the CLI writes the `dkf/0.2` index, every operation that would write in a `dkf/0.2` workspace — creating an object or record, updating a particular, retracting, and rebuilding or updating the index — SHALL refuse before writing anything, with a message saying the release reads `dkf/0.2` but does not write it yet and naming particulars-cli#11. The MCP server's write tools SHALL return the same refusal as an error result. Read verbs, including `export`, which writes derived output outside the workspace, SHALL be unaffected.
+
+#### Scenario: Asserting into a sharded workspace
+- **WHEN** `claim assert` is run in a `dkf/0.2` workspace
+- **THEN** the command exits non-zero with the read-only message and no file in the workspace changes
+
+#### Scenario: Recalling from a sharded workspace
+- **WHEN** `recall` is run in a `dkf/0.2` workspace
+- **THEN** it succeeds and returns the workspace's claims
+

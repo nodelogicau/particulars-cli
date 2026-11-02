@@ -3,9 +3,7 @@
 ## Purpose
 
 The agent-facing contract of the `particulars` binary: non-interactive operation, `--json` output on every verb, stable exit codes, workspace selection, and provenance defaults from the environment.
-
 ## Requirements
-
 ### Requirement: Non-interactive operation
 The CLI SHALL never prompt for input or read from a terminal. Multi-line content SHALL be accepted via `--content-file <path>` or `--content-file -` (piped stdin). Any command that lacks required input SHALL fail with a usage error rather than prompting.
 
@@ -54,8 +52,9 @@ The CLI SHALL resolve `author`, `harness`, and `model` for provenance fields wit
 - **THEN** the written claim has `source.harness: claude`
 
 ### Requirement: Version verb
-The CLI SHALL provide `particulars version` reporting the binary version and the supported DKF format version (`dkf/0.1`).
+The CLI SHALL provide `particulars version` reporting the binary version, the DKF formats it reads, and the DKF format it writes into a new workspace.
 
 #### Scenario: Version output
 - **WHEN** `particulars version --json` is run
-- **THEN** stdout contains an object with `version` and `format: "dkf/0.1"`
+- **THEN** stdout contains an object with `version`, `format: "dkf/0.1"` (the format written), and `reads: ["dkf/0.1", "dkf/0.2"]`
+

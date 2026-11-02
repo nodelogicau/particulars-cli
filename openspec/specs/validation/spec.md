@@ -16,7 +16,7 @@ Workspace-wide structural, referential, and index-consistency checks with error/
 - **THEN** stdout contains `{"findings": [{"severity": ..., "path": ..., "code": ..., "message": ...}, ...]}` and the exit code is 4
 
 ### Requirement: Structural checks
-`validate` SHALL report an error when: `dkf.yaml` is missing or malformed, has an unsupported `format`, or has a `workspace.base-uri` not ending in `/`; an object or record file fails to parse as YAML; an object's `id`, `type`, file name, or directory disagree; a required field is missing (`uri`/`label` for particulars; `subject`/`content`/`context.scope`/`timestamp` and a `source` with at least one of `author`/`harness` for claims; additionally `inputs`/`unresolved`/`source.harness` for syntheses; `uris`/`source`/`timestamp` for merges); a synthesis carries both `source` and `produced-by` (`conflicting_provenance`); `scope`, `role`, or `weight` has an invalid value; `confidence` is outside [0, 1]; a timestamp is not RFC 3339; a `retracted` block lacks `timestamp`, `reason`, or a `source` with at least one of `author`/`harness`.
+`validate` SHALL report an error when: `dkf.yaml` is missing or malformed, has an unsupported `format` (code `unsupported_format`, naming the value found and the formats the CLI reads), or has a `workspace.base-uri` not ending in `/`; an object or record file fails to parse as YAML; an object's `id`, `type`, file name, or directory disagree; a required field is missing (`uri`/`label` for particulars; `subject`/`content`/`context.scope`/`timestamp` and a `source` with at least one of `author`/`harness` for claims; additionally `inputs`/`unresolved`/`source.harness` for syntheses; `uris`/`source`/`timestamp` for merges); a synthesis carries both `source` and `produced-by` (`conflicting_provenance`); `scope`, `role`, or `weight` has an invalid value; `confidence` is outside [0, 1]; a timestamp is not RFC 3339; a `retracted` block lacks `timestamp`, `reason`, or a `source` with at least one of `author`/`harness`.
 
 #### Scenario: Missing unresolved
 - **WHEN** a synthesis file has no `unresolved` field
@@ -33,6 +33,10 @@ Workspace-wide structural, referential, and index-consistency checks with error/
 #### Scenario: Base URI without trailing slash
 - **WHEN** `dkf.yaml` has `base-uri: https://example.com/particulars`
 - **THEN** `validate` reports an error for `dkf.yaml` with code `invalid_base_uri`
+
+#### Scenario: Unsupported format
+- **WHEN** `dkf.yaml` has `format: dkf/0.3`
+- **THEN** `validate` reports an error for `dkf.yaml` with code `unsupported_format`
 
 ### Requirement: Referential checks
 `validate` SHALL report an error when a claim or synthesis `subject` does not resolve to a particular file; when a synthesis input id, a claim `basis` id, or a `retracted.superseded-by` id does not resolve to a claim or synthesis file; when a synthesis input or a basis id references a particular, a merge, or a promotion; when the graph formed by synthesis `inputs` and claim `basis` together contains a cycle; when a claim's `basis` lists the claim's own id (`self_basis`); when a `basis` is an empty list (`empty_basis`); when two particulars share a `uri`; or when a merge record's two URIs are equal.
@@ -70,11 +74,15 @@ Workspace-wide structural, referential, and index-consistency checks with error/
 - **THEN** `validate` reports an `empty_basis` error and exits 4, and the claim is still read
 
 ### Requirement: Index consistency check
-`validate` SHALL report an error with code `index_stale` when `index.yaml` differs from a rebuild, and a warning with code `index_missing` when it is absent.
+In a `dkf/0.1` workspace, `validate` SHALL report an error with code `index_stale` when `index.yaml` differs from a rebuild, and a warning with code `index_missing` when it is absent. In a `dkf/0.2` workspace, until the CLI reads the `dkf/0.2` index, `validate` SHALL NOT compare the index and SHALL report one warning with code `index_unchecked` saying so.
 
 #### Scenario: Stale index
 - **WHEN** a claim file exists that is not in `index.yaml`
 - **THEN** `validate` reports `index_stale`
+
+#### Scenario: A sharded index is not yet checked
+- **WHEN** `validate` runs in a `dkf/0.2` workspace with no other problems
+- **THEN** it reports one `index_unchecked` warning and exits 0
 
 ### Requirement: Advisory warnings
 `validate` SHALL report a warning (not an error) when: a synthesis cites, directly or transitively, a retracted input (`stale_synthesis`); a non-retracted claim cites a retracted object, directly or transitively through `basis` and `inputs` (`stale_claim`); a claim's `basis` lists the same id more than once (`duplicate_basis`) — writers refuse it, but the format does not forbid it, so a hand-written file is warned rather than failed; a particular has no claims and is neither asserted by nor reported from — a particular whose merge class any object's `source.author` or `source.document.author` resolves to is not an orphan (`orphan_particular`); an object file's serialisation differs from the canonical form (`non_canonical`); a synthesis's provenance was read from a legacy `produced-by` block (`legacy_produced_by`); an id parses under the lenient grammar but is not a canonical UUIDv7 (`legacy_id`); a non-retracted merge names a URI with no local particular (`unknown_merge_uri`); two non-retracted merges join the same pair (`duplicate_merge`); a non-retracted promotion covers a retracted object (`promotion_of_retracted`); two non-retracted promotions name the same object at the same scope (`duplicate_promotion`); a non-retracted synthesis has an **effective** scope wider than the effective scope of any input it cites, or a non-retracted inferred claim has an effective scope wider than the effective scope of any basis member (`scope_wider_than_inputs`).
@@ -207,4 +215,46 @@ Workspace-wide structural, referential, and index-consistency checks with error/
 #### Scenario: Documents in their place produce no note
 - **WHEN** a claim states a fact in content and cites the article in `source.document`
 - **THEN** no `url_in_content` is reported
+
+### Requirement: Layout checks
+In a `dkf/0.2` workspace, `validate` SHALL report an error with code `misplaced_file`, naming the file and the path its id derives where the file name is an id, for: a file directly in a type directory; a file in a month directory other than the one its id derives; a file whose id derives no month inside a month directory; a file under `legacy/` whose id derives a month; and a file in a subdirectory that is neither a `YYYY-MM` month nor `legacy`. A misplaced file SHALL NOT be read as an object by any verb. Hidden files and files not ending in `.yaml` SHALL be ignored, as in a `dkf/0.1` workspace.
+
+#### Scenario: A file in the wrong month
+- **WHEN** `claims/2026-08/clm_X.yaml` exists and `clm_X` was minted in September 2026
+- **THEN** `validate` reports `misplaced_file` naming the file and `claims/2026-09/clm_X.yaml`, and `recall`, like every verb that reads the graph, refuses naming the file until it is moved
+
+#### Scenario: A stray top-level file
+- **WHEN** a `dkf/0.2` workspace contains `claims/clm_X.yaml`
+- **THEN** `validate` reports `misplaced_file` naming it and its derived path
+
+#### Scenario: A legacy id in a month directory
+- **WHEN** `claims/2026-08/clm_07m3zp9s2q1r4t8v.yaml` exists
+- **THEN** `validate` reports `misplaced_file` naming `claims/legacy/` as its derived location
+
+#### Scenario: A flat workspace is not checked for shards
+- **WHEN** a `dkf/0.1` workspace has a subdirectory under `claims/`
+- **THEN** its contents are ignored as before and no `misplaced_file` is reported
+
+### Requirement: Time checks
+`validate` SHALL, in either layout, report a warning with code `future_time` naming the object for any id whose UUIDv7 instant is later than the validator's clock and for any object or retraction `timestamp` later than it, and SHALL report an error with code `far_future_id` naming the object for an id whose month is two or more months after the validator's current month. A `future_time` warning SHALL NOT fail validation.
+
+#### Scenario: An id minted on a slightly fast clock
+- **WHEN** an id's UUIDv7 timestamp is two days after the validator's clock
+- **THEN** `validate` warns `future_time` naming the object and exits 0 if nothing else is wrong
+
+#### Scenario: A future retraction timestamp
+- **WHEN** a claim's `retracted.timestamp` is a year after the validator's clock
+- **THEN** `validate` warns `future_time` naming the claim
+
+#### Scenario: An id one month ahead
+- **WHEN** an id's month is the month after the validator's current month
+- **THEN** `validate` warns and does not fail
+
+#### Scenario: A far-future id
+- **WHEN** an id's month is two months after the validator's current month
+- **THEN** `validate` reports `far_future_id` naming the object and exits 4
+
+#### Scenario: Backdated assertions are not future time
+- **WHEN** a claim minted today carries `timestamp: 2023-05-24T00:36:00Z`
+- **THEN** no time finding is reported
 
