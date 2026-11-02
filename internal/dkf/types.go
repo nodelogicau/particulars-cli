@@ -19,9 +19,9 @@ const (
 // declaring any other is refused rather than read in part.
 var ReadFormats = []string{Format01, Format02}
 
-// WriteFormat is the format written to a new workspace's dkf.yaml and to
-// index.yaml. dkf/0.2 is read but not yet written (particulars-cli#11).
-const WriteFormat = Format01
+// WriteFormat is the format written to a new workspace's dkf.yaml unless
+// another is asked for; `particulars migrate` moves a dkf/0.1 workspace to it.
+const WriteFormat = Format02
 
 // Type is a DKF object type.
 type Type string

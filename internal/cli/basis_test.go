@@ -55,12 +55,11 @@ func TestClaimAssertBasis(t *testing.T) {
 		{"label", []string{"--evidential", "inferred", "--basis", "Project X"}, 2},
 		{"duplicate", []string{"--evidential", "inferred", "--basis", a, "--basis", a}, 2},
 	} {
-		before, _ := os.ReadDir(filepath.Join(dir, "claims"))
+		before := objectFiles(filepath.Join(dir, "claims"))
 		if r := inferred(tc.args...); r.code != tc.code {
 			t.Errorf("%s: exit %d, want %d (%s)", tc.name, r.code, tc.code, r.stderr)
 		}
-		after, _ := os.ReadDir(filepath.Join(dir, "claims"))
-		if len(after) != len(before) {
+		if after := objectFiles(filepath.Join(dir, "claims")); after != before {
 			t.Errorf("%s: a refused basis must write nothing", tc.name)
 		}
 	}

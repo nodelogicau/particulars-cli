@@ -20,7 +20,9 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	w, err := store.Init(filepath.Join(t.TempDir(), "ws"), store.NewConfig())
+	cfg := store.NewConfig()
+	cfg.Format = dkf.Format01 // a fixture with fixed past dates; the layout has its own tests (store/sharded_test.go)
+	w, err := store.Init(filepath.Join(t.TempDir(), "ws"), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +17,6 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/nodelogicau/particulars-cli/internal/dkf"
 	"github.com/nodelogicau/particulars-cli/internal/query"
 	"github.com/nodelogicau/particulars-cli/internal/store"
 )
@@ -25,6 +25,19 @@ type harness struct {
 	t  *testing.T
 	ws *store.Workspace
 	cs *sdk.ClientSession
+}
+
+// objectFiles counts the object files under a type directory in either
+// layout, so "nothing was written" is checked rather than assumed.
+func objectFiles(dir string) int {
+	n := 0
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".yaml") {
+			n++
+		}
+		return nil
+	})
+	return n
 }
 
 func newHarness(t *testing.T, clientName string, author string) *harness {
@@ -283,9 +296,8 @@ func TestParallelAssertsKeepIndexClean(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	entries, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims"))
-	if len(entries) != 20 {
-		t.Errorf("expected 20 claims, got %d", len(entries))
+	if n := objectFiles(filepath.Join(h.ws.Root, "claims")); n != 20 {
+		t.Errorf("expected 20 claims, got %d", n)
 	}
 	if d, _ := h.ws.CheckIndex(); !d.Clean() {
 		t.Errorf("index not clean: %+v", d)
@@ -467,11 +479,11 @@ func TestClaimAssertQuoteWarning(t *testing.T) {
 		t.Errorf("expected a quote warning, got %v", r["warnings"])
 	}
 	// A blank quote is refused on write, as the CLI refuses --quote "   ".
-	before, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims"))
+	before := objectFiles(filepath.Join(h.ws.Root, "claims"))
 	if _, isErr, text := h.call("claim_assert", doc("\n\t")); !isErr || !strings.Contains(text, "source.document.quote is blank") {
 		t.Errorf("a blank quote should be a usage error: %v %q", isErr, text)
 	}
-	if after, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims")); len(after) != len(before) {
+	if objectFiles(filepath.Join(h.ws.Root, "claims")) != before {
 		t.Error("a refused claim must not be written")
 	}
 }
@@ -564,7 +576,7 @@ func TestSourceShorthand(t *testing.T) {
 		t.Errorf("mapping + shorthand: %v", d)
 	}
 
-	before, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims"))
+	before := objectFiles(filepath.Join(h.ws.Root, "claims"))
 	for _, c := range []struct {
 		src  map[string]any
 		want string
@@ -581,7 +593,7 @@ func TestSourceShorthand(t *testing.T) {
 			t.Errorf("%v: %q, want %q", c.src, text, c.want)
 		}
 	}
-	if after, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims")); len(after) != len(before) {
+	if objectFiles(filepath.Join(h.ws.Root, "claims")) != before {
 		t.Error("a refused claim must not be written")
 	}
 
@@ -680,7 +692,7 @@ func TestTopLevelSource(t *testing.T) {
 		t.Errorf("top-level harness and model: %v", s)
 	}
 
-	before, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims"))
+	before := objectFiles(filepath.Join(h.ws.Root, "claims"))
 	for _, c := range []struct {
 		args map[string]any
 		want string
@@ -697,7 +709,7 @@ func TestTopLevelSource(t *testing.T) {
 			t.Errorf("%v: %q, want %q", c.args, text, c.want)
 		}
 	}
-	if after, _ := os.ReadDir(filepath.Join(h.ws.Root, "claims")); len(after) != len(before) {
+	if objectFiles(filepath.Join(h.ws.Root, "claims")) != before {
 		t.Error("a refused claim must not be written")
 	}
 
@@ -864,22 +876,8 @@ func TestShardedWorkspaceWritesOverMCP(t *testing.T) {
 	h := newHarness(t, "claude-ai", "ben")
 	h.ok("particular_define", map[string]any{"label": "Billing"})
 	cid := id(h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443"}), "claim")
-	// Move every file to its month and flip the format, as migration will.
-	for _, td := range []string{"particulars", "claims"} {
-		entries, _ := os.ReadDir(filepath.Join(h.ws.Root, td))
-		for _, e := range entries {
-			month, _ := dkf.MonthOf(strings.TrimSuffix(e.Name(), ".yaml"))
-			if err := os.MkdirAll(filepath.Join(h.ws.Root, td, month), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Rename(filepath.Join(h.ws.Root, td, e.Name()), filepath.Join(h.ws.Root, td, month, e.Name())); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	h.ws.Config.Format = "dkf/0.2"
-	if _, err := h.ws.RebuildIndex(); err != nil {
-		t.Fatal(err)
+	if !h.ws.Sharded() {
+		t.Fatal("init should create a dkf/0.2 workspace")
 	}
 	for _, c := range []struct {
 		tool string

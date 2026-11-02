@@ -598,6 +598,7 @@ func (w *Workspace) checkSharded() (IndexDiff, error) {
 		if seg.Path != LegacyIndex && seg.Count == len(files[seg.Path]) {
 			if _, err := os.Stat(filepath.Join(w.Root, filepath.FromSlash(seg.Path))); err != nil {
 				d.SegmentsMissing = append(d.SegmentsMissing, seg.Path)
+				missingDoc(&d, want.Docs[seg.Path])
 			}
 			continue // a matching count: no file arrived; not parsed
 		}
@@ -606,6 +607,7 @@ func (w *Workspace) checkSharded() (IndexDiff, error) {
 	for rel := range want.Docs {
 		if _, ok := committedRefs[rel]; !ok {
 			d.SegmentsMissing = append(d.SegmentsMissing, rel)
+			missingDoc(&d, want.Docs[rel])
 		}
 	}
 	got := map[string]*Index{}
@@ -614,6 +616,7 @@ func (w *Workspace) checkSharded() (IndexDiff, error) {
 		doc, _, err := w.readDoc(rel)
 		if err != nil {
 			d.SegmentsMissing = append(d.SegmentsMissing, rel)
+			missingDoc(&d, want.Docs[rel])
 			continue
 		}
 		got[rel] = doc
@@ -657,6 +660,15 @@ func (w *Workspace) checkSharded() (IndexDiff, error) {
 		sort.Strings(l)
 	}
 	return d, nil
+}
+
+// missingDoc records everything an absent document should hold, so a
+// missing segment names its objects rather than only its path.
+func missingDoc(d *IndexDiff, want *Index) {
+	for _, e := range want.Entries {
+		d.Missing = append(d.Missing, e.ID)
+	}
+	d.RetractedMissing = append(d.RetractedMissing, want.Retracted...)
 }
 
 // compareDocs records how a committed document differs from its rebuild:
