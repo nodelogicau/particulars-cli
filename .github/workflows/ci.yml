@@ -63,6 +63,25 @@ jobs:
           test -x /tmp/mcpb/server/darwin/particulars && test -s /tmp/mcpb/server/win32/particulars.exe
           python3 -c "import json;json.load(open('/tmp/mcpb/manifest.json'))"
 
+  plugin:
+    name: Plugin package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # build-plugin.sh validates the manifest and contents before zipping, so
+      # a green build is most of the assertion; this checks the skill is the
+      # binary's own.
+      - run: make build VERSION=v0.0.0-ci && PARTICULARS_BIN=dist/particulars make plugin VERSION=v0.0.0-ci
+      - name: Packaged skill matches skill show
+        run: |
+          mkdir -p /tmp/plugin && unzip -q dist/particulars-0.0.0-ci-plugin.zip -d /tmp/plugin
+          dist/particulars skill show | diff - /tmp/plugin/skills/particulars/SKILL.md
+          test ! -e /tmp/plugin/mcp.json
+
   cross:
     name: Cross-compile
     runs-on: ubuntu-latest

@@ -37,6 +37,12 @@
 - **An unsupported `format` is reported as `unsupported_format`**, naming the
   value and the formats this release reads, instead of under `parse_error`.
   `version` now reports `reads` beside the `format` it writes.
+- **A plugin package for ChatGPT desktop and Codex.** Releases now attach
+  `particulars-<version>-plugin.zip`, an Agent Plugins package that is skills
+  only: the embedded skill, rendered by the release binary, plus a `setup`
+  skill that checks for the binary and a workspace on first run. It is marked
+  Desktop only (`requires_local_executor`) and ships no server or binary. Built
+  with `make plugin`; see [docs/plugin.md](docs/plugin.md).
 
 ## v0.19.0 — one set of flat arguments, and documents that merge
 
