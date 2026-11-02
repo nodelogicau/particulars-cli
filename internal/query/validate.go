@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -67,8 +68,21 @@ const (
 	CodeNonCanonical     = "non_canonical"
 	CodeLegacyProducedBy = "legacy_produced_by"
 	CodeLegacyID         = "legacy_id"
-	CodeUnknownMergeURI  = "unknown_merge_uri"
-	CodeDuplicateMerge   = "duplicate_merge"
+	// CodeUnsupportedFormat: dkf.yaml declares a format this release does
+	// not read. CodeMisplacedFile: a dkf/0.2 file that is not where its id
+	// derives (reported by store.Load). CodeIndexUnchecked: the dkf/0.2 index
+	// is not yet read, so validate did not compare it.
+	CodeUnsupportedFormat = "unsupported_format"
+	CodeMisplacedFile     = "misplaced_file"
+	CodeIndexUnchecked    = "index_unchecked"
+	// CodeFutureTime: an id instant or timestamp after the validator's
+	// clock — a warning, since either clock may be wrong. CodeFarFutureID: an
+	// id two or more months ahead, which would seal the month correct writers
+	// mint into; the place to catch it is a pull-request check.
+	CodeFutureTime      = "future_time"
+	CodeFarFutureID     = "far_future_id"
+	CodeUnknownMergeURI = "unknown_merge_uri"
+	CodeDuplicateMerge  = "duplicate_merge"
 	// CodePromotionOfRetracted: a live promotion covers a withdrawn object. It
 	// grants nothing, but it usually means the retraction came after.
 	CodePromotionOfRetracted = "promotion_of_retracted"
@@ -457,8 +471,22 @@ func Validate(w *store.Workspace) (Findings, error) {
 		add(SeverityError, g.Files[id], CodeCycle, fmt.Sprintf("%s participates in a cycle of inputs or basis", id))
 	}
 
+	// Time the validator cannot have seen.
+	now := Now().UTC()
+	for _, obj := range g.Objects() {
+		path := g.Files[obj.ObjectID()]
+		for _, f := range timeFindings(obj, now) {
+			add(f.sev, path, f.code, f.msg)
+		}
+	}
+
 	// Index consistency.
 	diff, err := w.CheckIndex()
+	if errors.Is(err, store.ErrReadOnlyFormat) {
+		add(SeverityWarning, store.IndexFile, CodeIndexUnchecked, "the dkf/0.2 index is not checked: this release reads dkf/0.2 objects but not its index yet (particulars-cli#11)")
+		sortFindings(fs)
+		return fs, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -468,12 +496,7 @@ func Validate(w *store.Workspace) (Findings, error) {
 		add(SeverityError, store.IndexFile, CodeIndexStale, fmt.Sprintf("index.yaml differs from a rebuild (missing %d, extra %d, changed %d); run `particulars index`", len(diff.Missing), len(diff.Extra), len(diff.Changed)))
 	}
 
-	sort.SliceStable(fs, func(i, j int) bool {
-		if fs[i].Path != fs[j].Path {
-			return fs[i].Path < fs[j].Path
-		}
-		return fs[i].Code < fs[j].Code
-	})
+	sortFindings(fs)
 	return fs, nil
 }
 
@@ -549,4 +572,65 @@ func hasAliasOrAnchor(data []byte) bool {
 		return false
 	}
 	return walk(&n)
+}
+
+// sortFindings orders findings by path, then code, keeping report order within each.
+func sortFindings(fs Findings) {
+	sort.SliceStable(fs, func(i, j int) bool {
+		if fs[i].Path != fs[j].Path {
+			return fs[i].Path < fs[j].Path
+		}
+		return fs[i].Code < fs[j].Code
+	})
+}
+
+// Now is the validator's clock; tests replace it.
+var Now = time.Now
+
+type timeFinding struct{ sev, code, msg string }
+
+// timeFindings reports time obj carries that the validator cannot have seen:
+// an id instant or a timestamp after now warns, and an id whose month is two
+// or more months after now's fails, because accepting it would seal the
+// month every correct writer is minting into.
+func timeFindings(obj dkf.Object, now time.Time) []timeFinding {
+	var out []timeFinding
+	var ahead []string
+	if minted, ok := dkf.MintedAt(obj.ObjectID()); ok {
+		if months(minted)-months(now) >= 2 {
+			out = append(out, timeFinding{SeverityError, CodeFarFutureID, fmt.Sprintf("id %s was minted in %s, two or more months after this validator's clock (%s); it would seal the months writers are minting into", obj.ObjectID(), minted.Format("2006-01"), now.Format("2006-01-02"))})
+		} else if minted.After(now) {
+			ahead = append(ahead, "id ("+minted.Format(time.RFC3339)+")")
+		}
+	}
+	if ts, ok := objectTimestamp(obj); ok && ts.After(now) {
+		ahead = append(ahead, "timestamp ("+ts.UTC().Format(time.RFC3339)+")")
+	}
+	if r, ok := obj.(dkf.Retractable); ok && r.GetRetracted() != nil && r.GetRetracted().Timestamp.After(now) {
+		ahead = append(ahead, "retracted.timestamp ("+r.GetRetracted().Timestamp.UTC().Format(time.RFC3339)+")")
+	}
+	if len(ahead) > 0 {
+		out = append(out, timeFinding{SeverityWarning, CodeFutureTime, fmt.Sprintf("%s is later than this validator's clock (%s); one of the two clocks is wrong", strings.Join(ahead, ", "), now.Format(time.RFC3339))})
+	}
+	return out
+}
+
+// months counts calendar months, so the difference of two is how many month
+// boundaries lie between them.
+func months(t time.Time) int {
+	t = t.UTC()
+	return t.Year()*12 + int(t.Month())
+}
+
+// objectTimestamp returns an object's own timestamp; particulars carry none.
+func objectTimestamp(obj dkf.Object) (time.Time, bool) {
+	switch o := obj.(type) {
+	case dkf.Assertion:
+		return o.GetTimestamp(), true
+	case *dkf.Merge:
+		return o.Timestamp, true
+	case *dkf.Promotion:
+		return o.Timestamp, true
+	}
+	return time.Time{}, false
 }

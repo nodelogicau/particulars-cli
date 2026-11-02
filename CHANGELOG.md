@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **Reads `dkf/0.2` workspaces; still writes `dkf/0.1` (#11, stage 1).** DKF
+  v0.2 shards every type directory by the month each id was minted
+  (`claims/2026-11/clm_….yaml`, `legacy/` for ids that are not UUIDv7). The
+  CLI now reads that layout when `dkf.yaml` declares it — every read verb and
+  MCP read tool works — and `validate` reports a file outside its derived
+  month as `misplaced_file`. **A `dkf/0.2` workspace is read-only in this
+  release**: every write, `index`, and `index --check` refuse with
+  `read_only_format`, and `validate` warns `index_unchecked` rather than
+  comparing an index it cannot read yet. Nothing writes `dkf/0.2` until the
+  index writer and `migrate` land.
+- **`validate` checks time it cannot have seen.** In either layout, an id or
+  timestamp later than the validator's clock warns (`future_time`), and an id
+  two or more months ahead fails (`far_future_id`). A date-only timestamp for
+  "today" written as midnight UTC can warn for a few hours east of UTC; that is
+  the warning working, not a defect.
+- **An unsupported `format` is reported as `unsupported_format`**, naming the
+  value and the formats this release reads, instead of under `parse_error`.
+  `version` now reports `reads` beside the `format` it writes.
+
 ## v0.19.0 — one set of flat arguments, and documents that merge
 
 - **`synthesis_create` takes the same top-level shorthand as `claim_assert`,

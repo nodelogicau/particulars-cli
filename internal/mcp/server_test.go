@@ -16,6 +16,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/nodelogicau/particulars-cli/internal/dkf"
 	"github.com/nodelogicau/particulars-cli/internal/query"
 	"github.com/nodelogicau/particulars-cli/internal/store"
 )
@@ -855,4 +856,41 @@ func TestInstructionsMapCommandsToTools(t *testing.T) {
 	if !reflect.DeepEqual(registered, mapped) {
 		t.Errorf("registered tools %v, mapped %v", registered, mapped)
 	}
+}
+
+// In a dkf/0.2 workspace the MCP write tools refuse like the CLI verbs, and
+// the read tools still answer.
+func TestShardedWorkspaceIsReadOnlyOverMCP(t *testing.T) {
+	h := newHarness(t, "claude-ai", "ben")
+	h.ok("particular_define", map[string]any{"label": "Billing"})
+	cid := id(h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443"}), "claim")
+	// Move every file to its month and flip the format, as migration will.
+	for _, td := range []string{"particulars", "claims"} {
+		entries, _ := os.ReadDir(filepath.Join(h.ws.Root, td))
+		for _, e := range entries {
+			month, _ := dkf.MonthOf(strings.TrimSuffix(e.Name(), ".yaml"))
+			if err := os.MkdirAll(filepath.Join(h.ws.Root, td, month), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(filepath.Join(h.ws.Root, td, e.Name()), filepath.Join(h.ws.Root, td, month, e.Name())); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	h.ws.Config.Format = "dkf/0.2"
+	for _, c := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"particular_define", map[string]any{"label": "New"}},
+		{"claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "x"}},
+		{"claim_retract", map[string]any{"claim_id": cid, "reason": "r"}},
+		{"synthesis_create", map[string]any{"particular_id": "Billing", "content": "s", "unresolved": "None identified", "inputs": []map[string]any{{"id": cid, "role": "thesis"}}}},
+		{"knowledge_publish", map[string]any{"claim_ids": []string{cid}, "scope": "public"}},
+	} {
+		if text := h.fail(c.tool, c.args, "read_only_format"); !strings.Contains(text, "particulars-cli#11") {
+			t.Errorf("%s: %q should name particulars-cli#11", c.tool, text)
+		}
+	}
+	h.ok("knowledge_recall", map[string]any{"query": "443"})
 }

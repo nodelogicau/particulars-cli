@@ -47,6 +47,12 @@ var (
 	ErrAlreadyExists    = errors.New("already exists")
 	ErrAlreadyRetracted = errors.New("already retracted")
 	ErrInvalidBaseURI   = errors.New("invalid base-uri")
+	// ErrUnsupportedFormat marks a dkf.yaml whose format this release does
+	// not read.
+	ErrUnsupportedFormat = errors.New("unsupported format")
+	// ErrReadOnlyFormat refuses a write in a workspace whose format this
+	// release reads but does not write.
+	ErrReadOnlyFormat = errors.New("this release reads dkf/0.2 but does not write it yet (particulars-cli#11)")
 )
 
 // Workspace is an opened DKF directory.
@@ -224,7 +230,7 @@ func Init(dir string, cfg Config) (*Workspace, error) {
 		return nil, err
 	}
 	w := &Workspace{Root: abs, Config: cfg}
-	if err := w.WriteIndex(&Index{Format: dkf.FormatVersion}); err != nil {
+	if err := w.WriteIndex(&Index{Format: dkf.WriteFormat}); err != nil {
 		return nil, err
 	}
 	return w, nil
@@ -249,14 +255,46 @@ func dirFor(t dkf.Type) string {
 	return ""
 }
 
+// Sharded reports whether the workspace uses the dkf/0.2 layout. It is the
+// one place the layout is decided: from dkf.yaml's format, never from what
+// the directories happen to contain.
+func (w *Workspace) Sharded() bool { return w.Config.Format == dkf.Format02 }
+
+// shard is the directory under a type directory that id belongs in, in a
+// sharded workspace: its minting month, or legacy when none derives.
+func shard(id string) string {
+	if m, ok := dkf.MonthOf(id); ok {
+		return m
+	}
+	return LegacyShard
+}
+
+// LegacyShard holds, in a sharded workspace, objects whose ids carry no
+// minting month.
+const LegacyShard = "legacy"
+
+// writable refuses a write in a workspace this release reads but does not
+// write. It runs before anything touches the disk.
+func (w *Workspace) writable() error {
+	if w.Sharded() {
+		return ErrReadOnlyFormat
+	}
+	return nil
+}
+
 // Dir returns the absolute directory holding objects of type t.
 func (w *Workspace) Dir(t dkf.Type) string { return filepath.Join(w.Root, dirFor(t)) }
 
-// Path returns the file path for an object id, deriving the directory from the prefix.
+// Path returns the file path for an object id, derived from the id alone:
+// the type directory from its prefix and, in a sharded workspace, the month
+// directory from its UUIDv7 instant.
 func (w *Workspace) Path(id string) (string, error) {
 	t, err := dkf.TypeOfID(id)
 	if err != nil {
 		return "", err
+	}
+	if w.Sharded() {
+		return filepath.Join(w.Dir(t), shard(id), id+".yaml"), nil
 	}
 	return filepath.Join(w.Dir(t), id+".yaml"), nil
 }
@@ -318,6 +356,9 @@ func (w *Workspace) ReadAssertion(id string) (dkf.Assertion, error) {
 // Create validates and writes a new object file with create-exclusive
 // semantics, creating the type directory if needed. It never overwrites.
 func (w *Workspace) Create(obj dkf.Object) error {
+	if err := w.writable(); err != nil {
+		return err
+	}
 	if ps := dkf.ValidateObject(obj); len(ps) > 0 {
 		return ps
 	}
@@ -338,6 +379,9 @@ func (w *Workspace) Create(obj dkf.Object) error {
 // WriteParticular rewrites a particular file. Particulars are the only
 // mutable object type ("create or update" in the spec).
 func (w *Workspace) WriteParticular(p *dkf.Particular) error {
+	if err := w.writable(); err != nil {
+		return err
+	}
 	if ps := dkf.ValidateParticular(p); len(ps) > 0 {
 		return ps
 	}
@@ -359,6 +403,9 @@ func (w *Workspace) WriteParticular(p *dkf.Particular) error {
 // file without altering existing bytes, re-parses to confirm validity, and
 // restores the original on failure. Returns the updated object.
 func (w *Workspace) Retract(id string, r *dkf.Retracted) (dkf.Retractable, error) {
+	if err := w.writable(); err != nil {
+		return nil, err
+	}
 	if ps := dkf.ValidateRetracted(r); len(ps) > 0 {
 		return nil, ps
 	}

@@ -229,7 +229,7 @@ func EntryFor(obj dkf.Object) Entry {
 
 // BuildIndex derives a complete index from a loaded graph.
 func BuildIndex(g *Graph) *Index {
-	idx := &Index{Format: dkf.FormatVersion, Entries: []Entry{}}
+	idx := &Index{Format: dkf.WriteFormat, Entries: []Entry{}}
 	for _, obj := range g.Objects() {
 		idx.Entries = append(idx.Entries, EntryFor(obj))
 	}
@@ -343,6 +343,9 @@ func (w *Workspace) ReadIndex() (*Index, []byte, error) {
 
 // WriteIndex writes the index atomically.
 func (w *Workspace) WriteIndex(idx *Index) error {
+	if err := w.writable(); err != nil {
+		return err
+	}
 	data, err := EncodeIndex(idx)
 	if err != nil {
 		return err
@@ -354,6 +357,9 @@ func (w *Workspace) WriteIndex(idx *Index) error {
 // existing content. Files that fail to load are skipped (they are reported by
 // validate) so a rebuild always succeeds on an otherwise readable tree.
 func (w *Workspace) RebuildIndex() (*Index, error) {
+	if err := w.writable(); err != nil {
+		return nil, err
+	}
 	g, err := w.Load()
 	if err != nil {
 		return nil, err
@@ -391,7 +397,7 @@ func (w *Workspace) UpsertIndex(obj dkf.Object) error {
 		_, err = w.RebuildIndex()
 		return err
 	}
-	idx.Format = dkf.FormatVersion
+	idx.Format = dkf.WriteFormat
 	idx.Upsert(EntryFor(obj))
 	return w.WriteIndex(idx)
 }
@@ -414,6 +420,11 @@ func (d IndexDiff) Clean() bool {
 // CheckIndex compares the committed index with a fresh rebuild without writing.
 // A missing index is reported as every entry missing.
 func (w *Workspace) CheckIndex() (IndexDiff, error) {
+	// The dkf/0.2 index is a root plus sealed segments; this release does
+	// not read it, so it neither compares nor reports one as drift.
+	if w.Sharded() {
+		return IndexDiff{}, ErrReadOnlyFormat
+	}
 	g, err := w.Load()
 	if err != nil {
 		return IndexDiff{}, err

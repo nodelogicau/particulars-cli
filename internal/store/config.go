@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -46,7 +47,7 @@ type Defaults struct {
 // NewConfig returns a config for a fresh workspace with a minted id.
 func NewConfig() Config {
 	return Config{
-		Format:    dkf.FormatVersion,
+		Format:    dkf.WriteFormat,
 		Workspace: WorkspaceConfig{ID: dkf.NewUUID()},
 		Defaults:  Defaults{Scope: dkf.ScopePersonal},
 	}
@@ -57,8 +58,8 @@ func (c Config) Validate() error {
 	if c.Format == "" {
 		return fmt.Errorf("%s: missing format", ConfigFile)
 	}
-	if c.Format != dkf.FormatVersion {
-		return fmt.Errorf("%s: unsupported format %q (want %s)", ConfigFile, c.Format, dkf.FormatVersion)
+	if !slices.Contains(dkf.ReadFormats, c.Format) {
+		return fmt.Errorf("%s: %w %q (this release reads %s)", ConfigFile, ErrUnsupportedFormat, c.Format, strings.Join(dkf.ReadFormats, ", "))
 	}
 	if c.Workspace.ID == "" {
 		return fmt.Errorf("%s: missing workspace.id", ConfigFile)
