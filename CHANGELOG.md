@@ -2,16 +2,23 @@
 
 ## Unreleased
 
-- **Reads `dkf/0.2` workspaces; still writes `dkf/0.1` (#11, stage 1).** DKF
-  v0.2 shards every type directory by the month each id was minted
-  (`claims/2026-11/clm_….yaml`, `legacy/` for ids that are not UUIDv7). The
-  CLI now reads that layout when `dkf.yaml` declares it — every read verb and
-  MCP read tool works — and `validate` reports a file outside its derived
-  month as `misplaced_file`. **A `dkf/0.2` workspace is read-only in this
-  release**: every write, `index`, and `index --check` refuse with
-  `read_only_format`, and `validate` warns `index_unchecked` rather than
-  comparing an index it cannot read yet. Nothing writes `dkf/0.2` until the
-  index writer and `migrate` land.
+- **Works in `dkf/0.2` workspaces (#11, stages 1 and 2).** DKF v0.2 shards
+  every type directory by the month each id was minted
+  (`claims/2026-11/clm_….yaml`, `legacy/` for ids that are not UUIDv7), and
+  cuts the index into a root holding the two open months plus one sealed
+  segment per earlier month (`index/2026-08.yaml`, listed in the root with a
+  `count`). When `dkf.yaml` declares `dkf/0.2`, every verb and MCP tool now
+  reads and writes that layout: a write touches only the root (or
+  `index/legacy.yaml`), and the first mint of a month seals the month before
+  last into its segment. A sealed segment is never rewritten — not even by
+  `particulars index`, which reports one that differs and exits 4.
+  `index --check` compares sealed months by count and parses a segment only
+  when its count differs; `validate` adds `misplaced_file`, `late_merge` (a
+  file merged into a sealed month: re-mint it on its branch), and
+  `sealed_retraction` (a retraction dated into a sealed month). Minting or
+  retracting into a sealed month is refused with `sealed_month`, which only a
+  clock more than a month slow can reach. `init` still writes `dkf/0.1`;
+  `migrate` is the next stage.
 - **`validate` checks time it cannot have seen.** In either layout, an id or
   timestamp later than the validator's clock warns (`future_time`), and an id
   two or more months ahead fails (`far_future_id`). A date-only timestamp for

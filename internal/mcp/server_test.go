@@ -858,9 +858,9 @@ func TestInstructionsMapCommandsToTools(t *testing.T) {
 	}
 }
 
-// In a dkf/0.2 workspace the MCP write tools refuse like the CLI verbs, and
-// the read tools still answer.
-func TestShardedWorkspaceIsReadOnlyOverMCP(t *testing.T) {
+// In a dkf/0.2 workspace every MCP write tool works and leaves the index
+// equal to a rebuild.
+func TestShardedWorkspaceWritesOverMCP(t *testing.T) {
 	h := newHarness(t, "claude-ai", "ben")
 	h.ok("particular_define", map[string]any{"label": "Billing"})
 	cid := id(h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443"}), "claim")
@@ -878,18 +878,22 @@ func TestShardedWorkspaceIsReadOnlyOverMCP(t *testing.T) {
 		}
 	}
 	h.ws.Config.Format = "dkf/0.2"
+	if _, err := h.ws.RebuildIndex(); err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range []struct {
 		tool string
 		args map[string]any
 	}{
 		{"particular_define", map[string]any{"label": "New"}},
 		{"claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "x"}},
-		{"claim_retract", map[string]any{"claim_id": cid, "reason": "r"}},
 		{"synthesis_create", map[string]any{"particular_id": "Billing", "content": "s", "unresolved": "None identified", "inputs": []map[string]any{{"id": cid, "role": "thesis"}}}},
 		{"knowledge_publish", map[string]any{"claim_ids": []string{cid}, "scope": "public"}},
+		{"claim_retract", map[string]any{"claim_id": cid, "reason": "r"}},
 	} {
-		if text := h.fail(c.tool, c.args, "read_only_format"); !strings.Contains(text, "particulars-cli#11") {
-			t.Errorf("%s: %q should name particulars-cli#11", c.tool, text)
+		h.ok(c.tool, c.args)
+		if d, err := h.ws.CheckIndex(); err != nil || !d.Clean() {
+			t.Fatalf("after %s the index is stale: %+v %v", c.tool, d, err)
 		}
 	}
 	h.ok("knowledge_recall", map[string]any{"query": "443"})
