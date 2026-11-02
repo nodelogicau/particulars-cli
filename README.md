@@ -172,6 +172,11 @@ Reasoning, numbers, and the cases that do favour the server:
 
 Details, tool table, and client configs: [`docs/mcp.md`](docs/mcp.md).
 
+**ChatGPT desktop and Codex** install `particulars-<version>-plugin.zip` from the
+releases page: an Agent Plugins package carrying this skill and a setup skill,
+with no server inside. It needs the binary installed separately and runs only in
+threads that execute locally. See [`docs/plugin.md`](docs/plugin.md).
+
 **Microsoft 365 Copilot** is a different case again: it runs in Microsoft's cloud
 and cannot reach a local server at all. There, merged knowledge is *exported* into
 Microsoft Graph, where it is indexed and cited — `particulars export --format graph`,

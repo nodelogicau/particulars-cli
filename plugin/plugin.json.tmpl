@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "particulars",
+  "version": "__VERSION__",
+  "description": "Capture and recall knowledge as claims and syntheses in a DKF workspace, using the particulars CLI. Reviewed by humans through git.",
+  "author": { "name": "NodeLogic", "url": "https://github.com/nodelogicau" },
+  "homepage": "https://github.com/nodelogicau/particulars-cli",
+  "repository": "https://github.com/nodelogicau/particulars-cli",
+  "license": "MIT",
+  "keywords": ["knowledge", "dkf", "claims", "synthesis", "memory"],
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "onboardingSkill": "./skills/setup/SKILL.md",
+      "interface": {
+        "displayName": "particulars",
+        "shortDescription": "Dialectical knowledge you review through git",
+        "longDescription": "particulars stores what an assistant learns as YAML files — particulars, claims, and syntheses — in a Dialectical Knowledge Format workspace. Contradiction is preserved rather than overwritten; every claim carries provenance; a human reviews the files, typically as a pull request. The plugin teaches the assistant to drive the particulars CLI, which must be installed separately.",
+        "category": "Productivity",
+        "logo": "./assets/icon.png"
+      }
+    }
+  }
+}

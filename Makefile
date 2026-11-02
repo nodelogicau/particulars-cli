@@ -6,7 +6,7 @@ DIST    := dist
 
 export CGO_ENABLED := 0
 
-.PHONY: all build test lint fmt vet cross clean tidy skill bundle bench-scale
+.PHONY: all build test lint fmt vet cross clean tidy skill bundle plugin bench-scale
 
 all: build
 
@@ -54,6 +54,10 @@ skill:
 # Claude Desktop extension (.mcpb) from the cross-compiled binaries.
 bundle: cross
 	sh scripts/build-bundle.sh $(VERSION) $(DIST)
+
+# ChatGPT desktop / Codex plugin (skills only; no binaries inside).
+plugin:
+	sh scripts/build-plugin.sh $(VERSION) $(DIST)
 
 clean:
 	rm -rf $(DIST)
