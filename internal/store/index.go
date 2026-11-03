@@ -260,8 +260,12 @@ func EntryFor(obj dkf.Object) Entry {
 }
 
 // BuildIndex derives a complete index from a loaded graph.
+//
+// It is the flat index, so its format is dkf/0.1 whatever init now writes: a
+// flat document stamped dkf/0.2 would claim a layout the workspace does not
+// have. BuildSharded is the dkf/0.2 counterpart.
 func BuildIndex(g *Graph) *Index {
-	idx := &Index{Format: dkf.WriteFormat, Entries: []Entry{}}
+	idx := &Index{Format: dkf.Format01, Entries: []Entry{}}
 	for _, obj := range g.Objects() {
 		idx.Entries = append(idx.Entries, EntryFor(obj))
 	}
@@ -464,7 +468,7 @@ func (w *Workspace) UpsertIndex(obj dkf.Object) error {
 		_, err = w.RebuildIndex()
 		return err
 	}
-	idx.Format = dkf.WriteFormat
+	idx.Format = dkf.Format01
 	idx.Upsert(EntryFor(obj))
 	return w.WriteIndex(idx)
 }
