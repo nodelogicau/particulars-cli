@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **`migrate` says to restart a running MCP server.** `particulars serve
+  --mcp` reads `dkf.yaml` once at startup, so a server left running across a
+  migration still sees the flat layout and reports an empty workspace. The
+  migration's output and the README now say to restart it — for Claude
+  Desktop, quit it fully.
+
 ## v0.20.1 — a dkf/0.1 index stays dkf/0.1
 
 - **Fix: a `dkf/0.1` workspace keeps a `dkf/0.1` index.** v0.20.0 stamped
