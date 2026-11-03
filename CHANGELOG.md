@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.20.1 — a dkf/0.1 index stays dkf/0.1
 
 - **Fix: a `dkf/0.1` workspace keeps a `dkf/0.1` index.** v0.20.0 stamped
   the flat `index.yaml` with `format: dkf/0.2` — the format `init` now writes —
