@@ -896,3 +896,36 @@ func TestShardedWorkspaceWritesOverMCP(t *testing.T) {
 	}
 	h.ok("knowledge_recall", map[string]any{"query": "443"})
 }
+
+// The MCP server writing to a dkf/0.1 workspace keeps its index dkf/0.1 —
+// the path Claude Desktop's extension takes. v0.20.0 stamped the flat index
+// dkf/0.2 here.
+func TestFlatWorkspaceIndexOverMCP(t *testing.T) {
+	cfg := store.NewConfig()
+	cfg.Format = "dkf/0.1"
+	cfg.Defaults.Source.Author = "ben"
+	ws, err := store.Init(filepath.Join(t.TempDir(), "kb"), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := New(Options{Workspace: ws, Version: "test"})
+	st, ct := sdk.NewInMemoryTransports()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = srv.Run(ctx, st) }()
+	cs, err := sdk.NewClient(&sdk.Implementation{Name: "claude-ai", Version: "1"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	h := &harness{t: t, ws: ws, cs: cs}
+	h.ok("particular_define", map[string]any{"label": "Billing"})
+	cid := id(h.ok("claim_assert", map[string]any{"evidential": "observed", "particular_id": "Billing", "content": "443"}), "claim")
+	h.ok("claim_retract", map[string]any{"claim_id": cid, "reason": "r"})
+	if b, _ := os.ReadFile(ws.IndexPath()); !strings.HasPrefix(string(b), "format: dkf/0.1\n") {
+		t.Errorf("an MCP write rewrote the flat index's format:\n%.80s", b)
+	}
+	if d, err := ws.CheckIndex(); err != nil || !d.Clean() {
+		t.Errorf("index after MCP writes: %+v %v", d, err)
+	}
+}
