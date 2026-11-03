@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Fix: a `dkf/0.1` workspace keeps a `dkf/0.1` index.** v0.20.0 stamped
+  the flat `index.yaml` with `format: dkf/0.2` — the format `init` now writes —
+  so in any workspace still on `dkf/0.1`, every write rewrote its index
+  claiming a layout it does not have, and `index --check` and `validate`
+  reported an index written by an earlier binary as stale ("formatting
+  differs"). The flat index is always `dkf/0.1` again. A `dkf/0.1` workspace
+  already written by v0.20.0 is repaired by `particulars index`.
+
 ## v0.20.0 — dkf/0.2: sharded by month, and a plugin for ChatGPT and Codex
 
 - **`particulars migrate` moves a workspace to `dkf/0.2` (#11).** It rewrites

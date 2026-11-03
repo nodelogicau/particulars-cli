@@ -327,3 +327,32 @@ func TestShardedSealedMonthRefusal(t *testing.T) {
 		t.Error("a refused mint created a month directory")
 	}
 }
+
+// A dkf/0.1 workspace keeps a dkf/0.1 index through init, writes, and
+// rebuilds, and an index written by an older binary is not drift.
+func TestFlatIndexStaysFlat(t *testing.T) {
+	dir := initWS(t, "--format", "dkf/0.1")
+	idx := filepath.Join(dir, "index.yaml")
+	head := func(when string) {
+		t.Helper()
+		if b, _ := os.ReadFile(idx); !strings.HasPrefix(string(b), "format: dkf/0.1\n") {
+			t.Fatalf("%s: a flat index must say dkf/0.1:\n%s", when, b)
+		}
+	}
+	head("after init")
+	define(t, "Project X")
+	c := assert(t, "Project X", "A")
+	head("after writes")
+	if r := run(t, "", "retract", c, "--reason", "r"); r.code != 0 {
+		t.Fatal(r.stderr)
+	}
+	head("after a retraction")
+	if r := run(t, "", "index"); r.code != 0 {
+		t.Fatal(r.stderr)
+	}
+	head("after a rebuild")
+	// An index exactly as v0.19.0 wrote it — the same bytes — passes the check.
+	if r := run(t, "", "index", "--check"); r.code != 0 {
+		t.Errorf("a flat index written before v0.20.0 is drift: %s", r.stdout)
+	}
+}
