@@ -32,8 +32,8 @@
 
 ## 4. Release and dogfood (after merge, each step confirmed with the user)
 
-- [ ] 4.1 Release v0.20.0, folding the Unreleased entries of stages 1–3 under one heading
-- [ ] 4.2 `particulars-knowledge`: on a branch, `migrate --dry-run`, `migrate`, `validate`, `index --check`; bump `dkf-check.yml` to v0.20.0; open a PR, merge after CI
-- [ ] 4.3 `particulars-personal`: migrate and commit
-- [ ] 4.4 `particulars-feeds`: copy the directory, then migrate (no git)
-- [ ] 4.5 Comment the results on #11 and close it
+- [x] 4.1 Release v0.20.0, folding the Unreleased entries of stages 1–3 under one heading
+- [x] 4.2 `particulars-knowledge`: on a branch, `migrate --dry-run`, `migrate`, `validate`, `index --check`; bump `dkf-check.yml` to v0.20.0; open a PR, merge after CI
+- [x] 4.3 `particulars-personal`: migrate and commit
+- [x] 4.4 `particulars-feeds`: copy the directory, then migrate (no git)
+- [x] 4.5 Comment the results on #11 and close it
