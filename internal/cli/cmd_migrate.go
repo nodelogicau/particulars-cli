@@ -65,6 +65,7 @@ first: a branch opened before the migration adds flat files, and needs
 				fmt.Fprintf(w, "Migrated to dkf/0.2: moved %s and rebuilt %s\n", plural(len(plan.Moves), "file"), store.IndexFile)
 				report(w, plan)
 				fmt.Fprintln(w, "Run `particulars validate`, then commit the renames, dkf.yaml, and the index together.")
+				fmt.Fprintln(w, "Restart any running particulars MCP server (quit Claude Desktop fully) — it read dkf.yaml at startup and still sees the old layout.")
 			})
 		}),
 	}

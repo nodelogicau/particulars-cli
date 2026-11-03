@@ -376,7 +376,10 @@ every unmoved file is reported as misplaced — and running `migrate` again
 finishes it. Merge or close open branches first: one opened before the
 migration adds flat files, and needs `particulars migrate` run on it after
 rebasing onto the migrated main. Commit the renames, `dkf.yaml`, and the index
-together, and pin CI to v0.20.0 or later.
+together, and pin CI to v0.20.0 or later. Restart any running
+`particulars serve --mcp` — quit Claude Desktop fully, for one — since a server
+reads `dkf.yaml` once at startup: until it restarts it still sees the old
+layout, so the migrated workspace looks empty.
 
 `validate` also checks time in either layout: an id or timestamp later than
 the validator's clock warns (`future_time`), and an id two or more months ahead

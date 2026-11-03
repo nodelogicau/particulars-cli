@@ -284,3 +284,14 @@ func TestMigrateRefuses(t *testing.T) {
 		})
 	}
 }
+
+// A server running across the migration read dkf.yaml at startup, so the
+// text result tells the user to restart it.
+func TestMigrateSaysRestartTheServer(t *testing.T) {
+	initWS(t, "--format", "dkf/0.1")
+	define(t, "Project X")
+	r := run(t, "", "migrate")
+	if r.code != 0 || !strings.Contains(r.stdout, "Restart any running particulars MCP server") {
+		t.Errorf("migrate output: %d %s", r.code, r.stdout)
+	}
+}
