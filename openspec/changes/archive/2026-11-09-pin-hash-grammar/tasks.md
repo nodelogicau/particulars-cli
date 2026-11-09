@@ -24,5 +24,5 @@
 
 ## 5. Wrap-up
 
-- [ ] 5.1 Archive and sync specs.
-- [ ] 5.2 Close #31 with a summary.
+- [x] 5.1 Archive and sync specs.
+- [x] 5.2 Close #31 with a summary.

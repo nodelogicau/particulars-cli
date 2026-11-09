@@ -3,9 +3,7 @@
 ## Purpose
 
 Making a claim's evidence checkable: the document union of a bare reference or a mapping carrying a hash and a verbatim quote, how relative references resolve, what a hash is normalised over, the two drift signals and their offline-only computation, unverified sources as a first-class outcome, the retraction `kind` that records which joint in `claim → source → world` broke, and the disclosure a quote carries because it reproduces its source completely.
-
 ## Requirements
-
 ### Requirement: Document may be a URI or a mapping
 `source.document` SHALL accept either a bare reference string or a mapping with `ref` (required), `author` (optional), `hash` (optional), and `quote` (optional), serialised in that order. `ref` holds one of three things: a URI, a path resolved against the workspace root, or an identifier for something that cannot be fetched at all — a conversation, a recollection, a page behind a login. The third case is why the field is not named `uri`: an unfetchable source can still carry a quote, and quoting what someone said is provenance a reviewer can weigh. `author` SHALL identify who produced what was read, as a particular reference per `source-attribution`, distinct from `source.author` (who read it); an unresolvable `document.author` is unresolved, never invalid. Readers SHALL accept `uri` as a legacy alias for `ref` and SHALL report `legacy_document_uri`, because such a file can never be rewritten — appending a retraction is the only permitted modification — so readers must accept it in perpetuity and the warning is the only way anyone learns it is there. A bare URI SHALL remain valid and SHALL NOT be treated as inferior provenance. `quote` SHALL be written as given: an implementation SHALL NOT fold, trim, or otherwise normalise the stored quote. A writer SHALL refuse a quote that is empty or folds to nothing under the whitespace rule of *Drift is two signals*, as it refuses a `confidence` outside [0, 1]; a reader that meets one SHALL treat the mapping as carrying no quote — verifying by hash alone and raising no quote-disclosure note — and SHALL report `empty_quote` as a warning, never `invalid_document` or `quote_drift`, because the file cannot be rewritten and the source never moved. The scalar form SHALL serialise as a scalar, and a mapping carrying only `ref` and `author` SHALL serialise as a mapping, so that a claim written before this capability existed serialises to identical bytes.
 
@@ -54,21 +52,21 @@ A document `ref` MAY be a path relative to the workspace root rather than an abs
 - **THEN** the claim remains valid and the document reports as unverified
 
 ### Requirement: Hash normalisation
-A document hash SHALL be an algorithm-prefixed digest — `<algorithm>:<lowercase hex>` — taken over the document's bytes with CRLF sequences normalised to LF and **nothing else normalised** — not trailing whitespace, not final newlines, not Unicode form. Line endings are an artefact of transport and differ between checkouts of the same commit; anything else is an edit, and normalising it would hide a class of real change.
+A document hash SHALL be an algorithm-prefixed digest, in the grammar of *Hash grammar and canonical form*, taken over the document's bytes with CRLF sequences normalised to LF and **nothing else normalised** — not trailing whitespace, not final newlines, not Unicode form. Line endings are an artefact of transport and differ between checkouts of the same commit; anything else is an edit, and normalising it would hide a class of real change.
 
 #### Scenario: The same content hashes the same on either platform
 - **WHEN** the same document is hashed from a CRLF checkout and an LF checkout
 - **THEN** both produce the same hash
 
-Writers SHALL write `sha256`. Readers SHALL accept any algorithm and SHALL report one they do not implement as unverified rather than invalid, since refusing it would leave two conformant implementations unable to check each other's hashes. A digest whose algorithm the implementation does implement SHALL be checked for shape, so that a truncated hash is caught as the typo it is.
+Writers SHALL write `sha256`. Readers SHALL accept any algorithm that matches the grammar and SHALL report one they do not implement as unverified rather than invalid, since refusing it would leave two conformant implementations unable to check each other's hashes.
 
 #### Scenario: An unimplemented algorithm is unverified
 - **WHEN** a document carries a hash whose algorithm this implementation does not compute
 - **THEN** the document is reported as unverified and the object stays valid
 
-#### Scenario: A truncated sha256 is invalid
-- **WHEN** a document carries `sha256:abc`
-- **THEN** the object is rejected
+#### Scenario: A truncated sha256 is refused on write
+- **WHEN** `claim assert --document-hash sha256:abc` is run
+- **THEN** the claim is not written, and the refusal says a sha256 digest is 64 lowercase hex digits
 
 #### Scenario: Trailing whitespace changes the hash
 - **WHEN** trailing whitespace is added to a line of a document
@@ -183,3 +181,45 @@ A quote reproduces source text verbatim inside the claim file, so the claim's ef
 #### Scenario: Promoting a quoted claim says so
 - **WHEN** a claim carrying a quote is promoted to `public`
 - **THEN** the result reports that verbatim source text is being published, and the promotion succeeds
+
+### Requirement: Hash grammar and canonical form
+A hash SHALL be read under the OCI image-spec digest grammar: `algorithm ":" encoded`, where `algorithm` is components `[a-z0-9]+` joined by single separators from `+`, `.`, `_`, `-`, and `encoded` is `[a-zA-Z0-9=_-]+`. The registered algorithms are `sha256` (64 hex digits) and `sha512` (128); this implementation SHALL verify both. The encoded part of any other algorithm is opaque.
+
+For the registered algorithms a reader SHALL accept hex in either case, the algorithm name in any case, and `sha-256` and `sha-512` in any case, and no other alias. It SHALL compare by algorithm and digest value, case-insensitively in the hex. A hash is **canonical** when it names a registered algorithm in lowercase with lowercase hex of the registered length, or an unregistered algorithm matching the grammar.
+
+A hash SHALL be **malformed** when it does not match the grammar, or names a registered algorithm (after aliases and case) with an encoded part that is not hex or not the registered length. A reader SHALL verify a document whose hash is malformed as though it carried no hash: by its quote alone where it has one, otherwise as unverified. A malformed hash SHALL NOT be reported as drift and SHALL NOT make the object invalid, so an object carrying one can still be retracted.
+
+`claim assert --document-hash`, the MCP `document.hash` and its shorthand, and every other write path SHALL refuse a hash that is not canonical, naming the canonical form (for a non-canonical registered hash, the lowercase hash itself), and SHALL NOT normalise it. `--hash-document` computes canonical `sha256`.
+
+#### Scenario: Uppercase hex from another writer
+- **WHEN** a claim file carries a `sha256` hash in uppercase hex whose value matches the document, with a quote that appears in it
+- **THEN** no drift is reported
+
+#### Scenario: The IANA spelling
+- **WHEN** a claim file carries `SHA-256:` and a matching digest
+- **THEN** it is compared as `sha256` and no drift is reported
+
+#### Scenario: An unrecognised alias
+- **WHEN** a claim file carries `sha2-256:` and a 64-digit digest
+- **THEN** the document is reported as `unverified_document`, not compared as `sha256`
+
+#### Scenario: sha512
+- **WHEN** a claim file carries `sha512:` and the document's sha512 digest
+- **THEN** no drift is reported; and when the digest differs, the drift rules apply as for `sha256`
+
+#### Scenario: A truncated digest with a quote
+- **WHEN** a claim file carries `sha256:9f2a` and a quote that appears in the document
+- **THEN** no drift is reported, in particular no `context_drift`, and the hash is reported as unverified
+
+#### Scenario: Base64 under sha256, no quote
+- **WHEN** a claim file carries `sha256:` and a base64 digest, with no quote
+- **THEN** the document is reported as `unverified_document`
+
+#### Scenario: Retracting an object with a malformed hash
+- **WHEN** `claim retract` is run on a claim whose file carries `sha256:9f2a`
+- **THEN** the retraction is written
+
+#### Scenario: A writer is given a non-canonical hash
+- **WHEN** `claim assert --document-hash` is given `sha256:` and 64 uppercase hex digits, or `SHA-256:` and lowercase ones
+- **THEN** the claim is not written, and the refusal names `sha256:` with the lowercase digits
+
