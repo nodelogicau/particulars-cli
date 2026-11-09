@@ -129,6 +129,15 @@ const (
 	// said to have misread is no longer the text a reviewer can read.
 	CodeDefectUnverifiable = "defect_unverifiable"
 	CodeInvalidBaseURI     = "invalid_base_uri"
+	// CodeHashMalformed: a document hash outside the grammar, or a registered
+	// algorithm with a digest that is not hex or not the registered length.
+	// The reference is verified as though it carried no hash; listed per
+	// object, since the claim may want re-asserting with a correct hash.
+	CodeHashMalformed = "hash_malformed"
+	// CodeHashNoncanonical: a hash a reader accepts but a writer would refuse
+	// (uppercase hex or name, sha-256). A corpus fact: compared by value, so
+	// nothing is wrong, and the file cannot be rewritten.
+	CodeHashNoncanonical = "hash_noncanonical"
 )
 
 // Finding is one validation result.
@@ -171,7 +180,7 @@ func (fs Findings) HasErrors() bool {
 // quoted_source all name one file worth opening, so they list.
 func IsCorpusFact(code string) bool {
 	switch code {
-	case CodeLegacyProducedBy, CodeLegacyID, CodeLegacyDocumentURI, CodeEmptyQuote,
+	case CodeLegacyProducedBy, CodeLegacyID, CodeLegacyDocumentURI, CodeEmptyQuote, CodeHashNoncanonical,
 		CodeUndeclared, CodeConfidenceOnUndeclared, CodeInferredWithoutBasis, CodeUnverifiedDocument,
 		CodeAuthorUnresolved, CodeAuthorAmbiguous, CodeURLInContent:
 		return true
@@ -327,6 +336,18 @@ func Validate(w *store.Workspace) (Findings, error) {
 		path := g.Files[a.ObjectID()]
 		if doc.Quote != "" && !doc.HasQuote() {
 			add(SeverityWarning, path, CodeEmptyQuote, "document carries a quote that is empty or only whitespace; it is verified as though it carried no quote")
+		}
+		if doc.Hash != "" {
+			switch dkf.ParseHash(doc.Hash).Form {
+			case dkf.HashMalformed:
+				add(SeverityWarning, path, CodeHashMalformed, fmt.Sprintf(
+					"document hash %q is malformed; the document is verified as though it carried no hash", doc.Hash))
+			case dkf.HashNoncanonical:
+				// Uniform, so text output aggregates it to one line with its
+				// message; --json still names each object.
+				add(SeverityWarning, path, CodeHashNoncanonical,
+					"document hash is not in canonical form (uppercase hex, an uppercase algorithm name, or sha-256/sha-512); it is compared by value, and writers write lowercase")
+			}
 		}
 		// Retracted objects are checked too: the unverifiable-defect finding
 		// below is about the retraction, not about a live claim.

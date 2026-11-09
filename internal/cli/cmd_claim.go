@@ -128,7 +128,7 @@ func (a *app) claimAssertCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&basis, "basis", nil, "id of a claim or synthesis an inferred claim was inferred from (repeatable; inferred only; ids, never labels)")
 	cmd.Flags().StringVar(&prov.document, "document", "", "source.document: URI or workspace-relative path of the evidence")
 	cmd.Flags().StringVar(&prov.documentAuthor, "document-author", "", "who produced what was read (id, uri, or name of a particular) — for testimony: who told you")
-	cmd.Flags().StringVar(&prov.documentHash, "document-hash", "", "sha256:… of the document as you read it (CRLF normalised to LF)")
+	cmd.Flags().StringVar(&prov.documentHash, "document-hash", "", "sha256:<64 lowercase hex> of the document as you read it (CRLF normalised to LF)")
 	cmd.Flags().BoolVar(&prov.hashDocument, "hash-document", false, "compute --document-hash from the local file the document resolves to")
 	cmd.Flags().StringVar(&prov.quote, "quote", "", "the sentence in the document that supports this claim, verbatim")
 	cmd.Flags().StringVar(&prov.quoteFile, "quote-file", "", "read the quote from a file, or - for stdin")

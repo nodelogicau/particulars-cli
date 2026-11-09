@@ -353,7 +353,7 @@ func (w *Workspace) Create(obj dkf.Object) error {
 			return err
 		}
 	}
-	if ps := dkf.ValidateObject(obj); len(ps) > 0 {
+	if ps := append(dkf.ValidateObject(obj), dkf.ValidateForWrite(obj)...); len(ps) > 0 {
 		return ps
 	}
 	p, err := w.Path(obj.ObjectID())
@@ -399,7 +399,7 @@ func (w *Workspace) Retract(id string, r *dkf.Retracted) (dkf.Retractable, error
 			return nil, err
 		}
 	}
-	if ps := dkf.ValidateRetracted(r); len(ps) > 0 {
+	if ps := append(dkf.ValidateRetracted(r), dkf.SourceForWrite("retracted.source", r.Source)...); len(ps) > 0 {
 		return nil, ps
 	}
 	path, err := w.Path(id)

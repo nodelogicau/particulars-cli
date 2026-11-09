@@ -621,11 +621,6 @@ func TestDocumentUnion(t *testing.T) {
 	for name, doc := range map[string]Document{
 		"hash without uri":  {Hash: "sha256:" + strings.Repeat("a", 64)},
 		"quote without uri": {Quote: "something"},
-		"short sha256":      {Ref: "u", Hash: "sha256:abc"},
-		"no algorithm":      {Ref: "u", Hash: strings.Repeat("a", 64)},
-		"empty algorithm":   {Ref: "u", Hash: ":" + strings.Repeat("a", 64)},
-		"uppercase hash":    {Ref: "u", Hash: "sha256:" + strings.Repeat("A", 64)},
-		"unprefixed hash":   {Ref: "u", Hash: strings.Repeat("a", 64)},
 	} {
 		if ps := doc.Validate("source.document"); len(ps) == 0 {
 			t.Errorf("%s should be rejected", name)
@@ -641,6 +636,12 @@ func TestDocumentUnion(t *testing.T) {
 		// Another implementation's algorithm is accepted, not rejected: a
 		// reader that refused it could not check anything it wrote.
 		"another algorithm": {Ref: "u", Hash: "blake3:" + strings.Repeat("c", 32)},
+		// A malformed or non-canonical hash is read, not rejected: validate
+		// reports it, and only writers refuse it.
+		"short sha256":    {Ref: "u", Hash: "sha256:abc"},
+		"no algorithm":    {Ref: "u", Hash: strings.Repeat("a", 64)},
+		"empty algorithm": {Ref: "u", Hash: ":" + strings.Repeat("a", 64)},
+		"uppercase hash":  {Ref: "u", Hash: "sha256:" + strings.Repeat("A", 64)},
 	} {
 		if ps := doc.Validate("source.document"); len(ps) != 0 {
 			t.Errorf("%s should be valid: %v", name, ps)
@@ -665,7 +666,7 @@ func TestHashAndQuoteNormalisation(t *testing.T) {
 			t.Errorf("%s should change the hash", name)
 		}
 	}
-	if h := HashDocumentBytes([]byte(lf)); !hashPattern.MatchString(h) {
+	if h := HashDocumentBytes([]byte(lf)); ParseHash(h).Form != HashCanonical || HashWriteProblem(h, "h") != nil {
 		t.Errorf("hash shape: %q", h)
 	}
 	if got, err := HashDocument(strings.NewReader(crlf)); err != nil || got != HashDocumentBytes([]byte(lf)) {
@@ -920,5 +921,81 @@ func TestMonthOf(t *testing.T) {
 		if got, _ := MonthOf(id); got != c.want {
 			t.Errorf("%s (%s): %s, want %s", id, c.at, got, c.want)
 		}
+	}
+}
+
+func TestParseHash(t *testing.T) {
+	hex64, hex128 := strings.Repeat("ab", 32), strings.Repeat("cd", 64)
+	up64 := strings.ToUpper(hex64)
+	for _, tc := range []struct {
+		in         string
+		form       HashForm
+		algo, dig  string
+		registered bool
+	}{
+		{"sha256:" + hex64, HashCanonical, "sha256", hex64, true},
+		{"sha512:" + hex128, HashCanonical, "sha512", hex128, true},
+		{"sha256:" + up64, HashNoncanonical, "sha256", hex64, true},
+		{"SHA256:" + hex64, HashNoncanonical, "sha256", hex64, true},
+		{"SHA-256:" + hex64, HashNoncanonical, "sha256", hex64, true},
+		{"sha-512:" + hex128, HashNoncanonical, "sha512", hex128, true},
+		// No other alias: sha2-256 is unregistered and opaque.
+		{"sha2-256:" + hex64, HashCanonical, "sha2-256", hex64, false},
+		{"blake3:" + strings.Repeat("c", 32), HashCanonical, "blake3", strings.Repeat("c", 32), false},
+		{"multihash+base58:QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", HashCanonical, "multihash+base58", "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", false},
+		{"sha256:9f2a", HashMalformed, "sha256", "", true},
+		{"sha256:" + strings.Repeat("A", 43) + "=", HashMalformed, "sha256", "", true}, // base64
+		{"sha256:" + hex64 + "a", HashMalformed, "sha256", "", true},
+		{"sha512:" + hex64, HashMalformed, "sha512", "", true},
+		{"sha256:", HashMalformed, "sha256", "", true},
+		{hex64, HashMalformed, "", "", false},
+		{":" + hex64, HashMalformed, "", "", false},
+		{"a--b:" + hex64, HashMalformed, "a--b", "", false},
+		{"-ab:" + hex64, HashMalformed, "-ab", "", false},
+		{"Blake3:abc", HashMalformed, "Blake3", "", false},
+		{"blake3:a b", HashMalformed, "blake3", "", false},
+		{"blake3:a:b", HashMalformed, "blake3", "", false},
+	} {
+		h := ParseHash(tc.in)
+		if h.Form != tc.form || h.Algorithm != tc.algo || h.Digest != tc.dig || h.Registered != tc.registered {
+			t.Errorf("ParseHash(%q) = %+v; want form %d algo %q digest %q registered %v", tc.in, h, tc.form, tc.algo, tc.dig, tc.registered)
+		}
+	}
+}
+
+func TestHashWriteProblem(t *testing.T) {
+	hex64 := strings.Repeat("ab", 32)
+	for _, ok := range []string{"", "sha256:" + hex64, "sha512:" + strings.Repeat("cd", 64), "blake3:" + strings.Repeat("c", 32)} {
+		if p := HashWriteProblem(ok, "h"); p != nil {
+			t.Errorf("%q should be writable: %v", ok, p)
+		}
+	}
+	for in, names := range map[string]string{
+		// Non-canonical: refused, naming the canonical form, never lowercased silently.
+		"sha256:" + strings.ToUpper(hex64): "sha256:" + hex64,
+		"SHA-256:" + hex64:                 "sha256:" + hex64,
+		"sha256:9f2a":                      "sha256:<64 lowercase hex digits>",
+		"sha512:9f2a":                      "sha512:<128 lowercase hex digits>",
+		hex64:                              "<algorithm>:<digest>",
+	} {
+		p := HashWriteProblem(in, "source.document.hash")
+		if p == nil || p.Code != CodeInvalidDocument || p.Field != "source.document.hash" || !strings.Contains(p.Message, names) {
+			t.Errorf("HashWriteProblem(%q) = %+v; want a refusal naming %q", in, p, names)
+		}
+	}
+}
+
+func TestDigestBytes(t *testing.T) {
+	d256, ok := DigestBytes(AlgorithmSHA256, []byte("a\r\n"))
+	if !ok || "sha256:"+d256 != HashDocumentBytes([]byte("a\n")) {
+		t.Errorf("sha256 digest: %q", d256)
+	}
+	// sha512 of "a\n", with CRLF normalised the same way.
+	d512, ok := DigestBytes(AlgorithmSHA512, []byte("a\r\n"))
+	if !ok || d512 != "162b0b32f02482d5aca0a7c93dd03ceac3acd7e410a5f18f3fb990fc958ae0df6f32233b91831eaf99ca581a8c4ddf9c8ba315ac482db6d4ea01cc7884a635be" {
+		t.Errorf("sha512 digest: %q", d512)
+	}
+	if _, ok := DigestBytes("blake3", nil); ok {
+		t.Error("blake3 is not implemented")
 	}
 }

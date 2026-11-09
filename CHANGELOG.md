@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Document hashes follow the OCI digest grammar (#31,
+  nodelogicau/particulars#56).** Readers are now as lenient as the spec says,
+  and writers as strict:
+  - **`validate` no longer fails on a malformed hash.** A truncated
+    `sha256`, a base64 digest, or a hash with no `algorithm:` used to be
+    `invalid_document`, and the claim couldn't even be retracted. It is now
+    `hash_malformed`, a warning against the claim, and the document is checked
+    by its quote alone. A typo in a hash is no longer reported as
+    `context_drift`.
+  - **Hashes from other writers compare by value.** Uppercase hex,
+    `SHA256:`, and `sha-256:` are accepted and reported once in aggregate as
+    `hash_noncanonical`. `sha512` is verified too.
+  - **Writers refuse what isn't canonical**, naming the form to write: a
+    `--document-hash` or MCP `hash` in uppercase or `sha-256:` is refused with
+    the lowercase `sha256:` hash in the message, never lowercased silently.
+    `--hash-document` is unchanged.
+
 - **Recall by query trims whitespace at the edges (#12,
   nodelogicau/particulars#37).** `recall --query` and `knowledge_recall(query)`
   now trim leading and trailing whitespace, as well as punctuation, from the

@@ -53,14 +53,25 @@ func VerifyDocument(ws *store.Workspace, d dkf.Document) DocumentState {
 	// A quote that folds to nothing is read as no quote: validate reports it
 	// as empty_quote, and here the hash is the whole signal.
 	hasQuote := d.HasQuote()
-	if d.Hash == "" && !hasQuote {
-		return DocumentState{CodeUnverifiedDocument, "document carries no hash or quote, so nothing can be checked"}
+	// A malformed hash is read as no hash: validate reports hash_malformed,
+	// and a typo in the hash is never reported as the document moving.
+	var h dkf.ParsedHash
+	hasHash, noHash, without := false, "the document carries no hash", "without a hash"
+	if d.Hash != "" {
+		h = dkf.ParseHash(d.Hash)
+		hasHash = h.Form != dkf.HashMalformed
+		if !hasHash {
+			noHash, without = "the document's hash is malformed", "with a malformed hash"
+		}
 	}
-	if algo := dkf.HashAlgorithm(d.Hash); d.Hash != "" && algo != dkf.AlgorithmSHA256 {
+	if !hasHash && !hasQuote {
+		return DocumentState{CodeUnverifiedDocument, noHash + " and it carries no quote, so nothing can be checked"}
+	}
+	if hasHash && !dkf.ImplementedHash(h.Algorithm) {
 		// Another implementation's algorithm is a legitimate hash we cannot
 		// compute. Unverified, never invalid — refusing it would mean two
 		// conformant implementations unable to check each other.
-		return DocumentState{CodeUnverifiedDocument, "hash algorithm " + algo + " is not implemented here, so the document is not checked"}
+		return DocumentState{CodeUnverifiedDocument, "hash algorithm " + h.Algorithm + " is not implemented here, so the document is not checked"}
 	}
 	path, ok := LocalDocumentPath(ws, d.Ref)
 	if !ok {
@@ -72,18 +83,23 @@ func VerifyDocument(ws *store.Workspace, d dkf.Document) DocumentState {
 	}
 	content := string(data)
 	quotePresent := !hasQuote || dkf.QuoteMatches(content, d.Quote)
-	hashMatches := d.Hash == "" || d.Hash == dkf.HashDocumentBytes(data)
+	// Compared by value: hex case and the algorithm's spelling are not edits.
+	hashMatches := true
+	if hasHash {
+		digest, _ := dkf.DigestBytes(h.Algorithm, data)
+		hashMatches = digest == h.Digest
+	}
 
 	switch {
-	case d.Hash == "":
+	case !hasHash:
 		// Quote only: the quote is the whole signal. Without a hash nothing
 		// says whether the document changed or the quote was never there, so
 		// the message infers neither — and a found quote is not full
 		// verification, since the text around it went unchecked.
 		if quotePresent {
-			return DocumentState{CodeUnverifiedDocument, "the quote appears in " + ws.Rel(path) + ", but the document carries no hash, so the text around it is not checked"}
+			return DocumentState{CodeUnverifiedDocument, "the quote appears in " + ws.Rel(path) + ", but " + noHash + ", so the text around it is not checked"}
 		}
-		return DocumentState{CodeQuoteDrift, "the quoted text does not appear in " + ws.Rel(path) + "; without a hash it is unknown whether the document changed or the quote never matched"}
+		return DocumentState{CodeQuoteDrift, "the quoted text does not appear in " + ws.Rel(path) + "; " + without + " it is unknown whether the document changed or the quote never matched"}
 	case hashMatches:
 		if quotePresent {
 			return DocumentState{}

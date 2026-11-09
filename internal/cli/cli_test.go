@@ -2113,3 +2113,65 @@ func TestRecallByQuery(t *testing.T) {
 		t.Errorf("plain text:\n%s", r.stdout)
 	}
 }
+
+// A hash another writer recorded in a form this CLI would refuse is read by
+// value: no drift, one aggregate hash_noncanonical line, and no failure. A
+// malformed one is read as no hash and listed against its claim.
+func TestValidateReadsForeignHashes(t *testing.T) {
+	ws := t.TempDir()
+	t.Chdir(ws)
+	t.Setenv("DKF_WORKSPACE", ws)
+	run(t, "", "init", "--author", "ben", "--json")
+	run(t, "", "particular", "define", "--label", "Billing", "--json")
+	if err := os.WriteFile(filepath.Join(ws, "note.md"), []byte("the billing service listens on 443\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for range 3 {
+		r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Billing", "--content", "Billing listens on 443.",
+			"--document", "note.md", "--hash-document", "--quote", "listens on 443", "--json")
+		if r.code != 0 {
+			t.Fatalf("assert: %+v", r)
+		}
+		paths = append(paths, filepath.Join(ws, r.js["path"].(string)))
+	}
+	// Rewrite as other writers might have: uppercase hex, the IANA name, and
+	// a truncated digest.
+	rewrite := func(path string, edit func(hex string) string) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := strings.Index(string(data), "sha256:")
+		hex := string(data[i+7 : i+7+64])
+		out := strings.Replace(string(data), "sha256:"+hex, edit(hex), 1)
+		if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rewrite(paths[0], func(h string) string { return "sha256:" + strings.ToUpper(h) })
+	rewrite(paths[1], func(h string) string { return "SHA-256:" + h })
+	rewrite(paths[2], func(h string) string { return "sha256:" + h[:4] })
+
+	text := run(t, "", "validate")
+	if text.code != 0 {
+		t.Fatalf("foreign hashes must not fail validation: %+v", text)
+	}
+	if !strings.Contains(text.stdout, "warning 2 objects  hash_noncanonical: document hash is not in canonical form") {
+		t.Errorf("hash_noncanonical should aggregate to one line:\n%s", text.stdout)
+	}
+	if !strings.Contains(text.stdout, "hash_malformed: document hash") || strings.Count(text.stdout, "hash_malformed") != 1 {
+		t.Errorf("hash_malformed should list against its claim:\n%s", text.stdout)
+	}
+	for _, code := range []string{"context_drift", "quote_drift", "invalid_document"} {
+		if strings.Contains(text.stdout, code) {
+			t.Errorf("no %s expected:\n%s", code, text.stdout)
+		}
+	}
+	// The writer refuses what the reader accepts, naming the canonical form.
+	r := run(t, "", "claim", "assert", "--evidential", "observed", "--subject", "Billing", "--content", "x",
+		"--document", "note.md", "--document-hash", "SHA-256:"+strings.Repeat("ab", 32), "--json")
+	if r.code == 0 || !strings.Contains(r.stderr, "sha256:"+strings.Repeat("ab", 32)) {
+		t.Errorf("non-canonical --document-hash should be refused naming the canonical form: %+v", r)
+	}
+}

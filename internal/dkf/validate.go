@@ -74,6 +74,31 @@ func missing(field string) Problem {
 	return Problem{Code: CodeMissingField, Field: field, Message: "required field is missing or empty"}
 }
 
+// ValidateForWrite returns what a writer must refuse beyond ValidateObject:
+// conditions a reader tolerates, because a file already written can never be
+// corrected, but a writer must not create. It covers the object's own source;
+// a retraction block being appended is checked by SourceForWrite.
+func ValidateForWrite(obj Object) Problems {
+	switch o := obj.(type) {
+	case Assertion:
+		return SourceForWrite("source", o.GetSource())
+	case *Merge:
+		return SourceForWrite("source", o.Source)
+	case *Promotion:
+		return SourceForWrite("source", o.Source)
+	}
+	return nil
+}
+
+// SourceForWrite is the write-only check on one source: its document hash
+// must be canonical.
+func SourceForWrite(field string, s Source) Problems {
+	if p := HashWriteProblem(s.Document.Hash, field+".document.hash"); p != nil {
+		return Problems{*p}
+	}
+	return nil
+}
+
 // ValidateObject dispatches to the type-specific validator.
 func ValidateObject(obj Object) Problems {
 	switch o := obj.(type) {

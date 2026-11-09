@@ -146,6 +146,22 @@ normalised.** Writers write `sha256`; a reader accepts any
 rather than invalid — refusing it would leave two conforming implementations
 unable to check each other's hashes.
 
+A hash follows the [OCI digest grammar](https://github.com/opencontainers/image-spec/blob/main/descriptor.md#digests):
+`algorithm:encoded`. Two algorithms are registered, `sha256` (64 hex digits)
+and `sha512` (128), and this CLI verifies both. Any other algorithm that
+matches the grammar is opaque and reported as unverified.
+
+| hash as written | writer (`claim assert`, MCP) | reader (`validate`) |
+|---|---|---|
+| `sha256:` + 64 lowercase hex | writes it | compares it |
+| uppercase hex, `SHA256:`, `sha-256:` | refuses, naming the lowercase form | compares by value; `hash_noncanonical`, one aggregate line |
+| `blake3:…`, `sha2-256:…` | writes it | `unverified_document` |
+| `sha256:9f2a`, base64, no `algorithm:` | refuses | reads it as no hash; `hash_malformed` against the claim |
+
+A malformed hash is never drift and never fails validation: the file cannot be
+rewritten, so a rejection could never be satisfied. The reference is checked by
+its quote alone, or reported as unverified when it has none.
+
 Line endings differ between checkouts of the same commit, so hashing raw bytes
 would report drift on every claim for anyone on a Windows checkout — the
 cries-wolf failure again, arriving through a different door. Everything else is

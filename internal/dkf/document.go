@@ -2,6 +2,7 @@ package dkf
 
 import (
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -47,23 +48,107 @@ type Document struct {
 // LegacyURI reports whether the document was read from a `uri` key.
 func (d Document) LegacyURI() bool { return d.legacyURI }
 
-// hashPattern accepts any algorithm-prefixed digest. Writers should write
-// sha256; a reader that rejected other algorithms outright would make two
-// conformant implementations unable to check each other's hashes, so an
-// algorithm we do not implement is reported as unverified instead.
-var hashPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*:[0-9a-f]+$`)
+// hashGrammar is the OCI image-spec digest grammar that DKF pins
+// source.document.hash to: algorithm components [a-z0-9]+ joined by single
+// separators from + . _ -, a colon, and an encoded part.
+var hashGrammar = regexp.MustCompile(`^[a-z0-9]+(?:[+._-][a-z0-9]+)*:[a-zA-Z0-9=_-]+$`)
 
-// HashAlgorithm is the algorithm prefix of a digest, or "" if malformed.
-func HashAlgorithm(hash string) string {
-	algo, _, ok := strings.Cut(hash, ":")
-	if !ok {
-		return ""
-	}
-	return algo
+var hexDigits = regexp.MustCompile(`^[0-9a-fA-F]+$`)
+
+// The registered algorithms. AlgorithmSHA256 is the one writers write.
+const (
+	AlgorithmSHA256 = "sha256"
+	AlgorithmSHA512 = "sha512"
+)
+
+// registeredHashes maps each registered algorithm to its digest length in
+// hex digits.
+var registeredHashes = map[string]int{AlgorithmSHA256: 64, AlgorithmSHA512: 128}
+
+// HashForm classifies a hash as written.
+type HashForm int
+
+const (
+	// HashCanonical: what a writer may write.
+	HashCanonical HashForm = iota
+	// HashNoncanonical: a registered algorithm a reader accepts but a writer
+	// refuses — uppercase hex, an uppercase name, or sha-256/sha-512.
+	HashNoncanonical
+	// HashMalformed: outside the grammar, or a registered algorithm whose
+	// digest is not hex or not the registered length. Read as no hash.
+	HashMalformed
+)
+
+// ParsedHash is a hash read as the spec defines it.
+type ParsedHash struct {
+	// Algorithm is the registered name (sha256, sha512) when registered,
+	// otherwise the algorithm as written.
+	Algorithm string
+	// Digest is lowercase hex for a registered algorithm; otherwise the
+	// encoded part as written, which is opaque.
+	Digest     string
+	Registered bool
+	Form       HashForm
 }
 
-// AlgorithmSHA256 is the digest this implementation computes.
-const AlgorithmSHA256 = "sha256"
+// ParseHash reads a source.document.hash. Readers accept, for the registered
+// algorithms, hex in either case, the name in any case, and the spellings
+// sha-256 and sha-512; no other alias is recognised, so sha2-256 is an
+// unregistered algorithm.
+func ParseHash(hash string) ParsedHash {
+	algo, enc, ok := strings.Cut(hash, ":")
+	if !ok {
+		return ParsedHash{Form: HashMalformed}
+	}
+	name := strings.ToLower(algo)
+	switch name {
+	case "sha-256":
+		name = AlgorithmSHA256
+	case "sha-512":
+		name = AlgorithmSHA512
+	}
+	if n, ok := registeredHashes[name]; ok {
+		h := ParsedHash{Algorithm: name, Registered: true}
+		if len(enc) != n || !hexDigits.MatchString(enc) {
+			h.Form = HashMalformed
+			return h
+		}
+		h.Digest = strings.ToLower(enc)
+		if algo != name || enc != h.Digest {
+			h.Form = HashNoncanonical
+		}
+		return h
+	}
+	if !hashGrammar.MatchString(hash) {
+		return ParsedHash{Algorithm: algo, Form: HashMalformed}
+	}
+	return ParsedHash{Algorithm: algo, Digest: enc, Form: HashCanonical}
+}
+
+// ImplementedHash reports whether this implementation computes algo.
+func ImplementedHash(algo string) bool { return algo == AlgorithmSHA256 || algo == AlgorithmSHA512 }
+
+// HashWriteProblem returns why a writer must refuse hash, naming the
+// canonical form, or nil when it may be written. A writer never normalises
+// what it was given: the caller may have computed it wrongly.
+func HashWriteProblem(hash, field string) *Problem {
+	h := ParsedHash{Form: HashCanonical}
+	if hash != "" {
+		h = ParseHash(hash)
+	}
+	var msg string
+	switch {
+	case h.Form == HashCanonical:
+		return nil
+	case h.Form == HashNoncanonical:
+		msg = fmt.Sprintf("hash %q is not in canonical form; write it as %s:%s (lowercase name and hex)", hash, h.Algorithm, h.Digest)
+	case h.Registered:
+		msg = fmt.Sprintf("hash %q is not a %s digest: expected %s:<%d lowercase hex digits>", hash, h.Algorithm, h.Algorithm, registeredHashes[h.Algorithm])
+	default:
+		msg = fmt.Sprintf("hash %q must be <algorithm>:<digest>, for example sha256:<64 lowercase hex digits>", hash)
+	}
+	return &Problem{Code: CodeInvalidDocument, Field: field, Message: msg}
+}
 
 // IsZero reports whether no part of the document is set.
 func (d Document) IsZero() bool {
@@ -166,18 +251,10 @@ func (d Document) Validate(field string) Problems {
 		ps = append(ps, Problem{Code: CodeInvalidDocument, Field: field + ".ref",
 			Message: "a document that carries an author, a hash, or a quote must name what it refers to"})
 	}
-	if d.Hash != "" {
-		switch {
-		case !hashPattern.MatchString(d.Hash):
-			ps = append(ps, Problem{Code: CodeInvalidDocument, Field: field + ".hash",
-				Message: fmt.Sprintf("hash %q must be <algorithm>:<lowercase hex digest>, for example sha256:…", d.Hash)})
-		case HashAlgorithm(d.Hash) == AlgorithmSHA256 && len(d.Hash) != len(AlgorithmSHA256)+1+64:
-			// An algorithm we implement is checked for shape; a truncated
-			// digest is a typo, not another implementation's choice.
-			ps = append(ps, Problem{Code: CodeInvalidDocument, Field: field + ".hash",
-				Message: fmt.Sprintf("hash %q is not a sha256 digest: expected 64 hex digits", d.Hash)})
-		}
-	}
+	// A malformed or non-canonical hash is not invalid here either, for the
+	// same reason as an empty quote below: validate reports hash_malformed or
+	// hash_noncanonical, and writers refuse both (HashWriteProblem).
+	//
 	// An empty quote is not invalid here: a claim file can never be
 	// rewritten, so a read-time rejection could never be satisfied. Writers
 	// refuse it; readers treat the mapping as carrying no quote and warn
@@ -211,8 +288,24 @@ func HashDocument(r io.Reader) (string, error) {
 
 // HashDocumentBytes is HashDocument for content already in memory.
 func HashDocumentBytes(data []byte) string {
-	sum := sha256.Sum256([]byte(normaliseNewlines(string(data))))
-	return AlgorithmSHA256 + ":" + hex.EncodeToString(sum[:])
+	d, _ := DigestBytes(AlgorithmSHA256, data)
+	return AlgorithmSHA256 + ":" + d
+}
+
+// DigestBytes returns the lowercase hex digest of content under algo, with
+// CRLF normalised to LF as for HashDocument, or false when algo is not one
+// this implementation computes.
+func DigestBytes(algo string, data []byte) (string, bool) {
+	norm := []byte(normaliseNewlines(string(data)))
+	switch algo {
+	case AlgorithmSHA256:
+		sum := sha256.Sum256(norm)
+		return hex.EncodeToString(sum[:]), true
+	case AlgorithmSHA512:
+		sum := sha512.Sum512(norm)
+		return hex.EncodeToString(sum[:]), true
+	}
+	return "", false
 }
 
 // QuoteMatches reports whether quote appears in document.
