@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Recall by query trims whitespace at the edges (#12,
+  nodelogicau/particulars#37).** `recall --query` and `knowledge_recall(query)`
+  now trim leading and trailing whitespace, as well as punctuation, from the
+  query and from each term. `Project X ?`, ` Project X`, and a query ending in
+  a newline match `Project X` exactly, and a trailing space no longer changes
+  the ranking. Interior whitespace is kept, so `Project  X` (two spaces) is
+  not exact. Among exact matches, the longest label or alias now ranks first,
+  so `C#` comes before `C` for the query `C#`.
 - **`migrate` says to restart a running MCP server.** `particulars serve
   --mcp` reads `dkf.yaml` once at startup, so a server left running across a
   migration still sees the flat layout and reports an empty workspace. The

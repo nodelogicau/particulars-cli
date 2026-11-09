@@ -27,10 +27,11 @@ particular is marked current. --limit keeps the most recent N.
 
 --query <text> recalls by free text instead of a particular: it resolves every
 particular whose label, alias, or claim/synthesis content contains the query or
-any of its words (edge punctuation trimmed, case folded), then recalls each as
-above. Results are grouped per particular with how it was resolved (label,
-alias, lexical), exact names first; content matches are marked. With --query,
---limit counts particulars (default 10).`,
+any of its words (punctuation and spaces at the edges trimmed, case folded),
+then recalls each as above. Results are grouped per particular with how it
+was resolved (label, alias, lexical), exact names first, longest first;
+content matches are marked. With --query, --limit counts particulars
+(default 10).`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: a.run(func(cmd *cobra.Command, args []string) error {
 			querying := cmd.Flags().Changed("query")

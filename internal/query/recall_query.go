@@ -50,9 +50,9 @@ type QueryResult struct {
 }
 
 // isEdge reports whether r is trimmed from the edges of the query and its
-// terms: Unicode general category P. It is the one place the edge class is
-// defined (nodelogicau/particulars#37 may add White_Space).
-func isEdge(r rune) bool { return unicode.IsPunct(r) }
+// terms: Unicode general category P or the White_Space property, which
+// unicode.IsSpace is exactly.
+func isEdge(r rune) bool { return unicode.IsPunct(r) || unicode.IsSpace(r) }
 
 // parsedQuery is a query as the baseline matches it: everything case-folded.
 type parsedQuery struct {
@@ -137,6 +137,7 @@ func exactIn(query, name string) bool {
 type candidate struct {
 	root       string
 	resolution Resolution
+	exactLen   int // code points of the longest exact label or alias, folded
 }
 
 // resolveQuery is stage one: the lexical baseline over every particular's
@@ -147,44 +148,53 @@ func resolveQuery(g *store.Graph, q parsedQuery, fold func(string) string) []can
 	if q.empty() {
 		return nil
 	}
-	best := map[string]Resolution{}
-	note := func(id string, r Resolution) {
+	best := map[string]*candidate{}
+	note := func(id string, r Resolution, exactLen int) {
 		root := g.ClassOf(id)[0]
-		if cur, ok := best[root]; !ok || resolutionRank[r] < resolutionRank[cur] {
-			best[root] = r
+		c, ok := best[root]
+		if !ok {
+			best[root] = &candidate{root, r, exactLen}
+			return
 		}
+		if resolutionRank[r] < resolutionRank[c.resolution] {
+			c.resolution = r
+		}
+		c.exactLen = max(c.exactLen, exactLen)
 	}
 	for _, p := range g.Particulars {
-		label := fold(p.Label)
-		if exactIn(q.raw, label) {
-			note(p.ID, ResolutionLabel)
-			continue
-		}
 		res := Resolution("")
+		exactLen := 0
+		exact := func(name string, r Resolution) {
+			if exactIn(q.raw, name) {
+				if res == "" || resolutionRank[r] < resolutionRank[res] {
+					res = r
+				}
+				exactLen = max(exactLen, utf8.RuneCountInString(name))
+			}
+		}
+		label := fold(p.Label)
+		exact(label, ResolutionLabel)
 		lexical := q.matches(label)
 		for _, a := range p.Aliases {
 			fa := fold(a)
-			if exactIn(q.raw, fa) {
-				res = ResolutionAlias
-				break
-			}
+			exact(fa, ResolutionAlias)
 			lexical = lexical || q.matches(fa)
 		}
 		if res == "" && lexical {
 			res = ResolutionLexical
 		}
 		if res != "" {
-			note(p.ID, res)
+			note(p.ID, res, exactLen)
 		}
 	}
 	for _, a := range g.Assertions {
 		if q.matches(fold(a.GetContent())) {
-			note(a.SubjectID(), ResolutionLexical)
+			note(a.SubjectID(), ResolutionLexical, 0)
 		}
 	}
 	out := make([]candidate, 0, len(best))
-	for root, r := range best {
-		out = append(out, candidate{root, r})
+	for _, c := range best {
+		out = append(out, *c)
 	}
 	return out
 }
@@ -207,8 +217,9 @@ func RecallQuery(g *store.Graph, text string, opts RecallOptions) (QueryResult, 
 
 	type ranked struct {
 		QueryParticular
-		whole bool
-		terms int
+		exactLen int
+		whole    bool
+		terms    int
 	}
 	var all []ranked
 	for _, c := range resolveQuery(g, q, fold) {
@@ -233,7 +244,7 @@ func RecallQuery(g *store.Graph, text string, opts RecallOptions) (QueryResult, 
 			entries[i].Matched = q.matches(ft)
 			texts = append(texts, ft)
 		}
-		r := ranked{QueryParticular: QueryParticular{Particular: c.root, Resolution: c.resolution, Entries: entries}}
+		r := ranked{QueryParticular: QueryParticular{Particular: c.root, Resolution: c.resolution, Entries: entries}, exactLen: c.exactLen}
 		if p := g.Particular(c.root); p != nil {
 			r.Label = p.Label
 		}
@@ -260,6 +271,9 @@ func RecallQuery(g *store.Graph, text string, opts RecallOptions) (QueryResult, 
 		a, b := all[i], all[j]
 		if ra, rb := resolutionRank[a.Resolution], resolutionRank[b.Resolution]; ra != rb {
 			return ra < rb
+		}
+		if a.exactLen != b.exactLen {
+			return a.exactLen > b.exactLen // zero for lexical, so only exact ones differ
 		}
 		if a.whole != b.whole {
 			return a.whole

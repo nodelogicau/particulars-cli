@@ -21,9 +21,12 @@ func TestParseQuery(t *testing.T) {
 		{"?!", "", nil},
 		{"Auth auth AUTH", "auth auth auth", []string{"auth"}},
 		{"STRASSE Straße", "strasse strasse", []string{"strasse"}},
-		// Edge whitespace is not trimmed until nodelogicau/particulars#37
-		// settles it; terms never carry it.
-		{" Project X", " project x", []string{"project", "x"}},
+		{" Project X\n", "project x", []string{"project", "x"}},
+		{"Project X ?", "project x", []string{"project", "x"}},
+		{"auth timeout ", "auth timeout", []string{"auth", "timeout"}},
+		{"Project  X", "project  x", []string{"project", "x"}},
+		{"\u00a0Project X\u3000", "project x", []string{"project", "x"}},
+		{"   ", "", nil},
 	} {
 		q := parseQuery(tc.in, fold)
 		if q.whole != tc.whole || strings.Join(q.terms, "|") != strings.Join(tc.terms, "|") {
@@ -32,6 +35,9 @@ func TestParseQuery(t *testing.T) {
 	}
 	if !parseQuery("?!", fold).empty() {
 		t.Error("punctuation alone must be empty")
+	}
+	if !parseQuery("   ", fold).empty() {
+		t.Error("whitespace alone must be empty")
 	}
 }
 
@@ -50,8 +56,11 @@ func TestExactIn(t *testing.T) {
 		{"aa?", "a", false},
 		{"?a", "a", true},
 		{"x", "", false},
-		// Edge whitespace is not an edge yet (nodelogicau/particulars#37).
-		{" Project X", "Project X", false},
+		{" Project X", "Project X", true},
+		{"Project X ?", "Project X", true},
+		{" Project X\n", "Project X", true},
+		{"Project  X", "Project X", false},
+		{"the Project X ", "Project X", false},
 	} {
 		if got := exactIn(fold(tc.query), fold(tc.name)); got != tc.want {
 			t.Errorf("exactIn(%q, %q) = %v; want %v", tc.query, tc.name, got, tc.want)
@@ -149,6 +158,63 @@ func TestRecallQueryResolution(t *testing.T) {
 	if len(r.Particulars) != 0 || r.Count != 0 || r.Particulars == nil {
 		t.Errorf("punctuation alone: %+v", r)
 	}
+
+	// Whitespace beside a name, or a line of input, is still exact;
+	// interior whitespace is kept.
+	for _, query := range []string{"Project X ?", " Project X\n"} {
+		if r := recallQuery(t, f, query, RecallOptions{}); !strings.HasPrefix(parts(r), "Project X:label") {
+			t.Errorf("%q: %s", query, parts(r))
+		}
+	}
+	if r := recallQuery(t, f, "Project  X", RecallOptions{}); strings.Contains(parts(r), "Project X:label") {
+		t.Errorf("interior whitespace kept: %s", parts(r))
+	}
+	r = recallQuery(t, f, "   ", RecallOptions{})
+	if len(r.Particulars) != 0 || r.Particulars == nil {
+		t.Errorf("whitespace alone: %+v", r)
+	}
+}
+
+// slugged defines a particular under an explicit slug, for labels that slug
+// alike (C and C#).
+func (f *fixture) slugged(slug, label string, aliases ...string) *dkf.Particular {
+	f.t.Helper()
+	p, _, err := f.w.UpsertParticular(dkf.MintURI("", f.w.Config.Workspace.ID, slug), label, aliases)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return p
+}
+
+func TestRecallQueryLongestExactFirst(t *testing.T) {
+	f := newFixture(t)
+	c := f.slugged("c", "C") // created first, so the lower id
+	f.claim(c.ID, "A language")
+	cs := f.slugged("c-sharp", "C#")
+	f.claim(cs.ID, "Another language")
+	if c.ID >= cs.ID {
+		t.Fatalf("fixture ids out of order: %s %s", c.ID, cs.ID)
+	}
+
+	r := recallQuery(t, f, "C#", RecallOptions{})
+	if parts(r) != "C#:label C:label" {
+		t.Errorf("both exact, longer first: %s", parts(r))
+	}
+	r = recallQuery(t, f, "C#", RecallOptions{Limit: 1})
+	if len(r.Particulars) != 1 || r.Particulars[0].Particular != cs.ID || r.Omitted != 1 {
+		t.Errorf("limit keeps the longer exact name: %s omitted %d", parts(r), r.Omitted)
+	}
+
+	// Within alias too: both aliases are exact for "Go!", the longer first
+	// although its particular has the higher id.
+	g := newFixture(t)
+	short := g.particular("Alpha", "Go")
+	g.claim(short.ID, "A language")
+	long := g.particular("Beta", "Go!")
+	g.claim(long.ID, "Same language")
+	if r = recallQuery(t, g, "Go!", RecallOptions{}); parts(r) != "Beta:alias Alpha:alias" {
+		t.Errorf("alias exact, longer first: %s", parts(r))
+	}
 }
 
 func TestRecallQueryFiltersAndClasses(t *testing.T) {
@@ -210,6 +276,17 @@ func TestRecallQueryOrderAndLimit(t *testing.T) {
 	r := recallQuery(t, f, "auth timeout", RecallOptions{})
 	if parts(r) != "Gamma:lexical Alpha:lexical Beta:lexical" {
 		t.Errorf("whole query, then terms: %s", parts(r))
+	}
+	// Edge whitespace does not change the order, even when the phrase ends
+	// the claim, so the untrimmed query would not be a substring of it.
+	e := newFixture(t)
+	scattered := e.particular("Scattered")
+	e.claim(scattered.ID, "auth is required")
+	e.claim(scattered.ID, "the timeout is short")
+	end := e.particular("Ending")
+	e.claim(end.ID, "We raised the auth timeout")
+	if r = recallQuery(t, e, "auth timeout ", RecallOptions{}); parts(r) != "Ending:lexical Scattered:lexical" {
+		t.Errorf("trailing space: %s", parts(r))
 	}
 	r = recallQuery(t, f, "auth timeout", RecallOptions{Limit: 2})
 	if parts(r) != "Gamma:lexical Alpha:lexical" || r.Omitted != 1 || r.Count != 2 {
