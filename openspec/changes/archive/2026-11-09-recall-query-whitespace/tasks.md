@@ -14,5 +14,5 @@
 ## 3. Wrap-up
 
 - [x] 3.1 CHANGELOG entry under Unreleased.
-- [ ] 3.2 Archive the change and sync `knowledge-query`.
-- [ ] 3.3 Comment on #12 that #37 is implemented. #12 stays open for #38 and the LongMemEval_S run.
+- [x] 3.2 Archive the change and sync `knowledge-query`.
+- [x] 3.3 Comment on #12 that #37 is implemented. #12 stays open for #38 and the LongMemEval_S run.

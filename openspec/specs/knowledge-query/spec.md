@@ -133,7 +133,7 @@ Each recall entry for a claim SHALL include `evidential` when the file declares 
 `particulars recall --query <text> [--author <who>] [--topic <t>]... [--scope <s>] [--include-retracted] [--limit <n>]` SHALL implement DKF `recall-query`'s lexical baseline:
 - **Particulars resolved.** It SHALL resolve the particulars whose label, an alias, or the `content` of a claim or synthesis about them matches the query, ignoring every filter.
 - **Response per particular.** It SHALL then return, for each resolved merge class, exactly what `recall <lowest member id>` would return with the same `--author`, `--topic`, `--scope`, and `--include-retracted`. A class with nothing left after filtering SHALL be omitted.
-- **Terms.** A term SHALL be a maximal run of characters without the Unicode `White_Space` property. Leading and trailing characters of Unicode general category P SHALL be removed from the whole query and from each term, as written and before case folding, and interior characters SHALL be kept. A term empty after removal SHALL be ignored.
+- **Terms.** A term SHALL be a maximal run of characters without the Unicode `White_Space` property. Leading and trailing characters that are of Unicode general category P or have the Unicode `White_Space` property SHALL be removed from the whole query and from each term, as written and before case folding, and interior characters SHALL be kept. A term empty after removal SHALL be ignored.
 - **Matching.** Matching SHALL be under full Unicode case folding. A text SHALL match when the trimmed whole query or any one trimmed term is a substring of it.
 - **Empty query.** A query empty after removal SHALL produce an empty result and exit 0.
 
@@ -149,14 +149,15 @@ The JSON result SHALL carry:
 Entries SHALL be as in recall by particular. An entry whose `content` matches SHALL carry `matched: true`.
 
 `resolution` SHALL be:
-- `label` when a member's label, case-folded, occurs in the case-folded query with every query character outside that occurrence of category P;
+- `label` when a member's label, case-folded, occurs in the case-folded query with every query character outside that occurrence of category P or `White_Space`;
 - otherwise `alias`, on the same test against aliases;
 - otherwise `lexical`.
 
 Particulars SHALL be ordered by `resolution` in that order. Within each value they SHALL be ordered by:
-1. whether the trimmed whole query matches a member's label, an alias, or an entry's `content`, matches first;
-2. the number of distinct case-folded trimmed terms that match any of those, more first;
-3. ascending `particular`.
+1. within `label` and `alias` only, the length in code points, after case folding, of the longest label or alias that makes the particular exact, longer first;
+2. whether the trimmed whole query matches a member's label, an alias, or an entry's `content`, matches first;
+3. the number of distinct case-folded trimmed terms that match any of those, more first;
+4. ascending `particular`.
 
 `--limit` SHALL count particulars, keeping the first in this order with their entries whole. It SHALL default to 10 when omitted or `0`, and SHALL be a usage error when negative.
 
@@ -227,4 +228,24 @@ Particulars SHALL be ordered by `resolution` in that order. Within each value th
 #### Scenario: Filters combine with a query
 - **WHEN** `recall --query timeout --topic auth` is run
 - **THEN** every returned entry carries topic `auth`
+
+#### Scenario: Whitespace beside a name is still exact
+- **WHEN** a particular is labelled `Project X` and the queries are `Project X ?` and a space, `Project X`, and a line feed
+- **THEN** its `resolution` is `label` for each
+
+#### Scenario: Interior whitespace is kept
+- **WHEN** a particular is labelled `Project X` and the query is `Project  X` with two spaces
+- **THEN** its `resolution` is not `label`
+
+#### Scenario: Whitespace alone
+- **WHEN** the query is three spaces
+- **THEN** `particulars` is empty and the command exits 0
+
+#### Scenario: Edge whitespace does not change the order
+- **WHEN** the query is `auth timeout ` with a trailing space, Project A's only claim ends with "auth timeout", and Project B has "auth" and "timeout" in separate claims
+- **THEN** Project A is ordered before Project B
+
+#### Scenario: The longer exact name ranks first
+- **WHEN** `C` and `C#` are labels, `C` has the lower id, the query is `C#`, and `--limit 1` is given
+- **THEN** both are `label`, `C#` is returned, and `omitted` is 1
 
