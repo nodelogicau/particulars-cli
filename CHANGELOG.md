@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.21.0 — a minted URI belongs to the label it was minted for
 
 - **Labels that slug alike no longer relabel a particular (#32,
   nodelogicau/particulars#62, #63). Breaking.** `particular define` without
