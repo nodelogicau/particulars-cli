@@ -17,7 +17,7 @@ jobs:
   shellcheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: sudo apt-get update -q && sudo apt-get install -y -q shellcheck
       - run: shellcheck install.sh
 
@@ -31,7 +31,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         version: [latest, v0.2.1]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Run installer
         env:
           PARTICULARS_INSTALL_DIR: ${{ runner.temp }}/bin
