@@ -68,7 +68,7 @@ func Classify(err error) *Error {
 		return &Error{Code: ExitNotFound, ErrCode: "not_found", Err: err}
 	case errors.As(err, &ps), errors.As(err, &p):
 		return &Error{Code: ExitUsage, ErrCode: "invalid", Err: err}
-	case errors.Is(err, store.ErrAlreadyExists), errors.Is(err, store.ErrAlreadyRetracted):
+	case errors.Is(err, store.ErrAlreadyExists), errors.Is(err, store.ErrAlreadyRetracted), errors.Is(err, store.ErrMintedCollision):
 		return &Error{Code: ExitRuntime, ErrCode: "conflict", Err: err}
 	case errors.Is(err, store.ErrUnsupportedFormat):
 		return &Error{Code: ExitRuntime, ErrCode: "unsupported_format", Err: err}
@@ -87,7 +87,24 @@ func IsDomain(err error) bool {
 	var ps dkf.Problems
 	var p *dkf.Problem
 	return errors.As(err, &ee) || errors.Is(err, store.ErrNoWorkspace) || errors.Is(err, store.ErrNotFound) ||
-		errors.Is(err, store.ErrAlreadyExists) || errors.Is(err, store.ErrAlreadyRetracted) ||
+		errors.Is(err, store.ErrAlreadyExists) || errors.Is(err, store.ErrAlreadyRetracted) || errors.Is(err, store.ErrMintedCollision) ||
 		errors.Is(err, store.ErrUnsupportedFormat) || errors.Is(err, store.ErrSealedMonth) || errors.Is(err, store.ErrMigrationRefused) ||
 		errors.As(err, &ps) || errors.As(err, &p)
+}
+
+// DefineRefusal rewrites a *store.MintedCollisionError as a conflict whose
+// message names the existing particular and what to do, using flag ("--uri"
+// for the CLI, "uri" for MCP) for the explicit-URI parameter. Other errors are
+// returned unchanged.
+func DefineRefusal(err error, flag string) error {
+	var mc *store.MintedCollisionError
+	if !errors.As(err, &mc) {
+		return err
+	}
+	via := ""
+	if mc.Existing.URI != mc.URI {
+		via = ", through a merge with " + mc.Existing.URI
+	}
+	return Conflict("label %q mints %s, which already names %s (%q%s); for a different thing pass an explicit %s, or refer to the same thing by its uri or id",
+		mc.Label, mc.URI, mc.Existing.ID, mc.Existing.Label, via, flag)
 }

@@ -19,7 +19,7 @@ import (
 
 func (s *Server) registerTools() {
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "particular_define", Annotations: idempotent,
-		Description: "Create or update a particular (a specific, identifiable thing claims are about). A particular is a thing in the world — a person, project, place, system — never the document or feed being read; what you read belongs in claim_assert's source.document. Idempotent on URI: without uri one is minted from the label (<base-uri><slug> or urn:dkf:<workspace-id>:<slug>), so the same label always resolves to the same particular. Prefer an existing global URI (Wikidata, an ORCID, a person's or project's GitHub page) when the thing has one."},
+		Description: "Create or update a particular (a specific, identifiable thing claims are about). A particular is a thing in the world — a person, project, place, system — never the document or feed being read; what you read belongs in claim_assert's source.document. Idempotent on URI: without uri one is minted from the label (<base-uri><slug> or urn:dkf:<workspace-id>:<slug>), and resolves to an existing particular only when the label matches its label or an alias (ignoring case); labels that only slug alike (C, C#, C++; Café, Cafe) are refused with a conflict naming the existing particular, so pass uri for a different thing or use the named id for the same one. Without uri define never relabels; rename by passing the particular's uri. Symbols and labels wholly in a non-Latin script (#, 東京) need uri. Prefer an existing global URI (Wikidata, an ORCID, a person's or project's GitHub page) when the thing has one."},
 		s.particularDefine)
 	sdk.AddTool(s.srv, &sdk.Tool{Name: "particular_resolve", Annotations: readOnly,
 		Description: "Find a particular by id, URI, label, or alias (label/alias case-insensitive). Returns particular: null when nothing matches. Call this before defining or asserting to avoid duplicates."},
@@ -138,18 +138,20 @@ func (s *Server) particularDefine(ctx context.Context, req *sdk.CallToolRequest,
 		return errResult(apperr.Usage("label is required")), nil, nil
 	}
 	uri := strings.TrimSpace(in.URI)
+	define := s.ws.UpsertParticular
 	if uri == "" {
 		slug := dkf.Slugify(label)
 		if slug == "" {
-			return errResult(apperr.Usage("label %q yields an empty slug; pass uri explicitly", label)), nil, nil
+			return errResult(apperr.Usage("label %q yields no slug (symbols, or a script the slug drops); an explicit uri is required", label)), nil, nil
 		}
 		uri = dkf.MintURI(s.ws.Config.Workspace.BaseURI, s.ws.Config.Workspace.ID, slug)
+		define = s.ws.DefineMinted
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p, created, err := s.ws.UpsertParticular(uri, label, in.Aliases)
+	p, created, err := define(uri, label, in.Aliases)
 	if err != nil {
-		return errResult(err), nil, nil
+		return errResult(apperr.DefineRefusal(err, "uri")), nil, nil
 	}
 	verb := "Updated"
 	if created {

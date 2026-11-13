@@ -194,7 +194,9 @@ On failure stderr carries `{"error": {"code", "message"}}`.
 
 ## Rules for particulars
 
-- `define` mints the URI from the label, so **the same label always hits the same particular**. Use specific labels: "Auth Service" and "Auth Team", not "Auth".
+- `define` without `--uri` mints the URI from the label, so the same label (in any case) hits the same particular. Use specific labels: "Auth Service" and "Auth Team", not "Auth".
+- Labels that only slug alike (`C` / `C#` / `C++`, `Café` / `Cafe`) are **refused** with a `conflict` naming the existing particular's id, URI, and label. If it is the same thing, use that id; if it is a different thing, define it with `--uri` (a Wikidata URI suits `C#`). Symbols and labels wholly in a non-Latin script (`#`, `東京`) yield no slug and always need `--uri`.
+- `define` without `--uri` never renames: it keeps the label and only adds aliases. To rename, pass the particular's own `--uri`.
 - If `define` returns `created: false`, you hit an existing particular — check it is the one you meant.
 - Things with a global identifier get it: `--uri https://www.wikidata.org/entity/Q42`, an ORCID, a GitHub URL for a repo or file.
 - Ambiguous subjects exit 2 listing candidate ids; retry with the id.

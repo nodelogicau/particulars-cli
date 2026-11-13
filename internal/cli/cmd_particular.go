@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/nodelogicau/particulars-cli/internal/apperr"
 	"github.com/nodelogicau/particulars-cli/internal/dkf"
 	"github.com/nodelogicau/particulars-cli/internal/query"
 	"github.com/nodelogicau/particulars-cli/internal/store"
@@ -31,9 +32,13 @@ func (a *app) particularDefineCmd() *cobra.Command {
 		Short: "Create a particular, or update it if one with the same URI exists (idempotent on URI)",
 		Long: `Without --uri the URI is minted as <base-uri><slug> when dkf.yaml sets
 workspace.base-uri, otherwise urn:dkf:<workspace-id>:<slug>, where slug is
-derived from the label. Defining the same label twice therefore hits the same
-particular. Prefer an existing global URI (Wikidata, ORCID, a GitHub URL) when
-the thing has one.`,
+derived from the label. A minted URI resolves to an existing particular only
+when the label matches its label or an alias (ignoring case); labels that only
+slug alike (C, C#, C++; Café, Cafe) are refused with a conflict naming the
+existing particular, and pass --uri for a different thing. Without --uri define
+never relabels; rename through the particular's --uri. Labels that are symbols
+or wholly in a script the slug drops (#, 東京) need --uri. Prefer an existing
+global URI (Wikidata, ORCID, a GitHub URL) when the thing has one.`,
 		Args: cobra.NoArgs,
 		RunE: a.run(func(cmd *cobra.Command, args []string) error {
 			label = strings.TrimSpace(label)
@@ -44,16 +49,20 @@ the thing has one.`,
 			if err != nil {
 				return err
 			}
+			var p *dkf.Particular
+			var created bool
 			if uri == "" {
 				slug := dkf.Slugify(label)
 				if slug == "" {
-					return usageErr("label %q yields an empty slug; pass --uri explicitly", label)
+					return usageErr("label %q yields no slug (symbols, or a script the slug drops); an explicit --uri is required", label)
 				}
 				uri = dkf.MintURI(ws.Config.Workspace.BaseURI, ws.Config.Workspace.ID, slug)
+				p, created, err = ws.DefineMinted(uri, label, aliases)
+			} else {
+				p, created, err = ws.UpsertParticular(uri, label, aliases)
 			}
-			p, created, err := ws.UpsertParticular(uri, label, aliases)
 			if err != nil {
-				return err
+				return apperr.DefineRefusal(err, "--uri")
 			}
 			return a.emit(map[string]any{"particular": p, "created": created}, func(w io.Writer) {
 				verb := "Updated"

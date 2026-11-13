@@ -198,13 +198,16 @@ func TestParticularDefineResolve(t *testing.T) {
 	if p["uri"] != "https://example.com/particulars/billing-service" {
 		t.Errorf("uri = %v", p["uri"])
 	}
-	// Same label again (case differs) → same slug → same particular, no new alias.
+	// Same label again (case differs) → same particular, label kept, no new alias.
 	r2 := run(t, "", "particular", "define", "--label", "Billing service", "--json")
 	if r2.code != 0 || r2.js["created"] != false || r2.js["particular"].(map[string]any)["id"] != p["id"] {
 		t.Errorf("second define should update: %+v", r2)
 	}
 	if aliases := r2.js["particular"].(map[string]any)["aliases"].([]any); len(aliases) != 1 {
-		t.Errorf("case-only relabel should not add an alias: %v", aliases)
+		t.Errorf("case-only define should not add an alias: %v", aliases)
+	}
+	if got := r2.js["particular"].(map[string]any)["label"]; got != "Billing Service" {
+		t.Errorf("minted define must not relabel, label = %v", got)
 	}
 	// Real relabel via explicit URI → old label preserved as alias.
 	r3 := run(t, "", "particular", "define", "--label", "Billing Svc", "--uri", p["uri"].(string), "--json")
@@ -212,7 +215,7 @@ func TestParticularDefineResolve(t *testing.T) {
 		t.Fatalf("relabel: %+v", r3)
 	}
 	aliases := r3.js["particular"].(map[string]any)["aliases"].([]any)
-	if len(aliases) != 2 || aliases[1] != "Billing service" {
+	if len(aliases) != 2 || aliases[1] != "Billing Service" {
 		t.Errorf("aliases should contain alias and previous label: %v", aliases)
 	}
 	if r := run(t, "", "particular", "define", "--label", "!!!", "--json"); r.code != 2 {

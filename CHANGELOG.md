@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Labels that slug alike no longer relabel a particular (#32,
+  nodelogicau/particulars#62, #63). Breaking.** `particular define` without
+  `--uri`, and `particular_define` without `uri`, mint the URI from the label,
+  so `C`, `C#` and `C++` all minted `…:c`, and the second define silently
+  renamed the first particular. Now:
+  - **A minted URI resolves only on a label match.** The label must equal the
+    existing particular's label or one of its aliases, ignoring case, across
+    its merge class. Supplied `--alias` values don't count. Otherwise define
+    is refused with `conflict` (exit 1), naming the existing particular's id,
+    URI and label, and nothing is written. `Cafe` after `Café` is refused too.
+  - **Without `--uri`, define never renames.** It keeps the label and only
+    adds new aliases. A repeat define writes nothing. To rename, pass the
+    particular's `--uri`. With an explicit `--uri`, define behaves as before.
+  - **Minting resolves through merges.** A minted URN that was merged into
+    another particular now reaches that particular instead of creating a
+    second file at the URN.
+  - **Labels with no slug** (`#`, `東京`, `Ωμέγα`) are still refused, now with
+    a message saying an explicit `--uri` is required.
+
+  Particulars that an earlier collision already relabelled are left as they
+  are.
+
 - **Document hashes follow the OCI digest grammar (#31,
   nodelogicau/particulars#56).** Readers are now as lenient as the spec says,
   and writers as strict:

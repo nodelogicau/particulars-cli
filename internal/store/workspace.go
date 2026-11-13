@@ -471,10 +471,98 @@ func (w *Workspace) Retract(id string, r *dkf.Retracted) (dkf.Retractable, error
 	return nil, fmt.Errorf("retraction of %s aborted, file restored: %w", id, err)
 }
 
-// UpsertParticular implements idempotent define: if a particular with uri
-// exists it is updated (label replaced; aliases unioned with the old label and
-// the supplied aliases), otherwise a new one is created. Returns created=true
-// for a new particular.
+// ErrMintedCollision is matched by a MintedCollisionError: a define without an
+// explicit URI minted a URI that already names a different particular.
+var ErrMintedCollision = errors.New("minted uri names a different particular")
+
+// MintedCollisionError is DefineMinted's refusal. Existing is the particular
+// the minted URI already names: the one carrying it, otherwise the lowest-id
+// member of its merge class. Front ends build their message from the fields so
+// each can name its own URI flag.
+type MintedCollisionError struct {
+	Label    string
+	URI      string
+	Existing *dkf.Particular
+}
+
+func (e *MintedCollisionError) Error() string {
+	return fmt.Sprintf("label %q mints %s, which names %s (%q)", e.Label, e.URI, e.Existing.ID, e.Existing.Label)
+}
+
+func (e *MintedCollisionError) Is(target error) bool { return target == ErrMintedCollision }
+
+// DefineMinted implements define for a URI minted from label. When the URI's
+// merge class holds particulars, the call resolves only to one whose label or
+// alias equals label under case folding (supplied aliases do not count),
+// preferring the URI's carrier, else the lowest id; it never relabels and only
+// adds aliases, writing nothing when none is new. With no match it refuses
+// with a *MintedCollisionError and writes nothing. An unknown URI creates a
+// particular as UpsertParticular does.
+func (w *Workspace) DefineMinted(uri, label string, aliases []string) (*dkf.Particular, bool, error) {
+	g, err := w.Load()
+	if err != nil {
+		return nil, false, err
+	}
+	class := g.MergedURIOwners(uri)
+	if len(class) == 0 {
+		return w.UpsertParticular(uri, label, aliases)
+	}
+	carrier := g.ParticularByURI(uri)
+	names := func(p *dkf.Particular, s string) bool {
+		if strings.EqualFold(p.Label, s) {
+			return true
+		}
+		for _, a := range p.Aliases {
+			if strings.EqualFold(a, s) {
+				return true
+			}
+		}
+		return false
+	}
+	var target *dkf.Particular
+	if carrier != nil && names(carrier, label) {
+		target = carrier
+	} else {
+		for _, p := range class {
+			if names(p, label) {
+				target = p
+				break
+			}
+		}
+	}
+	if target == nil {
+		existing := carrier
+		if existing == nil {
+			existing = class[0]
+		}
+		return nil, false, &MintedCollisionError{Label: label, URI: uri, Existing: existing}
+	}
+	added := false
+	for _, a := range aliases {
+		a = strings.TrimSpace(a)
+		if a == "" || names(target, a) {
+			continue
+		}
+		target.Aliases = append(target.Aliases, a)
+		added = true
+	}
+	if !added {
+		return target, false, nil
+	}
+	if err := w.WriteParticular(target); err != nil {
+		return nil, false, err
+	}
+	if err := w.UpsertIndex(target); err != nil {
+		return nil, false, err
+	}
+	return target, false, nil
+}
+
+// UpsertParticular implements idempotent define on an explicit URI: if a
+// particular with uri exists it is updated (label replaced; aliases unioned
+// with the old label and the supplied aliases), otherwise a new one is
+// created. Returns created=true for a new particular. A URI minted from the
+// label goes through DefineMinted instead.
 func (w *Workspace) UpsertParticular(uri, label string, aliases []string) (*dkf.Particular, bool, error) {
 	g, err := w.Load()
 	if err != nil {

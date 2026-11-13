@@ -929,3 +929,23 @@ func TestFlatWorkspaceIndexOverMCP(t *testing.T) {
 		t.Errorf("index after MCP writes: %+v %v", d, err)
 	}
 }
+
+func TestParticularDefineMintedCollision(t *testing.T) {
+	h := newHarness(t, "claude-ai", "ben")
+	c := h.ok("particular_define", map[string]any{"label": "C"})
+	text := h.fail("particular_define", map[string]any{"label": "C#"}, "conflict")
+	if !strings.Contains(text, id(c, "particular")) || !strings.Contains(text, "explicit uri") {
+		t.Errorf("refusal text %q", text)
+	}
+	if text := h.fail("particular_define", map[string]any{"label": "東京"}, "usage"); !strings.Contains(text, "explicit uri is required") {
+		t.Errorf("empty-slug text %q", text)
+	}
+	g, _ := h.ws.Load()
+	if len(g.Particulars) != 1 {
+		t.Errorf("refusals wrote particulars: %d", len(g.Particulars))
+	}
+	again := h.ok("particular_define", map[string]any{"label": "c"})
+	if id(again, "particular") != id(c, "particular") || again["particular"].(map[string]any)["label"] != "C" {
+		t.Errorf("case-only define: %v", again)
+	}
+}
