@@ -73,8 +73,6 @@ homebrew_casks:
     commit_author:
       name: particulars-release
       email: noreply@nodelogic.au
-    url:
-      verified: github.com/nodelogicau/particulars-cli/
     binaries:
       - particulars
     # Homebrew deprecated `postflight` blocks for third-party casks in favour of
