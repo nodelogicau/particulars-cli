@@ -43,6 +43,12 @@ Alternative: allow tokenless listening on any address with a warning. Rejected, 
 
 **Shutdown uses `http.Server.Shutdown` with a 30-second deadline.** It is triggered by the existing `signal.NotifyContext`. In-flight tool calls finish, because each mutating call holds the mutex to completion. Cloudflare Containers allow up to 15 minutes between SIGTERM and SIGKILL, so 30 s is well inside that.
 
+**The SDK's DNS-rebinding check is off when a token is configured.** go-sdk refuses a request that arrives from loopback with a non-loopback `Host` (403). That protects a tokenless local server, so it stays on there. With a token, a rebinding page cannot authenticate anyway, and the check would break a proxy in front of the server that forwards from loopback with the public `Host`, which is common in containers.
+
+**Shutdown ends the standalone GET streams at once.** A client's GET `/mcp` stream carries only server-to-client notifications and never finishes by itself, so `Shutdown` would wait out the full 30 s whenever a session was open. Those streams are cancelled when shutdown begins. POSTs, which carry the tool calls, are left to finish.
+
+**A named token file wins even when empty.** `--http-token-file` names the token, so an empty file means no token and the environment is not consulted. Off loopback, that refuses to start rather than quietly using a different credential.
+
 ## Risks / Trade-offs
 
 - [A single shared token gives full read and write access] → It is acceptable for one person's workspace behind one executive. Scoped tokens are an open question.

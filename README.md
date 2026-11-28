@@ -156,7 +156,8 @@ installs the binary if missing and installs the skill, on every session start.
 
 ## Use from Claude Desktop or any MCP client
 
-`particulars serve --mcp` serves one workspace over stdio with the DKF
+`particulars serve --mcp` serves one workspace over stdio (or, with `--http`,
+over Streamable HTTP for hosted clients) with the DKF
 specification's tool names (`claim_assert`, `knowledge_recall`, …) and results
 identical to `--json`. The agent discipline travels in the server's `instructions`.
 Claude Desktop users install the `.mcpb` bundle from the releases page and pick a
@@ -203,7 +204,7 @@ pushed by a workflow when a knowledge pull request is merged. See
 | `unresolved [P] [--include-none] [--scope S]` | What each current synthesis admits it could not settle, oldest first |
 | `index [--check]` | Rebuild `index.yaml`, or verify it (exit 4 on drift) |
 | `validate` | Structural and referential checks; exit 4 on errors |
-| `serve --mcp [--workspace D]` | Serve the workspace to an MCP client over stdio (see [docs/mcp.md](docs/mcp.md)) |
+| `serve --mcp [--workspace D] [--http ADDR [--http-token-file F]]` | Serve the workspace to an MCP client over stdio, or over Streamable HTTP with a bearer token (see [docs/mcp.md](docs/mcp.md#over-http)) |
 | `publish <id>… --scope S [--reason R]` | Share claims and syntheses more widely; writes a promotion record (widen-only, never cascades) |
 | `export --format graph [--schema]` | Emit Microsoft Graph items so merged knowledge is searchable in M365 Copilot (see [docs/graph.md](docs/graph.md)) |
 | `export --format dot\|mermaid [--subject P]` | Draw the workspace: one particular's dialectic, or a map of them all (see [docs/visualise.md](docs/visualise.md)) |
@@ -390,8 +391,10 @@ correct writer is minting into.
 
 Implemented: the eight non-federation tools from the DKF spec plus `particular_merge`
 — as CLI verbs and as MCP tools (`serve --mcp`) — and `init`, `index`, `validate`,
-`topics`, `skill`, `workspace`, `publish`. Not yet: `feed_index`, signing, and a
-hosted/HTTP server.
+`topics`, `skill`, `workspace`, `publish`, and `serve --mcp --http` for hosted
+clients. Not yet: `feed_index`, signing, OAuth or scoped tokens over HTTP, and
+keeping a hosted workspace durable (committing and pushing it is the
+deployment's job).
 
 ## Development
 
