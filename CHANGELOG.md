@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **`serve --mcp --http <addr>` serves the workspace over MCP Streamable HTTP**,
+  so hosted clients that cannot start a local process (a Cloudflare Agent, for
+  one) can reach it. Without `--http`, `serve --mcp` speaks stdio as before.
+  - **`/mcp`** has the same tools, results and instructions as stdio. Every
+    session shares the one workspace and its write lock.
+  - **A bearer token** comes from `--http-token-file` or `DKF_HTTP_TOKEN`, never
+    a flag value. A wrong or missing token gets 401. Without a token the server
+    listens only on loopback, and refuses `:port` or any other address with a
+    usage error.
+  - **`GET /healthz`** answers without the token, for readiness probes, and
+    reveals only the version.
+  - **A nameless remote session** gets `source.harness: http`. Explicit,
+    `DKF_HARNESS` and `dkf.yaml` harnesses still win, and stdio is unchanged.
+  - **SIGTERM or SIGINT** lets calls in flight finish for up to 30 s, then
+    exits 0.
+
 ## v0.21.0 — a minted URI belongs to the label it was minted for
 
 - **Labels that slug alike no longer relabel a particular (#32,

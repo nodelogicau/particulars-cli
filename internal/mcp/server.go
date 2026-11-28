@@ -1,5 +1,5 @@
-// Package mcp is the Model Context Protocol front-end: one stdio server bound
-// to one workspace, exposing the DKF specification's tools (spec names, spec
+// Package mcp is the Model Context Protocol front-end: one server bound to one
+// workspace, served over stdio or Streamable HTTP, exposing the DKF specification's tools (spec names, spec
 // parameters) plus two clearly labelled extensions. Results are the same values
 // the CLI emits for --json, so there is a single documented contract.
 package mcp
@@ -34,6 +34,10 @@ type Options struct {
 	Version   string
 	// Explicit provenance defaults from server flags (optional).
 	Author, Harness, Model string
+	// Remote marks a server whose sessions arrive over HTTP: a session whose
+	// handshake names no client then defaults source.harness to
+	// RemoteHarness rather than leaving it unset.
+	Remote bool
 }
 
 // Server wraps an SDK server bound to a workspace.
@@ -337,7 +341,7 @@ type contextIn struct {
 }
 
 // source resolves provenance for a call — explicit → env → dkf.yaml → client
-// name — then resolves author references for writing: a defined particular is
+// name, or RemoteHarness for a nameless HTTP session — then resolves author references for writing: a defined particular is
 // written as its uri. A per-call author is explicit (an ambiguous name is
 // refused with candidates); the server flag and workspace default fall
 // through unchanged, noted on stderr, because failing them would block every
@@ -366,6 +370,9 @@ func (s *Server) source(g *store.Graph, req clientInfoer, in *sourceIn, needHarn
 	fallback := ""
 	if ci := req.ClientInfo(); ci != nil {
 		fallback = ci.Name
+	}
+	if fallback == "" && s.opts.Remote {
+		fallback = RemoteHarness
 	}
 	src := prov.Resolve(s.ws.Config.Defaults.Source, e, fallback)
 	if err := prov.Require(src, needHarness); err != nil {

@@ -1,6 +1,7 @@
 # Using particulars from Claude Desktop and other MCP clients
 
-`particulars serve --mcp` speaks the Model Context Protocol over stdio. One server
+`particulars serve --mcp` speaks the Model Context Protocol over stdio, or over
+Streamable HTTP with `--http` ([Over HTTP](#over-http)). One server
 is bound to one workspace; a second workspace is a second server entry in your
 client. Tools use the DKF specification's names, and every result is exactly what
 the corresponding CLI verb prints with `--json`.
@@ -129,6 +130,52 @@ directory holding a `.dkf` pointer to it, so a host may pass its project
 directory. A server that exits before answering `initialize` (clients report
 `EOF` or "connection closed") almost always could not resolve a workspace; run
 the same command by hand from the same directory to see the message.
+
+### Over HTTP
+
+A client that cannot start a local process — a Cloudflare Agent, or any hosted
+runtime — reaches the server over MCP Streamable HTTP:
+
+```sh
+DKF_HTTP_TOKEN=… particulars serve --mcp --workspace /data/kb --http :8080
+```
+
+- **Endpoint.** `/mcp`. Tools, results, errors, instructions, prompts and
+  resources are the same as over stdio. Every session shares the one workspace
+  and its write lock, so concurrent writers keep the index consistent.
+- **Token.** Requests to `/mcp` need `Authorization: Bearer <token>`, or get
+  401. The token is the trimmed contents of `--http-token-file`, else
+  `$DKF_HTTP_TOKEN`; it is never a flag value, which would show in process
+  listings. A named token file wins over the environment, even when it is
+  empty.
+- **No token, loopback only.** Without a token the server listens only on
+  `127.0.0.1`, `::1` or `localhost`. A bare `:port` listens on every
+  interface, so it is refused without a token (exit 2).
+- **TLS** is not the server's job: put it behind the platform's or a proxy's
+  TLS.
+- **`GET /healthz`** answers `{"status":"ok","version":"…"}` without the token,
+  for readiness probes. It reveals nothing about the workspace. Every other
+  path is 404.
+- **Shutdown.** On SIGTERM or SIGINT the server stops accepting connections,
+  lets calls in flight finish for up to 30 s, and exits 0. Clients
+  re-initialise after a restart.
+- **Logs.** The startup line on stderr names the version, the workspace, the
+  address and whether a token is required. Stdout stays empty.
+
+In a container, with the token mounted as a secret:
+
+```dockerfile
+FROM alpine:3.20
+COPY particulars /usr/local/bin/particulars
+EXPOSE 8080
+HEALTHCHECK CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1
+CMD ["particulars", "serve", "--mcp", "--workspace", "/data/kb", \
+     "--http", ":8080", "--http-token-file", "/run/secrets/dkf_http_token"]
+```
+
+The server writes YAML files into the workspace and nothing else. Keeping them
+— committing and pushing to a git remote — belongs to the deployment around
+it.
 
 ## What the model is told
 
@@ -264,7 +311,9 @@ Errors are tool results with `isError: true`, a text line `<code>: <message>`, a
 
 `source.harness` defaults to the connected client's name from the MCP handshake
 (`claude-ai`, `claude-code`, `cursor`, …) when neither the call, the server flags,
-`DKF_HARNESS`, nor `dkf.yaml` supplies one. `source.author` comes from `--author`,
+`DKF_HARNESS`, nor `dkf.yaml` supplies one. Over HTTP, a session whose
+handshake names no client gets `http`, so a remote write is never recorded as
+the person's own unattributed act; over stdio it stays unset. `source.author` comes from `--author`,
 `DKF_AUTHOR`, or `dkf.yaml`. The usual minimum applies: a source needs author or
 harness; a synthesis needs harness — so an agent-only client is always valid.
 
