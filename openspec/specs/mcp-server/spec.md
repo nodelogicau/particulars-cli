@@ -5,15 +5,19 @@
 The stdio Model Context Protocol front-end: one server bound to one workspace, the DKF specification's tool surface plus two labelled extensions, results identical to the CLI's `--json`, error mapping, provenance defaulted from the client handshake, instructions and prompt delivery, and write serialisation.
 ## Requirements
 ### Requirement: Stdio MCP server bound to one workspace
-`particulars serve --mcp [--workspace <dir>] [--author] [--harness] [--model]` SHALL run a Model Context Protocol server over stdio, bound at startup to exactly one workspace resolved as every verb does (flag, `DKF_WORKSPACE`, then `dkf.yaml`/`.dkf` discovery from the working directory). Without a workspace it SHALL exit with code 5 and a message on stderr. It SHALL write nothing to stdout except JSON-RPC. `serve` without `--mcp` SHALL be a usage error.
+`particulars serve --mcp [--workspace <dir>] [--author] [--harness] [--model] [--http <addr>] [--http-token-file <path>]` SHALL run a Model Context Protocol server bound at startup to exactly one workspace, resolved as every verb resolves it: the flag, then `DKF_WORKSPACE`, then `dkf.yaml`/`.dkf` discovery from the working directory. Without `--http` the server SHALL speak stdio, and SHALL write nothing to stdout except JSON-RPC. With `--http` it SHALL speak Streamable HTTP as *HTTP transport* requires, and SHALL write nothing to stdout. Without a workspace it SHALL exit with code 5 and a message on stderr, before speaking either transport. `serve` without `--mcp` SHALL be a usage error, and so SHALL `--http-token-file` without `--http`.
 
 #### Scenario: Started in a project
 - **WHEN** `particulars serve --mcp` is started in a directory whose ancestor has a `.dkf` pointing at a valid workspace
-- **THEN** the server initialises and every tool operates on that workspace
+- **THEN** the server initialises over stdio and every tool operates on that workspace
 
 #### Scenario: No workspace
 - **WHEN** `particulars serve --mcp` is started with no resolvable workspace
 - **THEN** the process exits with code 5 and stdout is empty
+
+#### Scenario: No workspace over HTTP
+- **WHEN** `particulars serve --mcp --http 127.0.0.1:8080` is started with no resolvable workspace
+- **THEN** the process exits with code 5 without listening
 
 ### Requirement: Spec tool surface
 The server SHALL expose tools named exactly `particular_define`, `particular_resolve`, `particular_merge`, `claim_assert`, `claim_retract`, `synthesis_create`, `knowledge_recall`, `conflict_detect`, `lineage_trace`, and `knowledge_publish`, with the parameter names given in the DKF specification (`synthesis_create` additionally takes `particular_id`; `knowledge_publish` takes `claim_ids`, `scope`, `source`, and optional `reason`). `claim_assert` SHALL take a required `evidential` of `observed`, `inferred`, or `held`, with no default, refusing `confidence` together with `held`; it SHALL accept `source.document` as either a string or a mapping of `ref`, `author`, `hash`, and `quote`, accepting `uri` as a legacy alias for `ref` and refusing a mapping carrying both. Every tool taking `source` SHALL publish an input schema in which `source.document` is stated as either a string or an object with the properties `ref`, `uri`, `author`, `hash`, and `quote`. Every tool taking `source` SHALL accept `source.quote` and `source.hash` as shorthand for the document's `quote` and `hash`, and `source.document_author` (or `source.document-author`) as shorthand for the document's `author`: the shorthand fills that field of the per-call document, a string document becoming its `ref`, and the written object SHALL be identical to one sent with the field nested, a shorthand author resolving as `document.author` does. A shorthand field without a per-call `source.document`, or set both as shorthand and inside the document with a different value, SHALL be a usage error that names where the field belongs; the same value given both ways SHALL be accepted and written once. `claim_assert` and `synthesis_create` SHALL accept the same top-level shorthand. Top-level `scope` and `topics` are shorthand for `context.scope` and `context.topics`: when both scopes are given `context.scope` SHALL win, and when both topic lists are given the written topics SHALL be their union, `context.topics` first, without duplicates. Top-level `document`, `quote`, `hash`, `document_author` (or `document-author`), `harness`, and `model` are shorthand for the same fields of `source`, folded into `source` before provenance resolves so that every rule above applies to them unchanged; a field given both at the top level and in `source` with a different value SHALL be a usage error, and the same value given both ways SHALL be accepted. A document given both at the top level and in `source` SHALL be merged field by field after each is read as a document — a string being `{ref: string}` — keeping a field set on either side, accepting a field equal on both, and refusing with a usage error a field that differs. The written object SHALL be identical to one sent through `source` and `context`. `source.author` and `document.author` SHALL accept a particular id, URI, or bare name, resolved for writing per `source-attribution`: an unknown id or an ambiguous per-call name is an error result; a server-flag or workspace default that is ambiguous is written unchanged. `claim_retract` SHALL accept an optional `kind`. `synthesis_create` SHALL accept `method` only from the closed vocabulary. `knowledge_recall` SHALL accept an optional `author` — an id, URI, label, or alias — returning the objects asserted by or reported from that particular's merge class, each entry carrying `relations` (`asserted`, `reported`, or both), combinable with `particular_id`, `scope`, `topics`, and `include_retracted`. `knowledge_recall` SHALL accept an optional `query`, free text, that performs recall by query as defined for `recall --query` in `knowledge-query`, combinable with `author`, `scope`, `topics`, `include_retracted`, and `limit`, where `limit` counts particulars; passing both `query` and `particular_id` SHALL be a usage error, and `query` SHALL NOT be treated as a particular reference. Parameters that identify a particular SHALL accept an id, URI, label, or alias; `knowledge_publish` SHALL accept claim and synthesis ids only. Each tool's structured result SHALL equal the corresponding CLI verb's `--json` output. Query tools SHALL be annotated read-only; `particular_define` idempotent; no tool destructive.
@@ -259,4 +263,66 @@ The descriptions and parameter schemas of `claim_assert` and `particular_define`
 #### Scenario: Define does not invite document particulars
 - **WHEN** a client reads `particular_define`'s description
 - **THEN** its URI examples name identities, not articles or feeds, and it states that a particular is a thing in the world, not a document being read
+
+### Requirement: HTTP transport
+With `--http <addr>`, where `addr` is `host:port` and a missing host means every interface, the server SHALL serve MCP Streamable HTTP at the path `/mcp`. Every session SHALL be served by the one server bound to the workspace. Tools, results, errors, instructions, prompts and resources SHALL be identical to those over stdio. Other paths SHALL return 404, except `/healthz`. On startup the server SHALL write to stderr the version, the workspace root, the address it listens on, and whether a token is required.
+
+#### Scenario: The same result over both transports
+- **WHEN** one client calls `knowledge_recall{particular_id: "Project X"}` over stdio and another calls it over HTTP, on the same workspace
+- **THEN** both results equal `particulars recall "Project X" --json`
+
+#### Scenario: Unknown path
+- **WHEN** a request is sent to `/` on a server started with `--http`
+- **THEN** the response is 404
+
+### Requirement: HTTP requires a token off loopback
+The token SHALL be read from `DKF_HTTP_TOKEN`, or from the file named by `--http-token-file`, whose contents with surrounding whitespace trimmed are the token. The file SHALL win when both are set. An empty token SHALL count as none. When a token is configured, every request to `/mcp` SHALL carry `Authorization: Bearer <token>`. The comparison SHALL be in constant time. A request without the token, or with a different one, SHALL get 401 and SHALL not reach the server. When no token is configured, the server SHALL listen only if `addr`'s host is `127.0.0.1`, `::1` or `localhost`. Otherwise it SHALL exit with a usage error before listening.
+
+#### Scenario: Missing token
+- **WHEN** a server started with `DKF_HTTP_TOKEN=s3cret --http :8080` receives an `initialize` request with no `Authorization` header
+- **THEN** the response is 401 and no session is created
+
+#### Scenario: Correct token
+- **WHEN** the same server receives `initialize` with `Authorization: Bearer s3cret`
+- **THEN** a session is created and the tools are listed as over stdio
+
+#### Scenario: Tokenless on all interfaces
+- **WHEN** `particulars serve --mcp --http :8080` is started with no token configured
+- **THEN** it exits with a usage error saying a token is required off loopback, and does not listen
+
+#### Scenario: Tokenless on loopback
+- **WHEN** `particulars serve --mcp --http 127.0.0.1:8080` is started with no token configured
+- **THEN** it listens, and serves requests without an `Authorization` header
+
+### Requirement: Health endpoint
+`GET /healthz` SHALL return 200 with a JSON body `{"status": "ok", "version": <version>}` once the workspace is loaded and the listener is up. It SHALL not require the token, and SHALL reveal no workspace content, path or configuration.
+
+#### Scenario: Readiness probe
+- **WHEN** a container platform sends `GET /healthz` without a token to a server started with a token
+- **THEN** the response is 200 with `status: ok` and the binary's version, and nothing else
+
+### Requirement: HTTP sessions share one workspace and one write lock
+Concurrent HTTP sessions SHALL share the server-wide lock that serialises mutating tools, so that writes from different sessions never interleave load, write and index update. Each session SHALL take its provenance defaults from its own `initialize`, as *Provenance defaults from the handshake* requires.
+
+#### Scenario: Parallel asserts from two sessions
+- **WHEN** two HTTP sessions each issue ten `claim_assert` calls concurrently
+- **THEN** twenty claim files exist and `particulars index --check` passes
+
+#### Scenario: Each session's own harness
+- **WHEN** a session whose client is named `executive` and a session whose client is named `backend` each assert a claim with no `source`
+- **THEN** the claims carry `source.harness: executive` and `source.harness: backend` respectively
+
+### Requirement: A remote session is never the person
+Over HTTP, when no harness is supplied by the call, server flags, environment or `dkf.yaml`, and the session's `initialize` carries no `clientInfo.name`, `source.harness` SHALL default to `http`. Over stdio the existing default SHALL be unchanged.
+
+#### Scenario: Nameless remote client
+- **WHEN** an HTTP session whose `initialize` has an empty `clientInfo.name` calls `claim_assert` with no `source`, in a workspace with no default harness
+- **THEN** the claim is written with `source.harness: http`
+
+### Requirement: Clean shutdown over HTTP
+On SIGTERM or SIGINT, a server speaking HTTP SHALL stop accepting new connections. It SHALL let requests in flight finish for up to 30 seconds, then exit 0. A mutating call that has started SHALL either complete, or leave the workspace as it was before the call.
+
+#### Scenario: Terminated during a write
+- **WHEN** SIGTERM arrives while a `claim_assert` call is in flight
+- **THEN** the call completes, its claim file and index entry are written, and the process exits 0
 

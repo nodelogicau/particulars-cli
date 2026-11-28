@@ -25,4 +25,4 @@
 
 - [x] 4.1 `serve --help` and the README: the HTTP section, the token rule, `/healthz`, and an example for a container.
 - [x] 4.2 A CHANGELOG entry under Unreleased.
-- [ ] 4.3 Archive the change and sync `mcp-server`.
+- [x] 4.3 Archive the change and sync `mcp-server`.
